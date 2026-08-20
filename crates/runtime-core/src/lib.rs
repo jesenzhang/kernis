@@ -365,12 +365,15 @@ impl fmt::Display for RuntimeError {
 impl std::error::Error for RuntimeError {}
 
 /// Deterministic single-process Runtime Core.
-pub struct Runtime {
+pub struct Runtime<S = InMemoryDurableStore>
+where
+    S: DurableStore,
+{
     run_id: RunId,
     workflow: WorkflowGraph,
     capability_runtime: ReactiveCapabilityRuntime,
     journal: DurableJournal,
-    store: InMemoryDurableStore,
+    store: S,
     store_revision: StoreRevision,
     task_configs: BTreeMap<Id, TaskConfig>,
     attempts: Vec<TaskAttempt>,
@@ -385,7 +388,7 @@ pub struct Runtime {
     telemetry_events: LossyBuffer<RuntimeEvent>,
 }
 
-impl Runtime {
+impl Runtime<InMemoryDurableStore> {
     /// Starts a deterministic run over an existing workflow graph and scope.
     ///
     /// Task configurations are runtime inputs. They do not become workflow
@@ -399,7 +402,34 @@ impl Runtime {
     where
         I: IntoIterator<Item = (Id, TaskConfig)>,
     {
-        let mut store = InMemoryDurableStore::new();
+        Self::start_run_with_store(
+            run_id,
+            workflow,
+            scope,
+            task_configs,
+            InMemoryDurableStore::new(),
+        )
+    }
+}
+
+impl<S> Runtime<S>
+where
+    S: DurableStore,
+{
+    /// Starts a deterministic run using the caller-supplied durable store.
+    ///
+    /// The runtime takes ownership of the store and creates the run exactly
+    /// once before using the returned revision as its compare-and-swap head.
+    pub fn start_run_with_store<I>(
+        run_id: RunId,
+        workflow: WorkflowGraph,
+        scope: Scope,
+        task_configs: I,
+        mut store: S,
+    ) -> Result<Self, RuntimeError>
+    where
+        I: IntoIterator<Item = (Id, TaskConfig)>,
+    {
         let store_revision = store.create_run(run_id.clone())?;
         Self::build(
             run_id,
@@ -423,7 +453,7 @@ impl Runtime {
         workflow: WorkflowGraph,
         scope: Scope,
         task_configs: I,
-        store: InMemoryDurableStore,
+        store: S,
     ) -> Result<Self, RuntimeError>
     where
         I: IntoIterator<Item = (Id, TaskConfig)>,
@@ -462,7 +492,7 @@ impl Runtime {
         scope: Scope,
         task_configs: I,
         journal: DurableJournal,
-        store: InMemoryDurableStore,
+        store: S,
         store_revision: StoreRevision,
     ) -> Result<Self, RuntimeError>
     where
@@ -521,9 +551,9 @@ impl Runtime {
         &self.journal
     }
 
-    /// Returns the process-independent in-memory store adapter.
+    /// Returns the caller-owned durable store implementation.
     #[must_use]
-    pub const fn store(&self) -> &InMemoryDurableStore {
+    pub const fn store(&self) -> &S {
         &self.store
     }
 

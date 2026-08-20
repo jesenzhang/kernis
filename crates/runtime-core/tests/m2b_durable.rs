@@ -3,10 +3,12 @@
 use capability_graph::{CapabilityDefinition, CapabilityValue, Scope};
 use kernis_core::Id;
 use runtime_core::{Cancellation, RunId, Runtime, StepResult, TaskConfig};
+use std::sync::{Arc, Mutex};
 use workflow_graph::{Task, WorkflowGraph, WorkflowMutation};
 use workflow_recovery::{
-    DurableStore, EffectSemantics, KnownEffectOutcome, OperationId, RecoveredEffectState,
-    RecoveryAction,
+    CommitRequest, CommitResult, DurableMutation, DurableStore, EffectSemantics,
+    InMemoryDurableStore, KnownEffectOutcome, OperationId, RecoveredEffectState, RecoveryAction,
+    StoreError, StoreRevision,
 };
 
 fn id(value: &str) -> Id {
@@ -35,6 +37,57 @@ fn workflow() -> WorkflowGraph {
 
 fn config(operation_id: &OperationId) -> TaskConfig {
     TaskConfig::new().with_effect(operation_id.clone(), EffectSemantics::Idempotent)
+}
+
+#[derive(Debug, Default)]
+struct StoreObservations {
+    creates: Vec<RunId>,
+    loads: Vec<RunId>,
+    commits: Vec<Vec<DurableMutation>>,
+}
+
+#[derive(Clone, Debug)]
+struct ObservingStore {
+    inner: InMemoryDurableStore,
+    observations: Arc<Mutex<StoreObservations>>,
+}
+
+impl ObservingStore {
+    fn new() -> Self {
+        Self {
+            inner: InMemoryDurableStore::new(),
+            observations: Arc::new(Mutex::new(StoreObservations::default())),
+        }
+    }
+}
+
+impl DurableStore for ObservingStore {
+    fn create_run(&mut self, run_id: RunId) -> Result<StoreRevision, StoreError> {
+        self.observations
+            .lock()
+            .expect("store observations are not poisoned")
+            .creates
+            .push(run_id.clone());
+        self.inner.create_run(run_id)
+    }
+
+    fn load_run(&self, run_id: &RunId) -> Result<workflow_recovery::DurableRunState, StoreError> {
+        self.observations
+            .lock()
+            .expect("store observations are not poisoned")
+            .loads
+            .push(run_id.clone());
+        self.inner.load_run(run_id)
+    }
+
+    fn commit(&mut self, request: CommitRequest) -> Result<CommitResult, StoreError> {
+        self.observations
+            .lock()
+            .expect("store observations are not poisoned")
+            .commits
+            .push(request.mutations.clone());
+        self.inner.commit(request)
+    }
 }
 
 fn start(workflow: WorkflowGraph, scope: Scope, operation_id: &OperationId) -> Runtime {
@@ -350,5 +403,80 @@ fn cancellation_after_dispatch_keeps_outcome_recordable() {
     assert_eq!(
         runtime.recover(&operation_id).unwrap().action,
         RecoveryAction::CompleteWithoutReexecution
+    );
+}
+
+#[test]
+fn injected_store_receives_mutations_and_supports_fresh_restore() {
+    let operation_id = operation("injected-operation");
+    let run_id = RunId::new("injected-run").expect("run id is valid");
+    let workflow = workflow();
+    let store = ObservingStore::new();
+    let mut runtime = Runtime::<ObservingStore>::start_run_with_store(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        [(id("task"), config(&operation_id))],
+        store,
+    )
+    .expect("runtime starts with injected store");
+
+    let attempt_id = match runtime.step().expect("attempt admission succeeds") {
+        StepResult::EffectPending { attempt_id, .. } => attempt_id,
+        other => panic!("expected pending effect, got {other:?}"),
+    };
+    runtime
+        .dispatch_effect(&operation_id)
+        .expect("dispatch commits through injected store");
+
+    let state = runtime.durable_state().expect("durable state loads");
+    assert_eq!(
+        state.attempt(&attempt_id).unwrap().operation_id,
+        Some(operation_id.clone())
+    );
+    let observations = runtime
+        .store()
+        .observations
+        .lock()
+        .expect("store observations are not poisoned");
+    assert_eq!(observations.creates, vec![run_id.clone()]);
+    assert!(observations.loads.iter().any(|loaded| loaded == &run_id));
+    assert!(observations.commits.iter().any(|mutations| {
+        mutations
+            .iter()
+            .any(|mutation| matches!(mutation, DurableMutation::RecordIntent(_)))
+    }));
+    assert!(observations.commits.iter().any(|mutations| {
+        mutations
+            .iter()
+            .any(|mutation| matches!(mutation, DurableMutation::AdmitAttempt(_)))
+    }));
+    assert!(observations.commits.iter().any(|mutations| {
+        mutations
+            .iter()
+            .any(|mutation| matches!(mutation, DurableMutation::RecordDispatch(_)))
+    }));
+    drop(observations);
+
+    let mut restarted = Runtime::<ObservingStore>::restore_run(
+        run_id.clone(),
+        workflow,
+        Scope::root(),
+        [(id("task"), config(&operation_id))],
+        runtime.store().clone(),
+    )
+    .expect("fresh runtime restores through injected store");
+    assert_eq!(restarted.attempts().len(), 1);
+    assert_eq!(
+        restarted
+            .journal()
+            .latest_dispatch(&operation_id)
+            .unwrap()
+            .attempt_id,
+        attempt_id
+    );
+    assert_eq!(
+        restarted.recover(&operation_id).unwrap().action,
+        RecoveryAction::RetrySameOperation
     );
 }

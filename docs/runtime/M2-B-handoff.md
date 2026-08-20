@@ -41,3 +41,12 @@ separation between WorkflowGraph, DurableJournal, the Runtime-owned reactive
 capability coordinator, and Execution Streams. Reactive replacement and
 withdrawal are process-local lifecycle changes; they do not rewrite durable
 operation, attempt, or replay/config identity.
+
+## Runtime Kernel Store Port
+
+Runtime is parameterized over the existing `DurableStore` contract. The
+deterministic `InMemoryDurableStore` remains the default used by
+`Runtime::start_run(...)`; callers may supply another synchronous store through
+`Runtime::start_run_with_store(...)` and use the same store type for restore.
+No physical persistence adapter exists yet, and this boundary does not claim
+physical durability.
