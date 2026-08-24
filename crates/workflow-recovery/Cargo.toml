@@ -7,6 +7,9 @@ license.workspace = true
 
 [dependencies]
 kernis-core = { path = "../core" }
+postcard = { version = "1.1.3", features = ["alloc"] }
+redb = "=2.6.3"
+serde = { version = "1.0", features = ["derive"] }
 workflow-graph = { path = "../workflow-graph" }
 
 [lints]

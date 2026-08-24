@@ -22,18 +22,20 @@ research remains evidence for later kernel decisions.
 
 ## Stage 2 — Runtime Kernel
 
-Turn the validated implementation into a reusable runtime kernel. Candidate
-directions, intentionally not implemented by the R1 identity repositioning,
-include:
+Turn the validated implementation into a reusable runtime kernel. The ordered
+implementation plan is maintained in
+[`runtime/STAGE2-MILESTONE-PLAN.md`](runtime/STAGE2-MILESTONE-PLAN.md):
 
-- physical durability adapter;
-- runtime and plugin composition APIs;
-- configuration reconstruction and API stabilization;
-- an explicit async execution boundary;
-- a minimal loader boundary;
-- further Cordis and meta-runtime semantic research.
+1. K1 Embedded Physical Durability;
+2. K2 Declarative Configuration and Cold Reconstruction;
+3. K3 Explicit Asynchronous Execution Boundary;
+4. K4 Runtime and Plugin Composition API;
+5. K5 Minimal Loader Boundary;
+6. K6 Runtime Kernel API Stabilization and R2 Closeout.
 
-Each candidate requires its own semantic boundary and regression evidence.
+The milestone is the delivery unit. Slice boundaries are introduced only when
+current implementation risk, ownership, verification, or context quality makes
+one useful; the plan does not prescribe a Slice chain.
 
 ## Stage 3 — Meta-Framework
 

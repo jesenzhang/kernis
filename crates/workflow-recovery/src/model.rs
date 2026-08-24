@@ -1,10 +1,11 @@
 //! Typed facts and decisions for the crash/recovery boundary.
 
 use kernis_core::{Id, InvalidId};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Stable identity of one logical external side effect.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct OperationId(Id);
 
 impl OperationId {
@@ -31,7 +32,7 @@ impl fmt::Display for OperationId {
 }
 
 /// Identity of one transport or execution attempt for an operation.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AttemptId(Id);
 
 impl AttemptId {
@@ -58,7 +59,7 @@ impl fmt::Display for AttemptId {
 }
 
 /// Declares whether repeating one logical operation is externally safe.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum EffectSemantics {
     /// Repeated calls with the same operation identity are deduplicated.
     Idempotent,
@@ -67,7 +68,7 @@ pub enum EffectSemantics {
 }
 
 /// Durable admission record declaring the logical effect to be performed.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct EffectIntent {
     /// Workflow task that owns the effect.
     pub task_id: Id,
@@ -78,7 +79,7 @@ pub struct EffectIntent {
 }
 
 /// Durable boundary record proving that an external call was dispatched.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DispatchRecord {
     /// Logical operation being dispatched.
     pub operation_id: OperationId,
@@ -87,7 +88,7 @@ pub struct DispatchRecord {
 }
 
 /// Result known by the local runtime after observing or recording the external world.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum KnownEffectOutcome {
     /// The external operation succeeded.
     Succeeded,
@@ -96,7 +97,7 @@ pub enum KnownEffectOutcome {
 }
 
 /// Durable checkpoint of a known external result for one dispatch attempt.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OutcomeRecord {
     /// Logical operation whose result is recorded.
     pub operation_id: OperationId,

@@ -1,9 +1,10 @@
 //! Neutral primitives shared only when their semantics are genuinely identical.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Stable textual identifier used across experiments.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Id(String);
 
 impl Id {

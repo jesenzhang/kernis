@@ -1,0 +1,375 @@
+#![allow(missing_docs)]
+
+use kernis_core::Id;
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+use workflow_recovery::{
+    AttemptAdmission, AttemptId, CancellationRecord, CapabilityReplayIdentity, CommitRequest,
+    CompletionRecord, DispatchRecord, DurableMutation, DurableStore, EffectIntent, EffectSemantics,
+    FileDurableStore, IdempotencyKey, KnownEffectOutcome, OperationId, OutcomeRecord, RunId,
+    StoreError, StoreErrorKind, StoreInvariant, StoreRevision, WorkflowReplayIdentity,
+};
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+struct TempStore {
+    directory: PathBuf,
+    path: PathBuf,
+}
+
+impl TempStore {
+    fn new(label: &str) -> Self {
+        let number = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let directory =
+            std::env::temp_dir().join(format!("kernis-k1-{label}-{}-{number}", std::process::id()));
+        fs::create_dir_all(&directory).expect("temporary directory creates");
+        Self {
+            path: directory.join("durable.redb"),
+            directory,
+        }
+    }
+}
+
+impl Drop for TempStore {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.directory);
+    }
+}
+
+fn id(value: &str) -> Id {
+    Id::new(value).expect("test id is valid")
+}
+
+fn run() -> RunId {
+    RunId::new("run-physical").expect("test run is valid")
+}
+
+fn operation(value: &str) -> OperationId {
+    OperationId::new(value).expect("test operation is valid")
+}
+
+fn attempt(value: &str) -> AttemptId {
+    AttemptId::new(value).expect("test attempt is valid")
+}
+
+fn key(value: &str) -> IdempotencyKey {
+    IdempotencyKey::new(value).expect("test key is valid")
+}
+
+fn admission(
+    task_id: &str,
+    attempt_id: &AttemptId,
+    operation_id: Option<OperationId>,
+) -> AttemptAdmission {
+    AttemptAdmission {
+        run_id: run(),
+        task_id: id(task_id),
+        attempt_id: attempt_id.clone(),
+        operation_id,
+        capabilities: vec![CapabilityReplayIdentity::new(id("provider"), "provider-v1")],
+    }
+}
+
+fn commit<S: DurableStore>(
+    store: &mut S,
+    revision: StoreRevision,
+    key_value: &str,
+    mutation: DurableMutation,
+) -> workflow_recovery::CommitResult {
+    store
+        .commit(CommitRequest::single(
+            run(),
+            revision,
+            key(key_value),
+            mutation,
+        ))
+        .expect("durable commit is valid")
+}
+
+#[test]
+fn physical_store_reopens_with_all_supported_fact_classes() {
+    let temp = TempStore::new("round-trip");
+    let mut store = FileDurableStore::open(&temp.path).expect("physical store opens");
+    assert_eq!(
+        store.create_run(run()).expect("run creates"),
+        StoreRevision::INITIAL
+    );
+
+    commit(
+        &mut store,
+        StoreRevision::INITIAL,
+        "identity",
+        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new(
+            "workflow:v1:stable",
+        )),
+    );
+    let operation_id = operation("operation-1");
+    let attempt_id = attempt("attempt-1");
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    commit(
+        &mut store,
+        revision,
+        "intent",
+        DurableMutation::RecordIntent(EffectIntent {
+            task_id: id("effect-task"),
+            operation_id: operation_id.clone(),
+            semantics: EffectSemantics::Idempotent,
+        }),
+    );
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    commit(
+        &mut store,
+        revision,
+        "admit-effect",
+        DurableMutation::AdmitAttempt(admission(
+            "effect-task",
+            &attempt_id,
+            Some(operation_id.clone()),
+        )),
+    );
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    commit(
+        &mut store,
+        revision,
+        "dispatch",
+        DurableMutation::RecordDispatch(DispatchRecord {
+            operation_id: operation_id.clone(),
+            attempt_id: attempt_id.clone(),
+        }),
+    );
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    commit(
+        &mut store,
+        revision,
+        "outcome",
+        DurableMutation::RecordOutcome(OutcomeRecord {
+            operation_id,
+            attempt_id: attempt_id.clone(),
+            outcome: KnownEffectOutcome::Succeeded,
+        }),
+    );
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    commit(
+        &mut store,
+        revision,
+        "completion",
+        DurableMutation::RecordCompletion(CompletionRecord {
+            task_id: id("effect-task"),
+            attempt_id,
+        }),
+    );
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    let cancelled_attempt = attempt("attempt-cancelled");
+    commit(
+        &mut store,
+        revision,
+        "admit-cancelled",
+        DurableMutation::AdmitAttempt(admission("cancelled-task", &cancelled_attempt, None)),
+    );
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    commit(
+        &mut store,
+        revision,
+        "cancellation",
+        DurableMutation::RecordCancellation(CancellationRecord {
+            run_id: run(),
+            task_id: id("cancelled-task"),
+            operation_id: None,
+            attempt_id: Some(cancelled_attempt),
+        }),
+    );
+
+    let before_reopen = store.load_run(&run()).expect("state loads");
+    drop(store);
+
+    let reopened = FileDurableStore::open(&temp.path).expect("store reopens");
+    assert_eq!(
+        reopened.load_run(&run()).expect("reopened state loads"),
+        before_reopen
+    );
+}
+
+#[test]
+fn physical_store_preserves_atomic_batches_cas_and_idempotent_replay() {
+    let temp = TempStore::new("cas");
+    let mut first = FileDurableStore::open(&temp.path).expect("first store opens");
+    let mut second = FileDurableStore::open(&temp.path).expect("second store opens");
+    first.create_run(run()).expect("run creates");
+
+    let invalid_batch = first.commit(CommitRequest {
+        run_id: run(),
+        expected_revision: StoreRevision::INITIAL,
+        idempotency_key: key("invalid-batch"),
+        mutations: vec![
+            DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new(
+                "workflow:v1",
+            )),
+            DurableMutation::RecordDispatch(DispatchRecord {
+                operation_id: operation("missing"),
+                attempt_id: attempt("missing"),
+            }),
+        ],
+    });
+    assert!(matches!(
+        invalid_batch,
+        Err(StoreError::InvariantViolation(
+            StoreInvariant::DispatchWithoutAdmission { .. }
+        ))
+    ));
+    let unchanged = first.load_run(&run()).expect("state loads");
+    assert_eq!(unchanged.revision(), StoreRevision::INITIAL);
+    assert!(unchanged.workflow_replay_identity().is_none());
+
+    let request = CommitRequest::single(
+        run(),
+        StoreRevision::INITIAL,
+        key("identity"),
+        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new("workflow:v1")),
+    );
+    let committed = first.commit(request.clone()).expect("commit succeeds");
+    assert!(!committed.replayed);
+    let replayed = second.commit(request).expect("idempotent replay succeeds");
+    assert!(replayed.replayed);
+    assert_eq!(replayed.revision, committed.revision);
+
+    let stale = second.commit(CommitRequest::single(
+        run(),
+        StoreRevision::INITIAL,
+        key("stale"),
+        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new("workflow:v2")),
+    ));
+    assert!(matches!(stale, Err(StoreError::RevisionConflict { .. })));
+    assert_eq!(
+        first
+            .load_run(&run())
+            .expect("state loads")
+            .workflow_replay_identity(),
+        Some(&WorkflowReplayIdentity::new("workflow:v1"))
+    );
+}
+
+#[test]
+fn physical_store_survives_process_restart_between_outcome_and_completion() {
+    let temp = TempStore::new("child");
+    let status = Command::new(std::env::current_exe().expect("test executable exists"))
+        .arg("--exact")
+        .arg("child_writes_after_outcome")
+        .arg("--nocapture")
+        .env("KERNIS_K1_CHILD_PATH", &temp.path)
+        .status()
+        .expect("child process starts");
+    assert!(status.success(), "child process failed: {status}");
+
+    let mut store = FileDurableStore::open(&temp.path).expect("parent reopens store");
+    let before_completion = store.load_run(&run()).expect("parent loads state");
+    assert_eq!(before_completion.dispatch_history().len(), 1);
+    assert_eq!(before_completion.outcome_history_all().len(), 1);
+    assert!(before_completion.completion_history().is_empty());
+
+    let attempt_id = attempt("child-attempt");
+    let completion = store.commit(CommitRequest::single(
+        run(),
+        before_completion.revision(),
+        key("completion-after-restart"),
+        DurableMutation::RecordCompletion(CompletionRecord {
+            task_id: id("effect-task"),
+            attempt_id,
+        }),
+    ));
+    assert!(
+        completion.is_ok(),
+        "completion must be recoverable: {completion:?}"
+    );
+    let after_completion = store.load_run(&run()).expect("completed state loads");
+    assert_eq!(after_completion.dispatch_history().len(), 1);
+    assert_eq!(after_completion.completion_history().len(), 1);
+}
+
+#[test]
+fn child_writes_after_outcome() {
+    let Some(path) = std::env::var_os("KERNIS_K1_CHILD_PATH") else {
+        return;
+    };
+    let mut store = FileDurableStore::open(path).expect("child opens store");
+    store.create_run(run()).expect("child creates run");
+    commit(
+        &mut store,
+        StoreRevision::INITIAL,
+        "identity",
+        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new("workflow:v1")),
+    );
+    let operation_id = operation("child-operation");
+    let attempt_id = attempt("child-attempt");
+    let revision = store
+        .load_run(&run())
+        .expect("child loads state")
+        .revision();
+    commit(
+        &mut store,
+        revision,
+        "intent",
+        DurableMutation::RecordIntent(EffectIntent {
+            task_id: id("effect-task"),
+            operation_id: operation_id.clone(),
+            semantics: EffectSemantics::Idempotent,
+        }),
+    );
+    let revision = store
+        .load_run(&run())
+        .expect("child loads state")
+        .revision();
+    commit(
+        &mut store,
+        revision,
+        "admission",
+        DurableMutation::AdmitAttempt(admission(
+            "effect-task",
+            &attempt_id,
+            Some(operation_id.clone()),
+        )),
+    );
+    let revision = store
+        .load_run(&run())
+        .expect("child loads state")
+        .revision();
+    commit(
+        &mut store,
+        revision,
+        "dispatch",
+        DurableMutation::RecordDispatch(DispatchRecord {
+            operation_id: operation_id.clone(),
+            attempt_id: attempt_id.clone(),
+        }),
+    );
+    let revision = store
+        .load_run(&run())
+        .expect("child loads state")
+        .revision();
+    commit(
+        &mut store,
+        revision,
+        "outcome",
+        DurableMutation::RecordOutcome(OutcomeRecord {
+            operation_id,
+            attempt_id,
+            outcome: KnownEffectOutcome::Succeeded,
+        }),
+    );
+}
+
+#[test]
+fn physical_backend_errors_keep_categories_distinct() {
+    let temp = TempStore::new("errors");
+    let mut store = FileDurableStore::open(&temp.path).expect("store opens");
+    store.create_run(run()).expect("run creates");
+    fs::remove_file(&temp.path).expect("test removes backend");
+    let unavailable = store.load_run(&run()).expect_err("missing backend fails");
+    assert_eq!(unavailable.kind(), StoreErrorKind::BackendUnavailable);
+    assert!(!matches!(unavailable, StoreError::RunNotFound(_)));
+
+    fs::write(&temp.path, b"not a redb database").expect("test corrupts backend");
+    let corruption = FileDurableStore::open(&temp.path).expect_err("corrupt backend fails");
+    assert_eq!(corruption.kind(), StoreErrorKind::DataCorruption);
+}

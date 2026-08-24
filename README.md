@@ -93,15 +93,18 @@ future validated references.
 - M2-A Capability Runtime: integrated.
 - M2-B0: complete.
 - M2-B1: in-memory `DurableStore`/restart slice and durable completion/replay
-  contract closure implemented; physical persistence adapter not started.
+  contract closure implemented.
+- Stage 2 K1: embedded physical `FileDurableStore` implemented with redb,
+  versioned typed snapshots, reopen, CAS/idempotency, and crash-window proof.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at
   `60066dcfb7d7038d64da441f3ee852893fbd9119`.
 
-The current implementation deliberately has no physical database durability,
-plugin loader, HMR watcher, provider SDK, WASM/dynamic-library ABI, MCP
-integration, agent loop, distributed runtime, or durable fiber serialization.
+The current implementation deliberately makes no unqualified fsync/power-loss
+claim and does not include a plugin loader, HMR watcher, provider SDK,
+WASM/dynamic-library ABI, MCP integration, agent loop, distributed runtime, or
+durable fiber serialization.
 
 ## Long-term direction
 
@@ -112,10 +115,11 @@ M1, M2-A, M2-B, M2-C1, and M2-C2.
 
 ### Stage 2 — Runtime Kernel
 
-Develop the current implementation into a reusable kernel. Candidate work
-includes a physical durability adapter, runtime/plugin composition APIs,
-configuration reconstruction, error/API stabilization, an async execution
-boundary, a minimal loader boundary, and further Cordis semantic research.
+Develop the current implementation into a reusable kernel. The ordered K1-K6
+milestone contracts cover physical durability, declarative reconstruction, the
+async execution boundary, runtime/plugin composition, a minimal loader, and
+API stabilization. See the
+[Stage 2 Runtime Kernel Milestone Plan](docs/runtime/STAGE2-MILESTONE-PLAN.md).
 
 ### Stage 3 — Meta-Framework
 

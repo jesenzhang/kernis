@@ -9,11 +9,12 @@ use crate::model::{
     RecoveredEffectState,
 };
 use kernis_core::Id;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 /// Identity of one workflow execution, stable across task attempts.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct RunId(Id);
 
 impl RunId {
@@ -42,7 +43,7 @@ impl fmt::Display for RunId {
 /// caller. It is deliberately not a topology revision: equivalent topology
 /// and configuration must produce the same identity even when their mutation
 /// history was assembled differently.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct WorkflowReplayIdentity(String);
 
 impl WorkflowReplayIdentity {
@@ -70,7 +71,9 @@ impl fmt::Display for WorkflowReplayIdentity {
 /// This is deliberately distinct from `kernis_core::Revision`, which belongs
 /// to workflow topology.  A store revision advances for a successful durable
 /// commit, not for a topology mutation.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
 pub struct StoreRevision(u64);
 
 impl StoreRevision {
@@ -83,7 +86,7 @@ impl StoreRevision {
         self.0
     }
 
-    fn checked_next(self) -> Option<Self> {
+    pub(crate) fn checked_next(self) -> Option<Self> {
         self.0.checked_add(1).map(Self)
     }
 }
@@ -100,7 +103,7 @@ impl fmt::Display for StoreRevision {
 /// It intentionally contains no generation, entry id, fiber, handle, mutex,
 /// or disposer.  The definition identity is supplied by the capability
 /// runtime and must be stable for equivalent configuration.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct CapabilityReplayIdentity {
     capability_id: Id,
     definition_identity: String,
@@ -130,7 +133,7 @@ impl CapabilityReplayIdentity {
 }
 
 /// Durable admission of one exact attempt, independent of provider dispatch.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AttemptAdmission {
     /// Workflow execution containing the attempt.
     pub run_id: RunId,
@@ -145,7 +148,7 @@ pub struct AttemptAdmission {
 }
 
 /// Durable cancellation fact.  Cancellation never deletes prior facts.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CancellationRecord {
     /// Workflow execution containing the cancelled task.
     pub run_id: RunId,
@@ -162,7 +165,7 @@ pub struct CancellationRecord {
 /// The workflow graph remains the authority for prerequisite semantics. The
 /// attempt identity here lets the store validate that the completion belongs
 /// to the admitted task lineage without copying graph scheduling rules.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CompletionRecord {
     /// Task whose completion is being recorded.
     pub task_id: Id,
@@ -171,7 +174,7 @@ pub struct CompletionRecord {
 }
 
 /// Caller-supplied identity for an idempotent durable mutation.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct IdempotencyKey(String);
 
 impl IdempotencyKey {
@@ -201,7 +204,7 @@ impl fmt::Display for IdempotencyKey {
 }
 
 /// One typed correctness mutation accepted by a [`DurableStore`].
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum DurableMutation {
     /// Establish or update the workflow replay identity for this run.
     RecordWorkflowReplayIdentity(WorkflowReplayIdentity),
@@ -522,10 +525,10 @@ impl fmt::Display for StoreError {
 impl std::error::Error for StoreError {}
 
 /// Materialized durable facts for one run, suitable for restart inspection.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DurableRunState {
     run_id: RunId,
-    revision: StoreRevision,
+    pub(crate) revision: StoreRevision,
     workflow_replay_identity: Option<WorkflowReplayIdentity>,
     admissions: BTreeMap<AttemptId, AttemptAdmission>,
     admission_history: Vec<AttemptAdmission>,
@@ -538,11 +541,11 @@ pub struct DurableRunState {
     outcome_history: Vec<OutcomeRecord>,
     completions: BTreeMap<Id, CompletionRecord>,
     completion_history: Vec<CompletionRecord>,
-    idempotency: BTreeMap<IdempotencyKey, (Vec<DurableMutation>, StoreRevision)>,
+    pub(crate) idempotency: BTreeMap<IdempotencyKey, (Vec<DurableMutation>, StoreRevision)>,
 }
 
 impl DurableRunState {
-    fn new(run_id: RunId) -> Self {
+    pub(crate) fn new(run_id: RunId) -> Self {
         Self {
             run_id,
             revision: StoreRevision::INITIAL,
@@ -711,6 +714,122 @@ impl DurableRunState {
     pub fn operation_for_task(&self, task_id: &Id) -> Option<&OperationId> {
         self.task_operations.get(task_id)
     }
+
+    pub(crate) fn validate_persisted(&self) -> Result<(), StoreError> {
+        if self
+            .workflow_replay_identity
+            .as_ref()
+            .is_some_and(|identity| identity.as_str().trim().is_empty())
+        {
+            return Err(StoreError::DataCorruption(
+                "persisted workflow replay identity is empty".to_string(),
+            ));
+        }
+        for (key, (mutations, revision)) in &self.idempotency {
+            if key.as_str().trim().is_empty()
+                || revision.get() == StoreRevision::INITIAL.get()
+                || *revision > self.revision
+            {
+                return Err(StoreError::DataCorruption(
+                    "persisted idempotency metadata is invalid".to_string(),
+                ));
+            }
+            for mutation in mutations {
+                match mutation {
+                    DurableMutation::RecordWorkflowReplayIdentity(identity)
+                        if identity.as_str().trim().is_empty() =>
+                    {
+                        return Err(StoreError::DataCorruption(
+                            "persisted idempotency mutation has an empty replay identity"
+                                .to_string(),
+                        ));
+                    }
+                    DurableMutation::AdmitAttempt(admission) if admission.run_id != self.run_id => {
+                        return Err(StoreError::DataCorruption(
+                            "persisted idempotency admission has the wrong run identity"
+                                .to_string(),
+                        ));
+                    }
+                    DurableMutation::RecordCancellation(cancellation)
+                        if cancellation.run_id != self.run_id =>
+                    {
+                        return Err(StoreError::DataCorruption(
+                            "persisted idempotency cancellation has the wrong run identity"
+                                .to_string(),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut reconstructed = Self::new(self.run_id.clone());
+        reconstructed.workflow_replay_identity = self.workflow_replay_identity.clone();
+        for admission in &self.admission_history {
+            apply_mutation(
+                &mut reconstructed,
+                &DurableMutation::AdmitAttempt(admission.clone()),
+            )
+            .map_err(persisted_mutation_error)?;
+        }
+        for intent in self.intents.values() {
+            apply_mutation(
+                &mut reconstructed,
+                &DurableMutation::RecordIntent(intent.clone()),
+            )
+            .map_err(persisted_mutation_error)?;
+        }
+        for dispatch in &self.dispatch_history {
+            apply_mutation(
+                &mut reconstructed,
+                &DurableMutation::RecordDispatch(dispatch.clone()),
+            )
+            .map_err(persisted_mutation_error)?;
+        }
+        for outcome in &self.outcome_history {
+            apply_mutation(
+                &mut reconstructed,
+                &DurableMutation::RecordOutcome(outcome.clone()),
+            )
+            .map_err(persisted_mutation_error)?;
+        }
+        for cancellation in self.cancellations.values() {
+            apply_mutation(
+                &mut reconstructed,
+                &DurableMutation::RecordCancellation(cancellation.clone()),
+            )
+            .map_err(persisted_mutation_error)?;
+        }
+        for completion in &self.completion_history {
+            apply_mutation(
+                &mut reconstructed,
+                &DurableMutation::RecordCompletion(completion.clone()),
+            )
+            .map_err(persisted_mutation_error)?;
+        }
+
+        if reconstructed.admissions != self.admissions
+            || reconstructed.admission_history != self.admission_history
+            || reconstructed.intents != self.intents
+            || reconstructed.task_operations != self.task_operations
+            || reconstructed.cancellations != self.cancellations
+            || reconstructed.dispatches != self.dispatches
+            || reconstructed.dispatch_history != self.dispatch_history
+            || reconstructed.outcomes != self.outcomes
+            || reconstructed.outcome_history != self.outcome_history
+            || reconstructed.completions != self.completions
+            || reconstructed.completion_history != self.completion_history
+        {
+            return Err(StoreError::DataCorruption(
+                "persisted durable facts do not form a consistent lineage".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn persisted_mutation_error(error: StoreError) -> StoreError {
+    StoreError::DataCorruption(format!("persisted durable fact is invalid: {error}"))
 }
 
 /// Minimal synchronous persistence port for durable run facts.
@@ -806,7 +925,7 @@ impl DurableStore for InMemoryDurableStore {
     }
 }
 
-fn apply_mutation(
+pub(crate) fn apply_mutation(
     state: &mut DurableRunState,
     mutation: &DurableMutation,
 ) -> Result<(), StoreError> {

@@ -1,8 +1,8 @@
 # M2-B Handoff: Durable Runtime Extension
 
 Status: M2-B0 complete; M2-B1 in-memory durable-store/restart slice and
-completion/replay contract closure implemented; concrete physical persistence
-adapter not started; M2-C1
+completion/replay contract closure implemented; physical persistence is owned
+by Stage 2 K1; M2-C1
 Integrated / Closed at `589827af0156fa0d3f25f5bb6f4044f2be61b527`
 
 M2-A keeps Cordis-derived Context, Registry, Fiber, and Effect state
@@ -70,7 +70,8 @@ Runtime is parameterized over the existing `DurableStore` contract. The
 deterministic `InMemoryDurableStore` remains the default used by
 `Runtime::start_run(...)`; callers may supply another synchronous store through
 `Runtime::start_run_with_store(...)` and use the same store type for restore.
-No physical persistence adapter exists yet, and this boundary does not claim
-physical durability. The in-memory adapter now proves completion
-idempotency, expected-revision CAS, replay identity validation, and the
-outcome-to-completion crash window without adding a database or WAL.
+The M2-B contract itself remains backend-neutral. Stage 2 K1 supplies the
+`FileDurableStore` redb adapter and preserves the same completion idempotency,
+expected-revision CAS, replay identity validation, and outcome-to-completion
+crash-window semantics. Neither boundary claims unqualified fsync/power-loss
+durability or persists a database/WAL copy of the runtime object graph.
