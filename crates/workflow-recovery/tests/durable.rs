@@ -1,13 +1,89 @@
 #![allow(missing_docs)]
 
 use kernis_core::Id;
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use workflow_recovery::{
     AttemptAdmission, AttemptId, CapabilityReplayIdentity, CommitRequest, DurableMutation,
-    DurableStore, EffectIntent, EffectSemantics, IdempotencyKey, InMemoryDurableStore,
-    KnownEffectOutcome, OperationId, OutcomeRecord, RunId, StoreError, StoreErrorKind,
-    StoreInvariant, StoreRevision,
+    DurableStore, EffectIntent, EffectSemantics, FileDurableStore, IdempotencyKey,
+    InMemoryDurableStore, KnownEffectOutcome, OperationId, OutcomeRecord, RunId, StoreError,
+    StoreErrorKind, StoreInvariant, StoreRevision,
 };
 use workflow_recovery::{CancellationRecord, CompletionRecord, DispatchRecord};
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+trait TestStore: DurableStore + Clone {
+    fn fresh() -> Self;
+}
+
+macro_rules! test_both_backends {
+    ($name:ident, $scenario:ident) => {
+        #[test]
+        fn $name() {
+            $scenario::<InMemoryDurableStore>();
+            $scenario::<PhysicalConformanceStore>();
+        }
+    };
+}
+
+impl TestStore for InMemoryDurableStore {
+    fn fresh() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug)]
+struct TempPath(PathBuf);
+
+impl Drop for TempPath {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[derive(Clone, Debug)]
+struct PhysicalConformanceStore {
+    inner: FileDurableStore,
+    _temp_path: Arc<TempPath>,
+}
+
+impl TestStore for PhysicalConformanceStore {
+    fn fresh() -> Self {
+        let number = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "kernis-conformance-{}-{number}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).expect("temporary directory creates");
+        let temp_path = Arc::new(TempPath(directory.clone()));
+        let inner = FileDurableStore::open(directory.join("durable.redb"))
+            .expect("physical conformance store opens");
+        Self {
+            inner,
+            _temp_path: temp_path,
+        }
+    }
+}
+
+impl DurableStore for PhysicalConformanceStore {
+    fn create_run(&mut self, run_id: RunId) -> Result<StoreRevision, StoreError> {
+        self.inner.create_run(run_id)
+    }
+
+    fn load_run(&self, run_id: &RunId) -> Result<workflow_recovery::DurableRunState, StoreError> {
+        self.inner.load_run(run_id)
+    }
+
+    fn commit(
+        &mut self,
+        request: CommitRequest,
+    ) -> Result<workflow_recovery::CommitResult, StoreError> {
+        self.inner.commit(request)
+    }
+}
 
 fn id(value: &str) -> Id {
     Id::new(value).expect("test id is valid")
@@ -46,8 +122,8 @@ fn completion(task_id: &str, attempt_id: &AttemptId) -> CompletionRecord {
     }
 }
 
-fn commit(
-    store: &mut InMemoryDurableStore,
+fn commit<S: TestStore>(
+    store: &mut S,
     revision: StoreRevision,
     key_value: &str,
     mutation: DurableMutation,
@@ -62,9 +138,8 @@ fn commit(
         .expect("durable commit is valid");
 }
 
-#[test]
-fn admission_is_durable_before_dispatch_and_survives_store_clone() {
-    let mut store = InMemoryDurableStore::new();
+fn admission_is_durable_before_dispatch_and_survives_store_clone_for<S: TestStore>() {
+    let mut store = S::fresh();
     assert_eq!(
         store.create_run(run()).expect("run creates"),
         StoreRevision::INITIAL
@@ -83,9 +158,8 @@ fn admission_is_durable_before_dispatch_and_survives_store_clone() {
     assert!(state.dispatch_history().is_empty());
 }
 
-#[test]
-fn stale_cas_and_conflicting_idempotency_leave_state_unchanged() {
-    let mut store = InMemoryDurableStore::new();
+fn stale_cas_and_conflicting_idempotency_leave_state_unchanged_for<S: TestStore>() {
+    let mut store = S::fresh();
     store.create_run(run()).expect("run creates");
     let attempt_id = attempt("attempt-1");
     commit(
@@ -119,9 +193,8 @@ fn stale_cas_and_conflicting_idempotency_leave_state_unchanged() {
     assert_eq!(store.load_run(&run()).expect("state loads"), before);
 }
 
-#[test]
-fn latest_dispatch_owns_recovery_while_old_outcomes_remain_history() {
-    let mut store = InMemoryDurableStore::new();
+fn latest_dispatch_owns_recovery_while_old_outcomes_remain_history_for<S: TestStore>() {
+    let mut store = S::fresh();
     store.create_run(run()).expect("run creates");
     let operation_id = op("operation");
     let first = attempt("attempt-1");
@@ -192,9 +265,8 @@ fn latest_dispatch_owns_recovery_while_old_outcomes_remain_history() {
     assert_eq!(state.outcome_history(&operation_id).count(), 1);
 }
 
-#[test]
-fn cancellation_retains_admission_and_prevents_dispatch() {
-    let mut store = InMemoryDurableStore::new();
+fn cancellation_retains_admission_and_prevents_dispatch_for<S: TestStore>() {
+    let mut store = S::fresh();
     store.create_run(run()).expect("run creates");
     let operation_id = op("operation");
     let attempt_id = attempt("attempt-1");
@@ -247,9 +319,8 @@ fn cancellation_retains_admission_and_prevents_dispatch() {
     assert!(state.dispatch_history().is_empty());
 }
 
-#[test]
-fn identical_commit_replay_does_not_advance_revision() {
-    let mut store = InMemoryDurableStore::new();
+fn identical_commit_replay_does_not_advance_revision_for<S: TestStore>() {
+    let mut store = S::fresh();
     store.create_run(run()).expect("run creates");
     let request = CommitRequest::single(
         run(),
@@ -272,9 +343,8 @@ fn identical_commit_replay_does_not_advance_revision() {
     );
 }
 
-#[test]
-fn replay_after_newer_commit_returns_live_head_for_the_next_cas() {
-    let mut store = InMemoryDurableStore::new();
+fn replay_after_newer_commit_returns_live_head_for_the_next_cas_for<S: TestStore>() {
+    let mut store = S::fresh();
     store.create_run(run()).expect("run creates");
     let first_request = CommitRequest::single(
         run(),
@@ -306,9 +376,8 @@ fn replay_after_newer_commit_returns_live_head_for_the_next_cas() {
         .expect("live replay head remains valid for the next CAS");
 }
 
-#[test]
-fn outcome_requires_admitted_dispatched_attempt_and_cannot_conflict() {
-    let mut store = InMemoryDurableStore::new();
+fn outcome_requires_admitted_dispatched_attempt_and_cannot_conflict_for<S: TestStore>() {
+    let mut store = S::fresh();
     store.create_run(run()).expect("run creates");
     let operation_id = op("operation");
     let attempt_id = attempt("attempt-1");
@@ -389,9 +458,8 @@ fn outcome_requires_admitted_dispatched_attempt_and_cannot_conflict() {
     ));
 }
 
-#[test]
-fn completion_requires_attempt_lineage_and_replay_is_idempotent() {
-    let mut store = InMemoryDurableStore::new();
+fn completion_requires_attempt_lineage_and_replay_is_idempotent_for<S: TestStore>() {
+    let mut store = S::fresh();
     store.create_run(run()).expect("run creates");
     let attempt_id = attempt("attempt-1");
     commit(
@@ -433,9 +501,8 @@ fn completion_requires_attempt_lineage_and_replay_is_idempotent() {
     ));
 }
 
-#[test]
-fn conflicting_completion_lineage_is_rejected_without_a_second_fact() {
-    let mut store = InMemoryDurableStore::new();
+fn conflicting_completion_lineage_is_rejected_without_a_second_fact_for<S: TestStore>() {
+    let mut store = S::fresh();
     store.create_run(run()).expect("run creates");
     let first = attempt("attempt-1");
     let second = attempt("attempt-2");
@@ -479,9 +546,8 @@ fn conflicting_completion_lineage_is_rejected_without_a_second_fact() {
     );
 }
 
-#[test]
-fn effect_completion_requires_latest_successful_dispatch() {
-    let mut store = InMemoryDurableStore::new();
+fn effect_completion_requires_latest_successful_dispatch_for<S: TestStore>() {
+    let mut store = S::fresh();
     store.create_run(run()).expect("run creates");
     let operation_id = op("operation");
     let first = attempt("attempt-1");
@@ -603,3 +669,44 @@ fn store_error_categories_are_distinct_from_domain_conflicts() {
         StoreErrorKind::Domain
     );
 }
+
+test_both_backends!(
+    admission_is_durable_before_dispatch_and_survives_store_clone,
+    admission_is_durable_before_dispatch_and_survives_store_clone_for
+);
+test_both_backends!(
+    stale_cas_and_conflicting_idempotency_leave_state_unchanged,
+    stale_cas_and_conflicting_idempotency_leave_state_unchanged_for
+);
+test_both_backends!(
+    latest_dispatch_owns_recovery_while_old_outcomes_remain_history,
+    latest_dispatch_owns_recovery_while_old_outcomes_remain_history_for
+);
+test_both_backends!(
+    cancellation_retains_admission_and_prevents_dispatch,
+    cancellation_retains_admission_and_prevents_dispatch_for
+);
+test_both_backends!(
+    identical_commit_replay_does_not_advance_revision,
+    identical_commit_replay_does_not_advance_revision_for
+);
+test_both_backends!(
+    replay_after_newer_commit_returns_live_head_for_the_next_cas,
+    replay_after_newer_commit_returns_live_head_for_the_next_cas_for
+);
+test_both_backends!(
+    outcome_requires_admitted_dispatched_attempt_and_cannot_conflict,
+    outcome_requires_admitted_dispatched_attempt_and_cannot_conflict_for
+);
+test_both_backends!(
+    completion_requires_attempt_lineage_and_replay_is_idempotent,
+    completion_requires_attempt_lineage_and_replay_is_idempotent_for
+);
+test_both_backends!(
+    conflicting_completion_lineage_is_rejected_without_a_second_fact,
+    conflicting_completion_lineage_is_rejected_without_a_second_fact_for
+);
+test_both_backends!(
+    effect_completion_requires_latest_successful_dispatch,
+    effect_completion_requires_latest_successful_dispatch_for
+);

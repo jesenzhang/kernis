@@ -70,14 +70,17 @@ impl FileDurableStore {
         if database_has_table(&database)? {
             return Ok(store);
         }
-        if existed || !created_by_store {
-            return Err(StoreError::DataCorruption(
-                "physical store is missing the Kernis durable-state table".to_string(),
-            ));
+        if created_by_store {
+            initialize_table(&database)?;
+            return Ok(store);
         }
-
-        initialize_table(&database)?;
-        Ok(store)
+        drop(database);
+        if wait_for_initialized_table(&store.path)? {
+            return Ok(store);
+        }
+        Err(StoreError::DataCorruption(
+            "physical store is missing the Kernis durable-state table".to_string(),
+        ))
     }
 
     /// Returns the database path used by this logical connection.
@@ -238,6 +241,21 @@ fn open_existing_database(path: &Path) -> Result<Database, StoreError> {
     Err(StoreError::BackendUnavailable)
 }
 
+fn wait_for_initialized_table(path: &Path) -> Result<bool, StoreError> {
+    for attempt in 0..=DATABASE_OPEN_RETRIES {
+        let database = open_existing_database(path)?;
+        let initialized = database_has_table(&database)?;
+        drop(database);
+        if initialized {
+            return Ok(true);
+        }
+        if attempt < DATABASE_OPEN_RETRIES {
+            std::thread::sleep(DATABASE_OPEN_RETRY_DELAY);
+        }
+    }
+    Ok(false)
+}
+
 fn initialize_table(database: &Database) -> Result<(), StoreError> {
     let write = database.begin_write().map_err(map_transaction_error)?;
     {
@@ -287,10 +305,10 @@ fn decode_state(encoded: &[u8]) -> Result<DurableRunState, StoreError> {
 fn map_io_error(error: io::Error) -> StoreError {
     let message = error.to_string();
     match error.kind() {
-        io::ErrorKind::NotFound
-        | io::ErrorKind::PermissionDenied
-        | io::ErrorKind::WouldBlock
-        | io::ErrorKind::TimedOut => StoreError::BackendUnavailable,
+        io::ErrorKind::NotFound | io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => {
+            StoreError::BackendUnavailable
+        }
+        io::ErrorKind::PermissionDenied => StoreError::IoFailure(message),
         io::ErrorKind::InvalidData => StoreError::DataCorruption(message),
         _ => StoreError::IoFailure(message),
     }
@@ -355,5 +373,26 @@ impl Display for FileDurableStore {
             .debug_tuple("FileDurableStore")
             .field(&self.path)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn io_error_categories_do_not_treat_permission_as_backend_contention() {
+        assert_eq!(
+            map_io_error(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "permission"
+            ))
+            .kind(),
+            crate::StoreErrorKind::IoFailure
+        );
+        assert_eq!(
+            map_io_error(io::Error::new(io::ErrorKind::WouldBlock, "locked")).kind(),
+            crate::StoreErrorKind::BackendUnavailable
+        );
     }
 }

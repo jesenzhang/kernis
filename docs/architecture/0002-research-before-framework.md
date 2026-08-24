@@ -26,7 +26,9 @@ The durable value is a versioned `postcard 1.1.3` snapshot of
 `DurableRunState`, prefixed with a Kernis format magic and schema version.
 `serde` derives are applied only to the stable durable fact types. Runtime
 objects such as Fibers, capability handles, streams, registries, disposers,
-and effect closures remain outside the snapshot.
+and effect closures remain outside the snapshot. The shared `kernis-core::Id`
+primitive is included because it is the identifier field inside those stable
+facts; it is not a serialization commitment for process-local runtime objects.
 
 ### Focused comparison
 

@@ -238,6 +238,23 @@ fn physical_store_reopens_with_all_supported_fact_classes() {
 }
 
 #[test]
+fn concurrent_first_openers_wait_for_bootstrap_instead_of_reporting_corruption() {
+    let temp = TempStore::new("bootstrap-race");
+    let first_path = temp.path.clone();
+    let second_path = temp.path.clone();
+    let (first, second) = std::thread::scope(|scope| {
+        let first = scope.spawn(|| FileDurableStore::open(first_path));
+        let second = scope.spawn(|| FileDurableStore::open(second_path));
+        (
+            first.join().expect("first opener does not panic"),
+            second.join().expect("second opener does not panic"),
+        )
+    });
+    assert!(first.is_ok(), "first opener failed: {first:?}");
+    assert!(second.is_ok(), "second opener failed: {second:?}");
+}
+
+#[test]
 fn physical_store_preserves_atomic_batches_cas_and_idempotent_replay() {
     let temp = TempStore::new("cas");
     let mut first = FileDurableStore::open(&temp.path).expect("first store opens");
