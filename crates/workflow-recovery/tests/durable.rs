@@ -4,10 +4,10 @@ use kernis_core::Id;
 use workflow_recovery::{
     AttemptAdmission, AttemptId, CapabilityReplayIdentity, CommitRequest, DurableMutation,
     DurableStore, EffectIntent, EffectSemantics, IdempotencyKey, InMemoryDurableStore,
-    KnownEffectOutcome, OperationId, OutcomeRecord, RunId, StoreError, StoreInvariant,
-    StoreRevision,
+    KnownEffectOutcome, OperationId, OutcomeRecord, RunId, StoreError, StoreErrorKind,
+    StoreInvariant, StoreRevision,
 };
-use workflow_recovery::{CancellationRecord, DispatchRecord};
+use workflow_recovery::{CancellationRecord, CompletionRecord, DispatchRecord};
 
 fn id(value: &str) -> Id {
     Id::new(value).expect("test id is valid")
@@ -36,6 +36,13 @@ fn admission(attempt_id: &AttemptId, operation_id: Option<OperationId>) -> Attem
         attempt_id: attempt_id.clone(),
         operation_id,
         capabilities: vec![CapabilityReplayIdentity::new(id("provider"), "provider-v1")],
+    }
+}
+
+fn completion(task_id: &str, attempt_id: &AttemptId) -> CompletionRecord {
+    CompletionRecord {
+        task_id: id(task_id),
+        attempt_id: attempt_id.clone(),
     }
 }
 
@@ -380,4 +387,219 @@ fn outcome_requires_admitted_dispatched_attempt_and_cannot_conflict() {
             StoreInvariant::ConflictingOutcome { .. }
         ))
     ));
+}
+
+#[test]
+fn completion_requires_attempt_lineage_and_replay_is_idempotent() {
+    let mut store = InMemoryDurableStore::new();
+    store.create_run(run()).expect("run creates");
+    let attempt_id = attempt("attempt-1");
+    commit(
+        &mut store,
+        StoreRevision::INITIAL,
+        "admit",
+        DurableMutation::AdmitAttempt(admission(&attempt_id, None)),
+    );
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    let request = CommitRequest::single(
+        run(),
+        revision,
+        key("completion"),
+        DurableMutation::RecordCompletion(completion("task", &attempt_id)),
+    );
+    let first = store.commit(request.clone()).expect("completion commits");
+    let replay = store.commit(request).expect("completion replay succeeds");
+    assert!(!first.replayed);
+    assert!(replay.replayed);
+    let state = store.load_run(&run()).expect("state loads");
+    assert_eq!(
+        state.completion_history(),
+        &[completion("task", &attempt_id)]
+    );
+    assert!(state.is_completed(&id("task")));
+
+    let revision = state.revision();
+    let wrong_task = store.commit(CommitRequest::single(
+        run(),
+        revision,
+        key("completion-wrong-task"),
+        DurableMutation::RecordCompletion(completion("other-task", &attempt_id)),
+    ));
+    assert!(matches!(
+        wrong_task,
+        Err(StoreError::InvariantViolation(
+            StoreInvariant::CompletionAttemptMismatch { .. }
+        ))
+    ));
+}
+
+#[test]
+fn conflicting_completion_lineage_is_rejected_without_a_second_fact() {
+    let mut store = InMemoryDurableStore::new();
+    store.create_run(run()).expect("run creates");
+    let first = attempt("attempt-1");
+    let second = attempt("attempt-2");
+    store
+        .commit(CommitRequest {
+            run_id: run(),
+            expected_revision: StoreRevision::INITIAL,
+            idempotency_key: key("admit-both"),
+            mutations: vec![
+                DurableMutation::AdmitAttempt(admission(&first, None)),
+                DurableMutation::AdmitAttempt(admission(&second, None)),
+            ],
+        })
+        .expect("attempts commit");
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    commit(
+        &mut store,
+        revision,
+        "completion-first",
+        DurableMutation::RecordCompletion(completion("task", &first)),
+    );
+    let before = store.load_run(&run()).expect("state loads");
+    let conflict = store.commit(CommitRequest::single(
+        run(),
+        before.revision(),
+        key("completion-second"),
+        DurableMutation::RecordCompletion(completion("task", &second)),
+    ));
+    assert!(matches!(
+        conflict,
+        Err(StoreError::InvariantViolation(
+            StoreInvariant::ConflictingCompletion { .. }
+        ))
+    ));
+    assert_eq!(
+        store
+            .load_run(&run())
+            .expect("state loads")
+            .completion_history(),
+        before.completion_history()
+    );
+}
+
+#[test]
+fn effect_completion_requires_latest_successful_dispatch() {
+    let mut store = InMemoryDurableStore::new();
+    store.create_run(run()).expect("run creates");
+    let operation_id = op("operation");
+    let first = attempt("attempt-1");
+    let second = attempt("attempt-2");
+    store
+        .commit(CommitRequest {
+            run_id: run(),
+            expected_revision: StoreRevision::INITIAL,
+            idempotency_key: key("intent-admit"),
+            mutations: vec![
+                DurableMutation::RecordIntent(EffectIntent {
+                    task_id: id("task"),
+                    operation_id: operation_id.clone(),
+                    semantics: EffectSemantics::Idempotent,
+                }),
+                DurableMutation::AdmitAttempt(admission(&first, Some(operation_id.clone()))),
+            ],
+        })
+        .expect("intent and admission commit");
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    let without_dispatch = store.commit(CommitRequest::single(
+        run(),
+        revision,
+        key("completion-before-dispatch"),
+        DurableMutation::RecordCompletion(completion("task", &first)),
+    ));
+    assert!(matches!(
+        without_dispatch,
+        Err(StoreError::InvariantViolation(
+            StoreInvariant::CompletionWithoutDispatch { .. }
+        ))
+    ));
+
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    commit(
+        &mut store,
+        revision,
+        "dispatch-first",
+        DurableMutation::RecordDispatch(DispatchRecord {
+            operation_id: operation_id.clone(),
+            attempt_id: first.clone(),
+        }),
+    );
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    let without_outcome = store.commit(CommitRequest::single(
+        run(),
+        revision,
+        key("completion-before-outcome"),
+        DurableMutation::RecordCompletion(completion("task", &first)),
+    ));
+    assert!(matches!(
+        without_outcome,
+        Err(StoreError::InvariantViolation(
+            StoreInvariant::CompletionWithoutSuccessfulOutcome { outcome: None, .. }
+        ))
+    ));
+
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    commit(
+        &mut store,
+        revision,
+        "outcome-first",
+        DurableMutation::RecordOutcome(OutcomeRecord {
+            operation_id: operation_id.clone(),
+            attempt_id: first.clone(),
+            outcome: KnownEffectOutcome::Succeeded,
+        }),
+    );
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    store
+        .commit(CommitRequest {
+            run_id: run(),
+            expected_revision: revision,
+            idempotency_key: key("retry"),
+            mutations: vec![
+                DurableMutation::AdmitAttempt(admission(&second, Some(operation_id.clone()))),
+                DurableMutation::RecordDispatch(DispatchRecord {
+                    operation_id: operation_id.clone(),
+                    attempt_id: second.clone(),
+                }),
+            ],
+        })
+        .expect("latest dispatch commits");
+    let revision = store.load_run(&run()).expect("state loads").revision();
+    let old_completion = store.commit(CommitRequest::single(
+        run(),
+        revision,
+        key("completion-old-attempt"),
+        DurableMutation::RecordCompletion(completion("task", &first)),
+    ));
+    assert!(matches!(
+        old_completion,
+        Err(StoreError::InvariantViolation(
+            StoreInvariant::CompletionNotLatestDispatch { .. }
+        ))
+    ));
+}
+
+#[test]
+fn store_error_categories_are_distinct_from_domain_conflicts() {
+    assert_eq!(
+        StoreError::BackendUnavailable.kind(),
+        StoreErrorKind::BackendUnavailable
+    );
+    assert_eq!(
+        StoreError::IoFailure("read failed".to_owned()).kind(),
+        StoreErrorKind::IoFailure
+    );
+    assert_eq!(
+        StoreError::DataCorruption("bad checksum".to_owned()).kind(),
+        StoreErrorKind::DataCorruption
+    );
+    assert_eq!(
+        StoreError::RevisionConflict {
+            expected: StoreRevision::INITIAL,
+            actual: StoreRevision::INITIAL,
+        }
+        .kind(),
+        StoreErrorKind::Domain
+    );
 }

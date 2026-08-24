@@ -18,13 +18,16 @@ use execution_stream::{
 use kernis_core::Id;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use workflow_graph::{MutationBatch, WorkflowGraph, WorkflowGraphError, WorkflowMutationRecord};
+use workflow_graph::{
+    CompletionRecord as WorkflowCompletionRecord, MutationBatch, WorkflowGraph, WorkflowGraphError,
+    WorkflowMutationRecord,
+};
 use workflow_recovery::{
-    AttemptAdmission, AttemptId, CapabilityReplayIdentity, CommitRequest, DispatchRecord,
-    DurableJournal, DurableMutation, DurableRunState, DurableStore, EffectIntent, EffectSemantics,
-    IdempotencyKey, InMemoryDurableStore, KnownEffectOutcome, OperationId, OutcomeRecord,
-    RecoveredEffectState, RecoveryAction, RecoveryDecision, StoreError, StoreRevision,
-    classify_recovery,
+    AttemptAdmission, AttemptId, CapabilityReplayIdentity, CommitRequest, CompletionRecord,
+    DispatchRecord, DurableJournal, DurableMutation, DurableRunState, DurableStore, EffectIntent,
+    EffectSemantics, IdempotencyKey, InMemoryDurableStore, KnownEffectOutcome, OperationId,
+    OutcomeRecord, RecoveredEffectState, RecoveryAction, RecoveryDecision, StoreError,
+    StoreInvariant, StoreRevision, WorkflowReplayIdentity, classify_recovery,
 };
 
 pub use workflow_recovery::RunId;
@@ -262,6 +265,16 @@ pub enum RuntimeError {
         /// Capability whose logical configuration differs.
         capability_id: Id,
     },
+    /// The supplied topology/configuration does not match the durable run.
+    WorkflowReplayIdentityMismatch {
+        /// Identity computed from the supplied workflow and configuration.
+        expected: WorkflowReplayIdentity,
+        /// Identity recorded by the durable run, if present.
+        actual: Option<WorkflowReplayIdentity>,
+    },
+    /// A run must be started or restored from topology without local
+    /// completion facts; completions must come from the durable authority.
+    PrecompletedWorkflow(Id),
     /// The deterministic attempt identity allocator is exhausted.
     AttemptIdExhausted,
     /// A cancelled task cannot be dispatched before its first dispatch.
@@ -338,6 +351,18 @@ impl fmt::Display for RuntimeError {
             } => write!(
                 f,
                 "task {task_id} capability {capability_id} does not match its durable replay identity"
+            ),
+            Self::WorkflowReplayIdentityMismatch { expected, actual } => write!(
+                f,
+                "workflow replay identity mismatch: expected {expected}, durable state has "
+            )
+            .and_then(|_| match actual {
+                Some(actual) => write!(f, "{actual}"),
+                None => f.write_str("none"),
+            }),
+            Self::PrecompletedWorkflow(task_id) => write!(
+                f,
+                "workflow supplied with non-durable completion fact for task {task_id}"
             ),
             Self::AttemptIdExhausted => f.write_str("task attempt identity exhausted"),
             Self::CancelledBeforeDispatch(task_id) => {
@@ -430,7 +455,18 @@ where
     where
         I: IntoIterator<Item = (Id, TaskConfig)>,
     {
-        let store_revision = store.create_run(run_id.clone())?;
+        ensure_unfinished_workflow(&workflow)?;
+        let task_configs = collect_task_configs(&workflow, task_configs)?;
+        let replay_identity = workflow_replay_identity(&workflow, &task_configs);
+        let created_revision = store.create_run(run_id.clone())?;
+        let store_revision = store
+            .commit(CommitRequest::single(
+                run_id.clone(),
+                created_revision,
+                IdempotencyKey::new("workflow-replay-identity")?,
+                DurableMutation::RecordWorkflowReplayIdentity(replay_identity),
+            ))?
+            .revision;
         Self::build(
             run_id,
             workflow,
@@ -458,7 +494,17 @@ where
     where
         I: IntoIterator<Item = (Id, TaskConfig)>,
     {
+        ensure_unfinished_workflow(&workflow)?;
+        let task_configs = collect_task_configs(&workflow, task_configs)?;
         let state = store.load_run(&run_id)?;
+        let expected_identity = workflow_replay_identity(&workflow, &task_configs);
+        if state.workflow_replay_identity() != Some(&expected_identity) {
+            return Err(RuntimeError::WorkflowReplayIdentityMismatch {
+                expected: expected_identity,
+                actual: state.workflow_replay_identity().cloned(),
+            });
+        }
+        let workflow = replay_workflow(&workflow, state.completion_history())?;
         let mut runtime = Self::build(
             run_id,
             workflow,
@@ -486,25 +532,15 @@ where
         Ok(runtime)
     }
 
-    fn build<I>(
+    fn build(
         run_id: RunId,
         workflow: WorkflowGraph,
         scope: Scope,
-        task_configs: I,
+        task_configs: BTreeMap<Id, TaskConfig>,
         journal: DurableJournal,
         store: S,
         store_revision: StoreRevision,
-    ) -> Result<Self, RuntimeError>
-    where
-        I: IntoIterator<Item = (Id, TaskConfig)>,
-    {
-        let mut configs = BTreeMap::new();
-        for (task_id, config) in task_configs {
-            if workflow.task(&task_id).is_none() {
-                return Err(RuntimeError::UnknownTask(task_id));
-            }
-            configs.insert(task_id, config);
-        }
+    ) -> Result<Self, RuntimeError> {
         Ok(Self {
             run_id,
             workflow,
@@ -514,7 +550,7 @@ where
             journal,
             store,
             store_revision,
-            task_configs: configs,
+            task_configs,
             attempts: Vec::new(),
             pending_started: None,
             cancelled: BTreeSet::new(),
@@ -599,7 +635,11 @@ where
         if self.workflow.task(&task_id).is_none() {
             return Err(RuntimeError::UnknownTask(task_id));
         }
-        self.task_configs.insert(task_id, config);
+        let mut candidate_configs = self.task_configs.clone();
+        candidate_configs.insert(task_id, config);
+        let replay_identity = workflow_replay_identity(&self.workflow, &candidate_configs);
+        self.commit_workflow_identity(replay_identity)?;
+        self.task_configs = candidate_configs;
         Ok(())
     }
 
@@ -612,9 +652,12 @@ where
     where
         B: Into<MutationBatch>,
     {
-        self.workflow
-            .apply_batch(expected_revision, batch)
-            .map_err(Into::into)
+        let mut candidate = self.workflow.clone();
+        let record = candidate.apply_batch(expected_revision, batch)?;
+        let replay_identity = workflow_replay_identity(&candidate, &self.task_configs);
+        self.commit_workflow_identity(replay_identity)?;
+        self.workflow = candidate;
+        Ok(record)
     }
 
     /// Persists an effect intent before any external dispatch.
@@ -742,8 +785,7 @@ where
                 .attempt_id
                 .clone();
             if !self.workflow.is_completed(&intent.task_id) {
-                self.workflow.complete(&intent.task_id)?;
-                self.emit_completed(intent.task_id, attempt_id)?;
+                self.complete_task(&intent.task_id, &attempt_id)?;
             }
         }
         Ok(decision)
@@ -877,8 +919,7 @@ where
             let attempt_id = self
                 .attempt_for_task(&task_id, None)
                 .map_or_else(|| self.begin_attempt(&task_id, None), Ok)?;
-            self.workflow.complete(&task_id)?;
-            self.emit_completed(task_id.clone(), attempt_id.clone())?;
+            self.complete_task(&task_id, &attempt_id)?;
             return Ok(StepResult::Completed {
                 task_id,
                 attempt_id,
@@ -912,8 +953,7 @@ where
                     .expect("known success has outcome")
                     .attempt_id
                     .clone();
-                self.workflow.complete(&task_id)?;
-                self.emit_completed(task_id.clone(), attempt_id.clone())?;
+                self.complete_task(&task_id, &attempt_id)?;
                 Ok(StepResult::Completed {
                     task_id,
                     attempt_id,
@@ -1103,6 +1143,35 @@ where
             })
     }
 
+    fn complete_task(&mut self, task_id: &Id, attempt_id: &AttemptId) -> Result<(), RuntimeError> {
+        let mut candidate = self.workflow.clone();
+        candidate.complete(task_id)?;
+        self.commit_durable(
+            format!("completion:{task_id}:{attempt_id}"),
+            vec![DurableMutation::RecordCompletion(CompletionRecord {
+                task_id: task_id.clone(),
+                attempt_id: attempt_id.clone(),
+            })],
+        )?;
+        self.workflow = candidate;
+        self.emit_completed(task_id.clone(), attempt_id.clone())
+    }
+
+    fn commit_workflow_identity(
+        &mut self,
+        replay_identity: WorkflowReplayIdentity,
+    ) -> Result<StoreRevision, RuntimeError> {
+        self.commit_durable(
+            format!(
+                "workflow-identity:{}:{replay_identity}",
+                self.store_revision.get()
+            ),
+            vec![DurableMutation::RecordWorkflowReplayIdentity(
+                replay_identity,
+            )],
+        )
+    }
+
     fn emit_completed(&mut self, task_id: Id, attempt_id: AttemptId) -> Result<(), RuntimeError> {
         let item = self.execution_sequencer.emit(RuntimeEvent::TaskCompleted {
             run_id: self.run_id.clone(),
@@ -1132,6 +1201,124 @@ where
         self.store_revision = result.revision;
         Ok(result.revision)
     }
+}
+
+fn ensure_unfinished_workflow(workflow: &WorkflowGraph) -> Result<(), RuntimeError> {
+    if let Some(completion) = workflow.completion_log().first() {
+        return Err(RuntimeError::PrecompletedWorkflow(
+            completion.task_id.clone(),
+        ));
+    }
+    Ok(())
+}
+
+fn collect_task_configs<I>(
+    workflow: &WorkflowGraph,
+    task_configs: I,
+) -> Result<BTreeMap<Id, TaskConfig>, RuntimeError>
+where
+    I: IntoIterator<Item = (Id, TaskConfig)>,
+{
+    let mut configs = BTreeMap::new();
+    for (task_id, config) in task_configs {
+        if workflow.task(&task_id).is_none() {
+            return Err(RuntimeError::UnknownTask(task_id));
+        }
+        configs.insert(task_id, config);
+    }
+    Ok(configs)
+}
+
+fn workflow_replay_identity(
+    workflow: &WorkflowGraph,
+    task_configs: &BTreeMap<Id, TaskConfig>,
+) -> WorkflowReplayIdentity {
+    let mut canonical = String::from("kernis-workflow-replay-v1");
+    append_identity_part(&mut canonical, "tasks");
+    for task in workflow.tasks() {
+        append_identity_part(&mut canonical, "task");
+        append_identity_part(&mut canonical, task.id.as_str());
+        append_identity_part(&mut canonical, &task.label);
+        if let Some(config) = task_configs.get(&task.id) {
+            append_identity_part(&mut canonical, "config");
+            for (capability_id, definition_identity) in &config.required_capabilities {
+                append_identity_part(&mut canonical, "capability");
+                append_identity_part(&mut canonical, capability_id.as_str());
+                match definition_identity {
+                    Some(definition_identity) => {
+                        append_identity_part(&mut canonical, "specified");
+                        append_identity_part(&mut canonical, definition_identity);
+                    }
+                    None => append_identity_part(&mut canonical, "unspecified"),
+                }
+            }
+            if let Some(effect) = &config.effect {
+                append_identity_part(&mut canonical, "effect");
+                append_identity_part(&mut canonical, effect.operation_id.as_str());
+                append_identity_part(
+                    &mut canonical,
+                    match effect.semantics {
+                        EffectSemantics::Idempotent => "idempotent",
+                        EffectSemantics::NonIdempotent => "non-idempotent",
+                    },
+                );
+            } else {
+                append_identity_part(&mut canonical, "no-effect");
+            }
+        } else {
+            append_identity_part(&mut canonical, "config");
+            append_identity_part(&mut canonical, "no-effect");
+        }
+    }
+    append_identity_part(&mut canonical, "edges");
+    for (task_id, dependency_id) in workflow.edges() {
+        append_identity_part(&mut canonical, task_id.as_str());
+        append_identity_part(&mut canonical, dependency_id.as_str());
+    }
+    WorkflowReplayIdentity::new(canonical)
+}
+
+fn append_identity_part(canonical: &mut String, value: &str) {
+    canonical.push(':');
+    canonical.push_str(&value.len().to_string());
+    canonical.push(':');
+    canonical.push_str(value);
+}
+
+fn replay_workflow(
+    supplied: &WorkflowGraph,
+    durable_completions: &[CompletionRecord],
+) -> Result<WorkflowGraph, RuntimeError> {
+    let completions = durable_completions
+        .iter()
+        .map(|completion| WorkflowCompletionRecord {
+            task_id: completion.task_id.clone(),
+        })
+        .collect::<Vec<_>>();
+    WorkflowGraph::replay_with_facts(supplied.mutation_log(), &completions).map_err(|error| {
+        let invariant = match error {
+            WorkflowGraphError::UnknownTask(task_id) => {
+                StoreInvariant::CompletionUnknownTask { task_id }
+            }
+            WorkflowGraphError::IncompletePrerequisite { task, dependency } => {
+                StoreInvariant::CompletionPrerequisiteMismatch {
+                    task_id: task,
+                    dependency,
+                }
+            }
+            WorkflowGraphError::TaskAlreadyCompleted(task_id) => {
+                StoreInvariant::CompletionReplayRejected {
+                    task_id: Some(task_id),
+                    reason: "task completion was replayed twice".to_owned(),
+                }
+            }
+            other => StoreInvariant::CompletionReplayRejected {
+                task_id: None,
+                reason: other.to_string(),
+            },
+        };
+        RuntimeError::Store(StoreError::InvariantViolation(invariant))
+    })
 }
 
 fn stream_id(value: &str) -> Id {

@@ -35,6 +35,36 @@ impl fmt::Display for RunId {
     }
 }
 
+/// Stable identity of the supplied workflow topology and runtime
+/// configuration used for replay validation.
+///
+/// The value is an opaque, versioned canonical representation owned by the
+/// caller. It is deliberately not a topology revision: equivalent topology
+/// and configuration must produce the same identity even when their mutation
+/// history was assembled differently.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WorkflowReplayIdentity(String);
+
+impl WorkflowReplayIdentity {
+    /// Creates an identity from a caller-generated canonical representation.
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Returns the canonical identity representation.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for WorkflowReplayIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Monotonic revision of durable state.
 ///
 /// This is deliberately distinct from `kernis_core::Revision`, which belongs
@@ -127,6 +157,19 @@ pub struct CancellationRecord {
     pub attempt_id: Option<AttemptId>,
 }
 
+/// Durable completion fact for one admitted task attempt.
+///
+/// The workflow graph remains the authority for prerequisite semantics. The
+/// attempt identity here lets the store validate that the completion belongs
+/// to the admitted task lineage without copying graph scheduling rules.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompletionRecord {
+    /// Task whose completion is being recorded.
+    pub task_id: Id,
+    /// Admitted attempt responsible for the completion.
+    pub attempt_id: AttemptId,
+}
+
 /// Caller-supplied identity for an idempotent durable mutation.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct IdempotencyKey(String);
@@ -160,6 +203,8 @@ impl fmt::Display for IdempotencyKey {
 /// One typed correctness mutation accepted by a [`DurableStore`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DurableMutation {
+    /// Establish or update the workflow replay identity for this run.
+    RecordWorkflowReplayIdentity(WorkflowReplayIdentity),
     /// Admit an attempt before its observation or external dispatch.
     AdmitAttempt(AttemptAdmission),
     /// Establish ownership of one logical external effect.
@@ -170,6 +215,8 @@ pub enum DurableMutation {
     RecordDispatch(DispatchRecord),
     /// Record a result for one exact attempt.
     RecordOutcome(OutcomeRecord),
+    /// Record a workflow task completion after its durable prerequisites pass.
+    RecordCompletion(CompletionRecord),
 }
 
 /// One atomic compare-and-swap request against a run's durable state.
@@ -219,6 +266,71 @@ pub struct CommitResult {
 /// Structured durable-state invariant violation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StoreInvariant {
+    /// A durable completion referenced a task absent from the supplied
+    /// workflow topology during replay.
+    CompletionUnknownTask {
+        /// Task named by the invalid completion fact.
+        task_id: Id,
+    },
+    /// A durable completion was replayed before one of its prerequisites.
+    CompletionPrerequisiteMismatch {
+        /// Task whose completion cannot be replayed.
+        task_id: Id,
+        /// Prerequisite that was not yet completed.
+        dependency: Id,
+    },
+    /// A durable completion log could not be replayed by the workflow graph.
+    CompletionReplayRejected {
+        /// Task involved in the rejected replay, when known.
+        task_id: Option<Id>,
+        /// Stable description of the graph rejection.
+        reason: String,
+    },
+    /// A completion referenced no admitted attempt.
+    CompletionWithoutAdmission {
+        /// Attempt named by the completion.
+        attempt_id: AttemptId,
+    },
+    /// A completion attempt belongs to another task.
+    CompletionAttemptMismatch {
+        /// Task named by the completion.
+        task_id: Id,
+        /// Attempt named by the completion.
+        attempt_id: AttemptId,
+    },
+    /// An effect completion referenced an operation without its intent.
+    CompletionWithoutIntent {
+        /// Operation named by the admitted attempt.
+        operation_id: OperationId,
+    },
+    /// An effect completion referenced an attempt without a dispatch fact.
+    CompletionWithoutDispatch {
+        /// Attempt named by the completion.
+        attempt_id: AttemptId,
+    },
+    /// An effect completion was not for the latest dispatch attempt.
+    CompletionNotLatestDispatch {
+        /// Operation whose latest dispatch wins recovery authority.
+        operation_id: OperationId,
+        /// Older attempt incorrectly used for completion.
+        attempt_id: AttemptId,
+    },
+    /// An effect completion lacked a known successful outcome.
+    CompletionWithoutSuccessfulOutcome {
+        /// Attempt named by the completion.
+        attempt_id: AttemptId,
+        /// Known outcome, if any.
+        outcome: Option<KnownEffectOutcome>,
+    },
+    /// A task already has a different durable completion lineage.
+    ConflictingCompletion {
+        /// Task whose completion facts conflict.
+        task_id: Id,
+        /// Attempt that was recorded first.
+        existing_attempt_id: AttemptId,
+        /// Attempt supplied by the conflicting fact.
+        attempted_attempt_id: AttemptId,
+    },
     /// An attempt id was already admitted with a different identity.
     AttemptIdReuse {
         /// Reused attempt identity.
@@ -309,6 +421,8 @@ pub enum StoreError {
     },
     /// An empty idempotency key was supplied.
     EmptyIdempotencyKey,
+    /// An empty workflow replay identity was supplied.
+    EmptyWorkflowReplayIdentity,
     /// The mutation list was empty.
     EmptyCommit,
     /// A typed mutation violated a durable invariant.
@@ -318,6 +432,56 @@ pub enum StoreError {
         /// Last representable revision.
         current: StoreRevision,
     },
+    /// The physical or remote backend is temporarily unavailable.
+    BackendUnavailable,
+    /// The backend reported an I/O failure without implying data corruption.
+    IoFailure(String),
+    /// The backend returned data that cannot be trusted as a durable state.
+    DataCorruption(String),
+}
+
+/// Broad category of a durable-store failure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StoreErrorKind {
+    /// A domain-level conflict or invariant rejection.
+    Domain,
+    /// The backend could not currently be reached or used.
+    BackendUnavailable,
+    /// The backend reported an I/O failure.
+    IoFailure,
+    /// Persisted data failed integrity or decoding validation.
+    DataCorruption,
+}
+
+impl StoreError {
+    /// Returns the backend-neutral category of this error.
+    #[must_use]
+    pub const fn kind(&self) -> StoreErrorKind {
+        match self {
+            Self::BackendUnavailable => StoreErrorKind::BackendUnavailable,
+            Self::IoFailure(_) => StoreErrorKind::IoFailure,
+            Self::DataCorruption(_) => StoreErrorKind::DataCorruption,
+            _ => StoreErrorKind::Domain,
+        }
+    }
+
+    /// Returns whether this is a backend-unavailable failure.
+    #[must_use]
+    pub const fn is_backend_unavailable(&self) -> bool {
+        matches!(self, Self::BackendUnavailable)
+    }
+
+    /// Returns whether this is an I/O failure.
+    #[must_use]
+    pub const fn is_io_failure(&self) -> bool {
+        matches!(self, Self::IoFailure(_))
+    }
+
+    /// Returns whether this is a persistent-data corruption failure.
+    #[must_use]
+    pub const fn is_data_corruption(&self) -> bool {
+        matches!(self, Self::DataCorruption(_))
+    }
 }
 
 impl fmt::Display for StoreError {
@@ -338,12 +502,18 @@ impl fmt::Display for StoreError {
                 )
             }
             Self::EmptyIdempotencyKey => f.write_str("idempotency key is empty"),
+            Self::EmptyWorkflowReplayIdentity => f.write_str("workflow replay identity is empty"),
             Self::EmptyCommit => f.write_str("durable commit contains no mutations"),
             Self::InvariantViolation(invariant) => {
                 write!(f, "durable invariant violation: {invariant:?}")
             }
             Self::RevisionExhausted { current } => {
                 write!(f, "durable revision exhausted at {current}")
+            }
+            Self::BackendUnavailable => f.write_str("durable store backend is unavailable"),
+            Self::IoFailure(message) => write!(f, "durable store I/O failure: {message}"),
+            Self::DataCorruption(message) => {
+                write!(f, "durable store data corruption: {message}")
             }
         }
     }
@@ -356,6 +526,7 @@ impl std::error::Error for StoreError {}
 pub struct DurableRunState {
     run_id: RunId,
     revision: StoreRevision,
+    workflow_replay_identity: Option<WorkflowReplayIdentity>,
     admissions: BTreeMap<AttemptId, AttemptAdmission>,
     admission_history: Vec<AttemptAdmission>,
     intents: BTreeMap<OperationId, EffectIntent>,
@@ -365,6 +536,8 @@ pub struct DurableRunState {
     dispatch_history: Vec<DispatchRecord>,
     outcomes: BTreeMap<AttemptId, OutcomeRecord>,
     outcome_history: Vec<OutcomeRecord>,
+    completions: BTreeMap<Id, CompletionRecord>,
+    completion_history: Vec<CompletionRecord>,
     idempotency: BTreeMap<IdempotencyKey, (Vec<DurableMutation>, StoreRevision)>,
 }
 
@@ -373,6 +546,7 @@ impl DurableRunState {
         Self {
             run_id,
             revision: StoreRevision::INITIAL,
+            workflow_replay_identity: None,
             admissions: BTreeMap::new(),
             admission_history: Vec::new(),
             intents: BTreeMap::new(),
@@ -382,6 +556,8 @@ impl DurableRunState {
             dispatch_history: Vec::new(),
             outcomes: BTreeMap::new(),
             outcome_history: Vec::new(),
+            completions: BTreeMap::new(),
+            completion_history: Vec::new(),
             idempotency: BTreeMap::new(),
         }
     }
@@ -396,6 +572,12 @@ impl DurableRunState {
     #[must_use]
     pub const fn revision(&self) -> StoreRevision {
         self.revision
+    }
+
+    /// Returns the durable workflow replay identity, if it has been set.
+    #[must_use]
+    pub const fn workflow_replay_identity(&self) -> Option<&WorkflowReplayIdentity> {
+        self.workflow_replay_identity.as_ref()
     }
 
     /// Returns all admitted attempts in durable admission order.
@@ -475,6 +657,24 @@ impl DurableRunState {
     /// Returns all known outcomes in durable append order.
     pub fn outcome_history_all(&self) -> &[OutcomeRecord] {
         &self.outcome_history
+    }
+
+    /// Returns all durable completion facts in append order.
+    #[must_use]
+    pub fn completion_history(&self) -> &[CompletionRecord] {
+        &self.completion_history
+    }
+
+    /// Returns whether a task has a durable completion fact.
+    #[must_use]
+    pub fn is_completed(&self, task_id: &Id) -> bool {
+        self.completions.contains_key(task_id)
+    }
+
+    /// Returns the durable completion fact for one task, if present.
+    #[must_use]
+    pub fn completion_for_task(&self, task_id: &Id) -> Option<&CompletionRecord> {
+        self.completions.get(task_id)
     }
 
     /// Returns the outcome of the latest dispatch, if known.
@@ -611,6 +811,12 @@ fn apply_mutation(
     mutation: &DurableMutation,
 ) -> Result<(), StoreError> {
     match mutation {
+        DurableMutation::RecordWorkflowReplayIdentity(identity) => {
+            if identity.as_str().trim().is_empty() {
+                return Err(StoreError::EmptyWorkflowReplayIdentity);
+            }
+            state.workflow_replay_identity = Some(identity.clone());
+        }
         DurableMutation::AdmitAttempt(admission) => {
             if admission.run_id != state.run_id {
                 return Err(StoreError::InvariantViolation(
@@ -803,6 +1009,82 @@ fn apply_mutation(
                 .outcomes
                 .insert(outcome.attempt_id.clone(), outcome.clone());
             state.outcome_history.push(outcome.clone());
+        }
+        DurableMutation::RecordCompletion(completion) => {
+            let Some(admission) = state.admissions.get(&completion.attempt_id) else {
+                return Err(StoreError::InvariantViolation(
+                    StoreInvariant::CompletionWithoutAdmission {
+                        attempt_id: completion.attempt_id.clone(),
+                    },
+                ));
+            };
+            if admission.task_id != completion.task_id {
+                return Err(StoreError::InvariantViolation(
+                    StoreInvariant::CompletionAttemptMismatch {
+                        task_id: completion.task_id.clone(),
+                        attempt_id: completion.attempt_id.clone(),
+                    },
+                ));
+            }
+            if let Some(operation_id) = &admission.operation_id {
+                if !state.intents.contains_key(operation_id) {
+                    return Err(StoreError::InvariantViolation(
+                        StoreInvariant::CompletionWithoutIntent {
+                            operation_id: operation_id.clone(),
+                        },
+                    ));
+                }
+                if state
+                    .dispatches
+                    .get(&completion.attempt_id)
+                    .is_none_or(|dispatch| &dispatch.operation_id != operation_id)
+                {
+                    return Err(StoreError::InvariantViolation(
+                        StoreInvariant::CompletionWithoutDispatch {
+                            attempt_id: completion.attempt_id.clone(),
+                        },
+                    ));
+                }
+                if state
+                    .latest_dispatch(operation_id)
+                    .is_none_or(|dispatch| dispatch.attempt_id != completion.attempt_id)
+                {
+                    return Err(StoreError::InvariantViolation(
+                        StoreInvariant::CompletionNotLatestDispatch {
+                            operation_id: operation_id.clone(),
+                            attempt_id: completion.attempt_id.clone(),
+                        },
+                    ));
+                }
+                let outcome = state
+                    .outcomes
+                    .get(&completion.attempt_id)
+                    .map(|outcome| outcome.outcome);
+                if outcome != Some(KnownEffectOutcome::Succeeded) {
+                    return Err(StoreError::InvariantViolation(
+                        StoreInvariant::CompletionWithoutSuccessfulOutcome {
+                            attempt_id: completion.attempt_id.clone(),
+                            outcome,
+                        },
+                    ));
+                }
+            }
+            if let Some(existing) = state.completions.get(&completion.task_id) {
+                if existing == completion {
+                    return Ok(());
+                }
+                return Err(StoreError::InvariantViolation(
+                    StoreInvariant::ConflictingCompletion {
+                        task_id: completion.task_id.clone(),
+                        existing_attempt_id: existing.attempt_id.clone(),
+                        attempted_attempt_id: completion.attempt_id.clone(),
+                    },
+                ));
+            }
+            state
+                .completions
+                .insert(completion.task_id.clone(), completion.clone());
+            state.completion_history.push(completion.clone());
         }
     }
     Ok(())

@@ -11,8 +11,9 @@ mod recovery;
 
 pub use durable::{
     AttemptAdmission, CancellationRecord, CapabilityReplayIdentity, CommitRequest, CommitResult,
-    DurableMutation, DurableRunState, DurableStore, IdempotencyKey, InMemoryDurableStore, RunId,
-    StoreError, StoreInvariant, StoreRevision,
+    CompletionRecord, DurableMutation, DurableRunState, DurableStore, IdempotencyKey,
+    InMemoryDurableStore, RunId, StoreError, StoreErrorKind, StoreInvariant, StoreRevision,
+    WorkflowReplayIdentity,
 };
 pub use journal::{DurableJournal, JournalError, JournalInvariant};
 pub use model::{

@@ -2,13 +2,13 @@
 
 use capability_graph::{CapabilityDefinition, CapabilityValue, Scope};
 use kernis_core::Id;
-use runtime_core::{Cancellation, RunId, Runtime, StepResult, TaskConfig};
+use runtime_core::{Cancellation, RunId, Runtime, RuntimeError, StepResult, TaskConfig};
 use std::sync::{Arc, Mutex};
 use workflow_graph::{Task, WorkflowGraph, WorkflowMutation};
 use workflow_recovery::{
-    CommitRequest, CommitResult, DurableMutation, DurableStore, EffectSemantics,
-    InMemoryDurableStore, KnownEffectOutcome, OperationId, RecoveredEffectState, RecoveryAction,
-    StoreError, StoreRevision,
+    AttemptAdmission, AttemptId, CommitRequest, CommitResult, CompletionRecord, DurableMutation,
+    DurableStore, EffectSemantics, InMemoryDurableStore, KnownEffectOutcome, OperationId,
+    RecoveredEffectState, RecoveryAction, StoreError, StoreRevision,
 };
 
 fn id(value: &str) -> Id {
@@ -50,6 +50,61 @@ struct StoreObservations {
 struct ObservingStore {
     inner: InMemoryDurableStore,
     observations: Arc<Mutex<StoreObservations>>,
+}
+
+#[derive(Clone, Debug)]
+struct FailingStore {
+    error: StoreError,
+}
+
+impl DurableStore for FailingStore {
+    fn create_run(&mut self, _run_id: RunId) -> Result<StoreRevision, StoreError> {
+        Ok(StoreRevision::INITIAL)
+    }
+
+    fn load_run(&self, _run_id: &RunId) -> Result<workflow_recovery::DurableRunState, StoreError> {
+        Err(self.error.clone())
+    }
+
+    fn commit(&mut self, _request: CommitRequest) -> Result<CommitResult, StoreError> {
+        Err(self.error.clone())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct CompletionFailingStore {
+    inner: InMemoryDurableStore,
+    error: StoreError,
+}
+
+impl CompletionFailingStore {
+    fn new(error: StoreError) -> Self {
+        Self {
+            inner: InMemoryDurableStore::new(),
+            error,
+        }
+    }
+}
+
+impl DurableStore for CompletionFailingStore {
+    fn create_run(&mut self, run_id: RunId) -> Result<StoreRevision, StoreError> {
+        self.inner.create_run(run_id)
+    }
+
+    fn load_run(&self, run_id: &RunId) -> Result<workflow_recovery::DurableRunState, StoreError> {
+        self.inner.load_run(run_id)
+    }
+
+    fn commit(&mut self, request: CommitRequest) -> Result<CommitResult, StoreError> {
+        if request
+            .mutations
+            .iter()
+            .any(|mutation| matches!(mutation, DurableMutation::RecordCompletion(_)))
+        {
+            return Err(self.error.clone());
+        }
+        self.inner.commit(request)
+    }
 }
 
 impl ObservingStore {
@@ -219,6 +274,455 @@ fn outcome_before_restart_completes_without_a_second_dispatch() {
         restarted.step().expect("completion is not replayed"),
         StepResult::Idle
     );
+}
+
+#[test]
+fn no_effect_completion_survives_a_cold_restart_and_unblocks_dependents() {
+    let first_task = id("first-task");
+    let second_task = id("second-task");
+    let third_task = id("third-task");
+    let mut workflow = WorkflowGraph::default();
+    workflow
+        .apply_batch(
+            workflow.revision(),
+            [
+                WorkflowMutation::AddTask {
+                    task: Task {
+                        id: first_task.clone(),
+                        label: "first task".to_owned(),
+                    },
+                },
+                WorkflowMutation::AddTask {
+                    task: Task {
+                        id: second_task.clone(),
+                        label: "second task".to_owned(),
+                    },
+                },
+                WorkflowMutation::AddTask {
+                    task: Task {
+                        id: third_task.clone(),
+                        label: "third task".to_owned(),
+                    },
+                },
+                WorkflowMutation::AddDependency {
+                    task_id: second_task.clone(),
+                    dependency_id: first_task.clone(),
+                },
+                WorkflowMutation::AddDependency {
+                    task_id: third_task.clone(),
+                    dependency_id: second_task.clone(),
+                },
+            ],
+        )
+        .expect("workflow is valid");
+    let run_id = RunId::new("no-effect-restart").expect("run id is valid");
+    let mut runtime = Runtime::start_run(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+    )
+    .expect("runtime starts");
+
+    assert!(matches!(
+        runtime.step().expect("first task completes"),
+        StepResult::Completed { ref task_id, .. } if task_id == &first_task
+    ));
+
+    let mut restarted = Runtime::restore_run(
+        run_id,
+        workflow,
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        runtime.store().clone(),
+    )
+    .expect("cold restart reconstructs");
+
+    assert!(restarted.workflow().is_completed(&first_task));
+    assert!(matches!(
+        restarted.step().expect("dependent task becomes ready"),
+        StepResult::Completed { ref task_id, .. } if task_id == &second_task
+    ));
+    assert!(matches!(
+        restarted.step().expect("third task becomes ready"),
+        StepResult::Completed { ref task_id, .. } if task_id == &third_task
+    ));
+}
+
+#[test]
+fn completion_is_not_repeated_after_two_cold_restarts() {
+    let operation_id = operation("completion-replay-operation");
+    let workflow = workflow();
+    let run_id = RunId::new("completion-replay").expect("run id is valid");
+    let mut runtime = Runtime::start_run(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        [(id("task"), config(&operation_id))],
+    )
+    .expect("runtime starts");
+    let attempt_id = match runtime.step().expect("attempt admission succeeds") {
+        StepResult::EffectPending { attempt_id, .. } => attempt_id,
+        other => panic!("expected pending effect, got {other:?}"),
+    };
+    runtime
+        .dispatch_effect(&operation_id)
+        .expect("dispatch commits");
+    runtime
+        .record_effect_outcome(&operation_id, attempt_id, KnownEffectOutcome::Succeeded)
+        .expect("outcome commits");
+
+    let mut first_restart = Runtime::restore_run(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        [(id("task"), config(&operation_id))],
+        runtime.store().clone(),
+    )
+    .expect("first cold restart reconstructs");
+    assert!(matches!(
+        first_restart
+            .step()
+            .expect("known success commits completion"),
+        StepResult::Completed { .. }
+    ));
+    let committed = first_restart.durable_state().expect("completion loads");
+    assert_eq!(committed.completion_history().len(), 1);
+    let mut second_restart = Runtime::restore_run(
+        run_id,
+        workflow,
+        Scope::root(),
+        [(id("task"), config(&operation_id))],
+        first_restart.store().clone(),
+    )
+    .expect("second cold restart reconstructs");
+
+    assert!(second_restart.workflow().is_completed(&id("task")));
+    assert_eq!(
+        second_restart.step().expect("completed task is idle"),
+        StepResult::Idle
+    );
+    let replayed = second_restart.durable_state().expect("completion loads");
+    assert_eq!(replayed.completion_history().len(), 1);
+    assert_eq!(replayed.dispatch_history().len(), 1);
+}
+
+#[test]
+fn supplied_topology_or_configuration_mismatch_fails_closed() {
+    let operation_id = operation("identity-operation");
+    let run_id = RunId::new("identity-run").expect("run id is valid");
+    let workflow = workflow();
+    let runtime = Runtime::start_run(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        [(id("task"), config(&operation_id))],
+    )
+    .expect("runtime starts");
+
+    let mut changed_topology = workflow.clone();
+    changed_topology
+        .apply_batch(
+            changed_topology.revision(),
+            [WorkflowMutation::AddTask {
+                task: Task {
+                    id: id("extra-task"),
+                    label: "extra task".to_owned(),
+                },
+            }],
+        )
+        .expect("changed topology is valid");
+    let topology_result = Runtime::restore_run(
+        run_id.clone(),
+        changed_topology,
+        Scope::root(),
+        [(id("task"), config(&operation_id))],
+        runtime.store().clone(),
+    );
+    assert!(matches!(
+        topology_result,
+        Err(RuntimeError::WorkflowReplayIdentityMismatch { .. })
+    ));
+
+    let changed_operation = operation("different-operation");
+    let configuration_result = Runtime::restore_run(
+        run_id,
+        workflow,
+        Scope::root(),
+        [(id("task"), config(&changed_operation))],
+        runtime.store().clone(),
+    );
+    assert!(matches!(
+        configuration_result,
+        Err(RuntimeError::WorkflowReplayIdentityMismatch { .. })
+    ));
+}
+
+#[test]
+fn replay_identity_transitions_are_not_replayed_from_an_old_revision() {
+    let operation_a = operation("identity-operation-a");
+    let operation_b = operation("identity-operation-b");
+    let run_id = RunId::new("identity-transition-run").expect("run id is valid");
+    let workflow = workflow();
+    let mut runtime = Runtime::start_run(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        [(id("task"), config(&operation_a))],
+    )
+    .expect("runtime starts");
+
+    runtime
+        .configure_task(id("task"), config(&operation_b))
+        .expect("identity changes to B");
+    runtime
+        .configure_task(id("task"), config(&operation_a))
+        .expect("identity changes back to A");
+    runtime
+        .configure_task(id("task"), config(&operation_b))
+        .expect("identity changes to B again");
+
+    Runtime::restore_run(
+        run_id,
+        workflow,
+        Scope::root(),
+        [(id("task"), config(&operation_b))],
+        runtime.store().clone(),
+    )
+    .expect("latest identity is durable");
+}
+
+#[test]
+fn starting_from_local_completion_facts_fails_closed() {
+    let task_id = id("task");
+    let mut completed_workflow = workflow();
+    completed_workflow
+        .complete(&task_id)
+        .expect("test workflow completes");
+    let result = Runtime::start_run(
+        RunId::new("precompleted-run").expect("run id is valid"),
+        completed_workflow,
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+    );
+    assert!(matches!(
+        result,
+        Err(RuntimeError::PrecompletedWorkflow(id)) if id == task_id
+    ));
+}
+
+#[test]
+fn completion_replay_rejects_an_invalid_prerequisite_order() {
+    let first_task = id("first-task");
+    let second_task = id("second-task");
+    let mut workflow = WorkflowGraph::default();
+    workflow
+        .apply_batch(
+            workflow.revision(),
+            [
+                WorkflowMutation::AddTask {
+                    task: Task {
+                        id: first_task.clone(),
+                        label: "first task".to_owned(),
+                    },
+                },
+                WorkflowMutation::AddTask {
+                    task: Task {
+                        id: second_task.clone(),
+                        label: "second task".to_owned(),
+                    },
+                },
+                WorkflowMutation::AddDependency {
+                    task_id: second_task.clone(),
+                    dependency_id: first_task.clone(),
+                },
+            ],
+        )
+        .expect("workflow is valid");
+    let run_id = RunId::new("invalid-completion-order").expect("run id is valid");
+    let runtime = Runtime::start_run(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+    )
+    .expect("runtime starts");
+    let mut store = runtime.store().clone();
+    let first_attempt = AttemptId::new("first-attempt").expect("attempt is valid");
+    let second_attempt = AttemptId::new("second-attempt").expect("attempt is valid");
+    let revision = store.load_run(&run_id).expect("state loads").revision();
+    store
+        .commit(CommitRequest {
+            run_id: run_id.clone(),
+            expected_revision: revision,
+            idempotency_key: workflow_recovery::IdempotencyKey::new("admit-chain")
+                .expect("key is valid"),
+            mutations: vec![
+                DurableMutation::AdmitAttempt(AttemptAdmission {
+                    run_id: run_id.clone(),
+                    task_id: first_task.clone(),
+                    attempt_id: first_attempt.clone(),
+                    operation_id: None,
+                    capabilities: Vec::new(),
+                }),
+                DurableMutation::AdmitAttempt(AttemptAdmission {
+                    run_id: run_id.clone(),
+                    task_id: second_task.clone(),
+                    attempt_id: second_attempt.clone(),
+                    operation_id: None,
+                    capabilities: Vec::new(),
+                }),
+            ],
+        })
+        .expect("attempt admissions commit");
+    let revision = store.load_run(&run_id).expect("state loads").revision();
+    store
+        .commit(CommitRequest::single(
+            run_id.clone(),
+            revision,
+            workflow_recovery::IdempotencyKey::new("complete-second-first").expect("key is valid"),
+            DurableMutation::RecordCompletion(CompletionRecord {
+                task_id: second_task,
+                attempt_id: second_attempt,
+            }),
+        ))
+        .expect("store retains facts without topology semantics");
+
+    let result = Runtime::restore_run(
+        run_id,
+        workflow,
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        store,
+    );
+    assert!(matches!(
+        result,
+        Err(RuntimeError::Store(StoreError::InvariantViolation(
+            workflow_recovery::StoreInvariant::CompletionPrerequisiteMismatch { .. }
+        )))
+    ));
+}
+
+#[test]
+fn backend_failures_remain_classifiable_through_runtime_error() {
+    let run_id = RunId::new("failing-run").expect("run id is valid");
+    let workflow = workflow();
+    for error in [
+        StoreError::BackendUnavailable,
+        StoreError::IoFailure("read failed".to_owned()),
+        StoreError::DataCorruption("invalid durable bytes".to_owned()),
+    ] {
+        let expected_kind = error.kind();
+        let result = Runtime::<FailingStore>::restore_run(
+            run_id.clone(),
+            workflow.clone(),
+            Scope::root(),
+            std::iter::empty::<(Id, TaskConfig)>(),
+            FailingStore { error },
+        );
+        match result {
+            Err(RuntimeError::Store(actual)) => assert_eq!(actual.kind(), expected_kind),
+            _ => panic!("expected classified store error"),
+        }
+    }
+
+    let result = Runtime::<FailingStore>::start_run_with_store(
+        RunId::new("failing-start").expect("run id is valid"),
+        workflow,
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FailingStore {
+            error: StoreError::BackendUnavailable,
+        },
+    );
+    assert!(matches!(
+        result,
+        Err(RuntimeError::Store(StoreError::BackendUnavailable))
+    ));
+}
+
+#[test]
+fn completion_commit_backend_failure_prevents_local_completion_and_observation() {
+    let operation_id = operation("completion-commit-failure");
+    let run_id = RunId::new("completion-commit-failure-run").expect("run id is valid");
+    let workflow = workflow();
+    let mut runtime = Runtime::start_run_with_store(
+        run_id.clone(),
+        workflow,
+        Scope::root(),
+        [(id("task"), config(&operation_id))],
+        CompletionFailingStore::new(StoreError::DataCorruption(
+            "completion write rejected".to_owned(),
+        )),
+    )
+    .expect("runtime starts before completion failure");
+    let attempt_id = match runtime.step().expect("attempt admits") {
+        StepResult::EffectPending { attempt_id, .. } => attempt_id,
+        other => panic!("expected pending effect, got {other:?}"),
+    };
+    runtime
+        .dispatch_effect(&operation_id)
+        .expect("dispatch commits");
+    runtime
+        .record_effect_outcome(&operation_id, attempt_id, KnownEffectOutcome::Succeeded)
+        .expect("outcome commits");
+
+    let result = runtime.step();
+    assert!(matches!(
+        result,
+        Err(RuntimeError::Store(StoreError::DataCorruption(_)))
+    ));
+    assert!(!runtime.workflow().is_completed(&id("task")));
+    assert!(
+        runtime
+            .drain_execution_events()
+            .iter()
+            .all(|item| !matches!(
+                item.payload,
+                runtime_core::RuntimeEvent::TaskCompleted { .. }
+            ))
+    );
+    assert!(
+        runtime
+            .durable_state()
+            .expect("state loads")
+            .completion_history()
+            .is_empty()
+    );
+}
+
+#[test]
+fn completion_commit_is_present_before_task_completed_can_be_observed() {
+    let run_id = RunId::new("completion-order-run").expect("run id is valid");
+    let store = ObservingStore::new();
+    let observations = store.observations.clone();
+    let mut runtime = Runtime::<ObservingStore>::start_run_with_store(
+        run_id,
+        workflow(),
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        store,
+    )
+    .expect("runtime starts");
+
+    assert!(matches!(
+        runtime.step().expect("task completes"),
+        StepResult::Completed { .. }
+    ));
+    let commits = observations
+        .lock()
+        .expect("store observations are not poisoned")
+        .commits
+        .clone();
+    assert!(commits.iter().any(|mutations| {
+        mutations
+            .iter()
+            .any(|mutation| matches!(mutation, DurableMutation::RecordCompletion(_)))
+    }));
+    assert!(runtime.drain_execution_events().iter().any(|item| matches!(
+        &item.payload,
+        runtime_core::RuntimeEvent::TaskCompleted { .. }
+    )));
 }
 
 #[test]

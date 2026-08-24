@@ -1,7 +1,8 @@
 # M2-B Durable State Model
 
-Status: M2-B0 complete; M2-B1 in-memory durable-store/restart slice
-implemented; concrete physical persistence adapter not started
+Status: M2-B0 complete; M2-B1 in-memory durable-store/restart slice and
+completion/replay contract closure implemented; concrete physical persistence
+adapter not started
 
 This document defines the boundary between durable correctness state and
 process-local runtime state. The default rule is:
@@ -13,7 +14,9 @@ process-local runtime state. The default rule is:
 | Category | State | Owner / rule |
 | --- | --- | --- |
 | Durable | Run identity | Stable `RunId` for the workflow execution. |
-| Durable | Workflow revision and completed facts | `WorkflowGraph` remains the topology/revision/completion authority. |
+| Supplied | Workflow topology and mutation history | `WorkflowGraph` owns the topology and revision; restore receives the unfinished graph and uses the durable replay identity to validate it. |
+| Durable | Workflow completion facts | `DurableStore` retains typed task/attempt completion facts; `WorkflowGraph` remains the topology, prerequisite, and local completion authority when those facts are replayed. |
+| Durable | Workflow replay identity | A canonical identity covers the supplied topology and runtime configuration; restore rejects a mismatch before creating process-local runtime objects. |
 | Durable | Operation ownership | One `TaskId` owns one logical `OperationId`; duplicate ownership is rejected. |
 | Durable | Effect intent | `DurableJournal` records the logical effect and its semantics before external dispatch. |
 | Durable | Dispatch record | `DurableJournal` records the latest `OperationId`/`AttemptId` dispatch identity. |
@@ -38,9 +41,9 @@ process-local runtime state. The default rule is:
 
 Recovery has three separate jobs:
 
-1. Reconstruct correctness state: workflow revision/completion, operation
-   ownership, intent, dispatch, outcomes, cancellation, retry classification,
-   and timers.
+1. Reconstruct correctness state: supplied workflow topology/revision plus
+   durable completion facts, operation ownership, intent, dispatch, outcomes,
+   cancellation, retry classification, and timers.
 2. Reconstruct runtime process objects: contexts, registry entries, Fibers,
    effect scopes, handles, queues, and worker-local indexes.
 3. Reconstruct observations only when useful: stream consumers may resume from
@@ -62,7 +65,9 @@ validate expected workflow revision and operation ownership
   -> commit
   -> perform external dispatch
   -> commit outcome with OperationId + AttemptId compare-and-set
-  -> apply workflow completion from known outcome
+  -> commit task completion with AttemptId lineage
+  -> apply workflow completion locally
+  -> emit TaskCompleted observation
 ```
 
 The external effect is never performed before its intent/dispatch authority is
@@ -70,10 +75,23 @@ committed. If the process crashes after the dispatch commit but before the
 outcome commit, the outcome is unknown. Recovery must classify that state from
 the durable facts, not guess from a missing Fiber or stream event.
 
+The replay identity is the current canonical identity for an evolving
+workflow/configuration. Runtime topology/configuration changes update it in a
+separate CAS-protected durable mutation whose idempotency key includes the
+current store revision, so a previously used target identity cannot replay an
+old transition.
+
+If the outcome is committed but completion is not, restore replays the known
+outcome and commits completion without another dispatch. If completion is
+already committed, restore reconstructs the completed graph and the scheduler
+returns `Idle` without appending another completion fact. Completion replay is
+ordered by durable append order, so prerequisite violations fail closed.
+
 The first backend should be an embedded transactional journal plus materialized
 state/snapshot store. It should expose append-before-effect, idempotent append,
 compare-and-swap on revision, and a monotonic revision. A distributed store,
-provider SDK, WAL implementation, and SQL adapter are outside M2-B0.
+provider SDK, WAL implementation, and SQL adapter are outside this in-memory
+contract closure.
 
 ## Crash and cancellation decisions
 
@@ -131,10 +149,11 @@ merged under one generic retry API.
 3. Kernis gaps: a durable store, a durable timer/lease boundary,
    worker-execution identity, non-idempotent provider reconciliation protocol,
    and a validated retry-pending-execution API.
-4. Minimum authoritative persistent state: `RunId`, workflow revision and
-   completion facts, task/operation ownership, intent, latest dispatch,
-   outcomes, `AttemptId` lineage, cancellation, recovery inputs, and capability
-   replay/config identity where needed.
+4. Minimum authoritative persistent state: `RunId`, supplied workflow replay
+   identity, completion facts, task/operation ownership, intent, latest
+   dispatch, outcomes, `AttemptId` lineage, cancellation, recovery inputs, and
+   capability replay/config identity where needed. The store does not copy the
+   workflow topology or scheduler semantics.
 5. Fiber is not durable because it contains process-local handles, mutexes,
    async tasks, effect closures, and caches; only the configuration and facts
    required to reconstruct it are durable.
@@ -153,22 +172,27 @@ merged under one generic retry API.
     store behind a trait; a concrete SQLite or embedded-log adapter is deferred.
 11. The transaction boundary is expected-revision validation plus atomic
     intent/ownership/cancellation/dispatch fact commit; outcome CAS and
-    workflow-completion application are subsequent idempotent boundaries.
+    completion-fact commits are subsequent idempotent boundaries, with local
+    workflow application and `TaskCompleted` observation after the completion
+    commit.
 12. M2-B1 should first implement the minimal `DurableStore` interface and
     deterministic in-memory conformance backend, then crash-boundary tests,
     before selecting a concrete backend.
 
 ## M2-B1 implementation status
 
-The first M2-B1 slice is implemented with a synchronous typed
-`DurableStore` seam and deterministic `InMemoryDurableStore` adapter. Its
-`StoreRevision` is independent from workflow topology revision.  Attempt
-admission is an append-only fact before `TaskStarted`; dispatch and outcome
-facts retain exact `AttemptId` lineage, and recovery authority follows the
-latest dispatch while older outcomes remain history.  Cancellation is retained
-and conflicting cancellation lineage is rejected without rewriting prior
-facts.  Capability replay identity is stored separately from process-local
-generation, `EntryId`, and live handles.
+The M2-B1 slice is implemented with a synchronous typed `DurableStore` seam
+and deterministic `InMemoryDurableStore` adapter. Its `StoreRevision` is
+independent from workflow topology revision. Attempt admission is an
+append-only fact before `TaskStarted`; dispatch and outcome facts retain exact
+`AttemptId` lineage, and recovery authority follows the latest dispatch while
+older outcomes remain history. Completion is an append-only fact tied to the
+admitted attempt, with idempotent replay and prerequisite validation delegated
+to `WorkflowGraph`. Cancellation is retained and conflicting cancellation
+lineage is rejected without rewriting prior facts. Capability replay identity
+is stored separately from process-local generation, `EntryId`, and live
+handles. The store also exposes backend-neutral unavailable, I/O, and
+corruption error categories.
 
 Runtime restart tests reconstruct a new Runtime-owned reactive coordinator
 from a cloned durable store view with fresh streams, registry state, fibers,

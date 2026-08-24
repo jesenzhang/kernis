@@ -46,9 +46,12 @@ authority.
 
 ### Durable Authority
 
-DurableStore/DurableJournal own effect intent, dispatch, outcome, cancellation,
-operation/attempt lineage, and replay identity. Durable facts are kept
-separate from process-local fibers and live capability handles.
+DurableStore/DurableJournal own workflow replay identity, completion lineage,
+effect intent, dispatch, outcome, cancellation, and operation/attempt lineage.
+`WorkflowGraph` remains the authority for topology and completion semantics;
+durable completion facts are replayed into a fresh graph before scheduling.
+Durable facts are kept separate from process-local fibers and live capability
+handles.
 
 ### Runtime Core
 
@@ -89,8 +92,8 @@ future validated references.
 - M1 Runtime Core: implemented and integrated.
 - M2-A Capability Runtime: integrated.
 - M2-B0: complete.
-- M2-B1: in-memory `DurableStore`/restart slice implemented; physical
-  persistence adapter not started.
+- M2-B1: in-memory `DurableStore`/restart slice and durable completion/replay
+  contract closure implemented; physical persistence adapter not started.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at

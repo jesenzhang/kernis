@@ -11,7 +11,8 @@ Validate and freeze the architecture through reproducible experiments:
 - E01-E05 semantic research;
 - M1 Runtime Core;
 - M2-A Capability Runtime;
-- M2-B durable authority and in-memory restart slice;
+- M2-B durable authority, in-memory restart slice, and completion/replay
+  contract closure;
 - M2-C1 reactive lifecycle;
 - M2-C2 Runtime-owned reactive capability boundary.
 
