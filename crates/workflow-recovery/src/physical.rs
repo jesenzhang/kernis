@@ -18,7 +18,8 @@ use std::time::Duration;
 
 const RUNS: TableDefinition<&str, &[u8]> = TableDefinition::new("kernis_runs_v1");
 const FORMAT_MAGIC: &[u8] = b"KERNIS-DURABLE-STATE";
-const FORMAT_VERSION: u16 = 1;
+const FORMAT_VERSION: u16 = 2;
+const CHECKSUM_LEN: usize = std::mem::size_of::<u64>();
 const DATABASE_OPEN_RETRIES: usize = 40;
 const DATABASE_OPEN_RETRY_DELAY: Duration = Duration::from_millis(5);
 
@@ -38,7 +39,8 @@ impl FileDurableStore {
     /// Opens or creates a physical durable store at `path`.
     ///
     /// A newly created file receives the current table schema. Existing files
-    /// with an incompatible redb format or missing Kernis table fail closed.
+    /// with an incompatible redb format or missing Kernis table fail closed
+    /// with an explicit backend or corruption category.
     ///
     /// # Errors
     ///
@@ -78,9 +80,16 @@ impl FileDurableStore {
         if wait_for_initialized_table(&store.path)? {
             return Ok(store);
         }
-        Err(StoreError::DataCorruption(
-            "physical store is missing the Kernis durable-state table".to_string(),
-        ))
+        let database = open_existing_database(&store.path)?;
+        let has_any_table = database_has_any_table(&database)?;
+        drop(database);
+        if has_any_table {
+            Err(StoreError::DataCorruption(
+                "physical store is missing the Kernis durable-state table".to_string(),
+            ))
+        } else {
+            Err(StoreError::BackendUnavailable)
+        }
     }
 
     /// Returns the database path used by this logical connection.
@@ -225,6 +234,12 @@ fn database_has_table(database: &Database) -> Result<bool, StoreError> {
     }
 }
 
+fn database_has_any_table(database: &Database) -> Result<bool, StoreError> {
+    let read = database.begin_read().map_err(map_transaction_error)?;
+    let mut tables = read.list_tables().map_err(map_storage_error)?;
+    Ok(tables.next().is_some())
+}
+
 fn open_existing_database(path: &Path) -> Result<Database, StoreError> {
     for attempt in 0..=DATABASE_OPEN_RETRIES {
         match Database::open(path) {
@@ -268,15 +283,16 @@ fn encode_state(state: &DurableRunState) -> Result<Vec<u8>, StoreError> {
     let payload = postcard::to_allocvec(state).map_err(|error| {
         StoreError::IoFailure(format!("durable state encoding failed: {error:?}"))
     })?;
-    let mut encoded = Vec::with_capacity(FORMAT_MAGIC.len() + 2 + payload.len());
+    let mut encoded = Vec::with_capacity(FORMAT_MAGIC.len() + 2 + CHECKSUM_LEN + payload.len());
     encoded.extend_from_slice(FORMAT_MAGIC);
     encoded.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+    encoded.extend_from_slice(&checksum(&payload).to_le_bytes());
     encoded.extend_from_slice(&payload);
     Ok(encoded)
 }
 
 fn decode_state(encoded: &[u8]) -> Result<DurableRunState, StoreError> {
-    let header_len = FORMAT_MAGIC.len() + std::mem::size_of::<u16>();
+    let header_len = FORMAT_MAGIC.len() + std::mem::size_of::<u16>() + CHECKSUM_LEN;
     if encoded.len() < header_len || !encoded.starts_with(FORMAT_MAGIC) {
         return Err(StoreError::DataCorruption(
             "durable state schema header is invalid".to_string(),
@@ -289,6 +305,17 @@ fn decode_state(encoded: &[u8]) -> Result<DurableRunState, StoreError> {
             "unsupported durable state schema version {version}"
         )));
     }
+    let checksum_offset = FORMAT_MAGIC.len() + std::mem::size_of::<u16>();
+    let expected_checksum = u64::from_le_bytes(
+        encoded[checksum_offset..checksum_offset + CHECKSUM_LEN]
+            .try_into()
+            .expect("checksum length is fixed"),
+    );
+    if expected_checksum != checksum(&encoded[header_len..]) {
+        return Err(StoreError::DataCorruption(
+            "durable state checksum mismatch".to_string(),
+        ));
+    }
     let (state, remainder) = postcard::take_from_bytes::<DurableRunState>(&encoded[header_len..])
         .map_err(|error| {
         StoreError::DataCorruption(format!("durable state payload is invalid: {error:?}"))
@@ -300,6 +327,15 @@ fn decode_state(encoded: &[u8]) -> Result<DurableRunState, StoreError> {
     }
     state.validate_persisted()?;
     Ok(state)
+}
+
+fn checksum(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 fn map_io_error(error: io::Error) -> StoreError {
@@ -393,6 +429,21 @@ mod tests {
         assert_eq!(
             map_io_error(io::Error::new(io::ErrorKind::WouldBlock, "locked")).kind(),
             crate::StoreErrorKind::BackendUnavailable
+        );
+    }
+
+    #[test]
+    fn encoded_state_checksum_rejects_payload_mutation() {
+        let state = DurableRunState::new(crate::RunId::new("checksum-run").expect("run is valid"));
+        let mut encoded = encode_state(&state).expect("state encodes");
+        let last = encoded.last_mut().expect("payload is non-empty");
+        *last ^= 1;
+
+        assert_eq!(
+            decode_state(&encoded)
+                .expect_err("mutated payload is rejected")
+                .kind(),
+            crate::StoreErrorKind::DataCorruption
         );
     }
 }

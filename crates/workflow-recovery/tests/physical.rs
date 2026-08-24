@@ -357,7 +357,19 @@ fn physical_store_survives_process_restart_between_outcome_and_completion() {
     let before_completion = store.load_run(&run()).expect("parent loads state");
     assert_eq!(before_completion.dispatch_history().len(), 1);
     assert_eq!(before_completion.outcome_history_all().len(), 1);
-    assert!(before_completion.completion_history().is_empty());
+    assert_eq!(before_completion.attempts().count(), 3);
+    assert_eq!(before_completion.completion_history().len(), 1);
+    assert!(
+        before_completion
+            .completion_for_task(&id("child-no-effect-task"))
+            .is_some()
+    );
+    assert_eq!(before_completion.cancellations().count(), 1);
+    assert!(
+        before_completion
+            .cancellation(&id("child-cancelled-task"))
+            .is_some()
+    );
 
     let attempt_id = attempt("child-attempt");
     let completion = store.commit(CommitRequest::single(
@@ -375,7 +387,7 @@ fn physical_store_survives_process_restart_between_outcome_and_completion() {
     );
     let after_completion = store.load_run(&run()).expect("completed state loads");
     assert_eq!(after_completion.dispatch_history().len(), 1);
-    assert_eq!(after_completion.completion_history().len(), 1);
+    assert_eq!(after_completion.completion_history().len(), 2);
 }
 
 #[test]
@@ -448,6 +460,56 @@ fn child_writes_after_outcome() {
             outcome: KnownEffectOutcome::Succeeded,
         }),
     );
+    let no_effect_attempt = attempt("child-no-effect-attempt");
+    let revision = store
+        .load_run(&run())
+        .expect("child loads state")
+        .revision();
+    commit(
+        &mut store,
+        revision,
+        "no-effect-admission",
+        DurableMutation::AdmitAttempt(admission("child-no-effect-task", &no_effect_attempt, None)),
+    );
+    let revision = store
+        .load_run(&run())
+        .expect("child loads state")
+        .revision();
+    commit(
+        &mut store,
+        revision,
+        "no-effect-completion",
+        DurableMutation::RecordCompletion(CompletionRecord {
+            task_id: id("child-no-effect-task"),
+            attempt_id: no_effect_attempt,
+        }),
+    );
+    let cancelled_attempt = attempt("child-cancelled-attempt");
+    let revision = store
+        .load_run(&run())
+        .expect("child loads state")
+        .revision();
+    commit(
+        &mut store,
+        revision,
+        "cancelled-admission",
+        DurableMutation::AdmitAttempt(admission("child-cancelled-task", &cancelled_attempt, None)),
+    );
+    let revision = store
+        .load_run(&run())
+        .expect("child loads state")
+        .revision();
+    commit(
+        &mut store,
+        revision,
+        "cancellation",
+        DurableMutation::RecordCancellation(CancellationRecord {
+            run_id: run(),
+            task_id: id("child-cancelled-task"),
+            operation_id: None,
+            attempt_id: Some(cancelled_attempt),
+        }),
+    );
 }
 
 #[test]
@@ -462,5 +524,32 @@ fn physical_backend_errors_keep_categories_distinct() {
 
     fs::write(&temp.path, b"not a redb database").expect("test corrupts backend");
     let corruption = FileDurableStore::open(&temp.path).expect_err("corrupt backend fails");
+    assert_eq!(corruption.kind(), StoreErrorKind::DataCorruption);
+}
+
+#[test]
+fn physical_open_distinguishes_incomplete_bootstrap_from_incompatible_schema() {
+    let empty = TempStore::new("empty-bootstrap");
+    let database = redb::Database::create(&empty.path).expect("bare redb database creates");
+    drop(database);
+    let incomplete = FileDurableStore::open(&empty.path).expect_err("empty bootstrap is rejected");
+    assert_eq!(incomplete.kind(), StoreErrorKind::BackendUnavailable);
+
+    let incompatible = TempStore::new("incompatible-schema");
+    const FOREIGN: redb::TableDefinition<&str, &[u8]> =
+        redb::TableDefinition::new("foreign_table_v1");
+    let database = redb::Database::create(&incompatible.path).expect("bare redb database creates");
+    let write = database.begin_write().expect("foreign schema write begins");
+    {
+        let mut table = write.open_table(FOREIGN).expect("foreign table opens");
+        table
+            .insert("foreign", b"payload".as_slice())
+            .expect("foreign row inserts");
+    }
+    write.commit().expect("foreign schema commits");
+    drop(database);
+
+    let corruption =
+        FileDurableStore::open(&incompatible.path).expect_err("incompatible schema is rejected");
     assert_eq!(corruption.kind(), StoreErrorKind::DataCorruption);
 }

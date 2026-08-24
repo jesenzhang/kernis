@@ -1,13 +1,13 @@
 #![allow(missing_docs)]
 
 use kernis_core::Id;
-use runtime_core::{RunId, Runtime, StepResult, TaskConfig};
+use runtime_core::{RunId, Runtime, RuntimeError, StepResult, TaskConfig};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use workflow_graph::{Task, WorkflowGraph, WorkflowMutation};
 use workflow_recovery::{
-    EffectSemantics, FileDurableStore, KnownEffectOutcome, OperationId, RecoveryAction,
+    EffectSemantics, FileDurableStore, KnownEffectOutcome, OperationId, RecoveryAction, StoreError,
 };
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -308,4 +308,35 @@ fn runtime_reopens_physical_no_effect_completion_and_dependency_chain() {
     );
     let state = final_restart.durable_state().expect("chain state loads");
     assert_eq!(state.completion_history().len(), 2);
+}
+
+#[test]
+fn runtime_restore_rejects_corrupt_physical_state_before_recovery() {
+    let temp = TempStore::new("corruption");
+    let run_id = RunId::new("physical-runtime-corruption").expect("run id is valid");
+    let workflow = single_task_workflow("task");
+    let runtime = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow.clone(),
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FileDurableStore::open(&temp.path).expect("physical store opens"),
+    )
+    .expect("runtime starts");
+    let store = runtime.store().clone();
+    drop(runtime);
+
+    fs::write(&temp.path, b"not a redb database").expect("test corrupts backend");
+    let restored = Runtime::<FileDurableStore>::restore_run(
+        run_id,
+        workflow,
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        store,
+    );
+
+    assert!(matches!(
+        restored,
+        Err(RuntimeError::Store(StoreError::DataCorruption(_)))
+    ));
 }
