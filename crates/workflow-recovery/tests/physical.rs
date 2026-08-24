@@ -8,8 +8,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use workflow_recovery::{
     AttemptAdmission, AttemptId, CancellationRecord, CapabilityReplayIdentity, CommitRequest,
     CompletionRecord, DispatchRecord, DurableMutation, DurableStore, EffectIntent, EffectSemantics,
-    FileDurableStore, IdempotencyKey, KnownEffectOutcome, OperationId, OutcomeRecord, RunId,
-    StoreError, StoreErrorKind, StoreInvariant, StoreRevision, WorkflowReplayIdentity,
+    FileDurableStore, IdempotencyKey, InMemoryDurableStore, KnownEffectOutcome, OperationId,
+    OutcomeRecord, RunId, StoreError, StoreErrorKind, StoreInvariant, StoreRevision,
+    WorkflowReplayIdentity,
 };
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -86,6 +87,51 @@ fn commit<S: DurableStore>(
             mutation,
         ))
         .expect("durable commit is valid")
+}
+
+fn supported_fact_sequence() -> Vec<DurableMutation> {
+    let operation_id = operation("conformance-operation");
+    let attempt_id = attempt("conformance-attempt");
+    let cancelled_attempt = attempt("conformance-cancelled");
+    vec![
+        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new(
+            "workflow:conformance:v1",
+        )),
+        DurableMutation::RecordIntent(EffectIntent {
+            task_id: id("conformance-effect-task"),
+            operation_id: operation_id.clone(),
+            semantics: EffectSemantics::Idempotent,
+        }),
+        DurableMutation::AdmitAttempt(admission(
+            "conformance-effect-task",
+            &attempt_id,
+            Some(operation_id.clone()),
+        )),
+        DurableMutation::RecordDispatch(DispatchRecord {
+            operation_id: operation_id.clone(),
+            attempt_id: attempt_id.clone(),
+        }),
+        DurableMutation::RecordOutcome(OutcomeRecord {
+            operation_id,
+            attempt_id: attempt_id.clone(),
+            outcome: KnownEffectOutcome::Succeeded,
+        }),
+        DurableMutation::RecordCompletion(CompletionRecord {
+            task_id: id("conformance-effect-task"),
+            attempt_id,
+        }),
+        DurableMutation::AdmitAttempt(admission(
+            "conformance-cancelled-task",
+            &cancelled_attempt,
+            None,
+        )),
+        DurableMutation::RecordCancellation(CancellationRecord {
+            run_id: run(),
+            task_id: id("conformance-cancelled-task"),
+            operation_id: None,
+            attempt_id: Some(cancelled_attempt),
+        }),
+    ]
 }
 
 #[test]
@@ -248,6 +294,34 @@ fn physical_store_preserves_atomic_batches_cas_and_idempotent_replay() {
             .workflow_replay_identity(),
         Some(&WorkflowReplayIdentity::new("workflow:v1"))
     );
+}
+
+#[test]
+fn physical_adapter_matches_in_memory_for_the_typed_fact_sequence() {
+    let temp = TempStore::new("conformance");
+    let mut memory = InMemoryDurableStore::new();
+    let mut physical = FileDurableStore::open(&temp.path).expect("physical store opens");
+    memory.create_run(run()).expect("memory run creates");
+    physical.create_run(run()).expect("physical run creates");
+
+    for (index, mutation) in supported_fact_sequence().into_iter().enumerate() {
+        let memory_revision = memory.load_run(&run()).expect("memory loads").revision();
+        let physical_revision = physical
+            .load_run(&run())
+            .expect("physical loads")
+            .revision();
+        assert_eq!(memory_revision, physical_revision);
+        let key_value = format!("conformance-{index}");
+        let request = CommitRequest::single(run(), memory_revision, key(&key_value), mutation);
+        assert_eq!(
+            memory.commit(request.clone()).expect("memory commits"),
+            physical.commit(request).expect("physical commits")
+        );
+        assert_eq!(
+            memory.load_run(&run()).expect("memory state loads"),
+            physical.load_run(&run()).expect("physical state loads")
+        );
+    }
 }
 
 #[test]

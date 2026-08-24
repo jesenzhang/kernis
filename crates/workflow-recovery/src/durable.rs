@@ -725,90 +725,43 @@ impl DurableRunState {
                 "persisted workflow replay identity is empty".to_string(),
             ));
         }
-        for (key, (mutations, revision)) in &self.idempotency {
-            if key.as_str().trim().is_empty()
-                || revision.get() == StoreRevision::INITIAL.get()
-                || *revision > self.revision
-            {
+        for key in self.idempotency.keys() {
+            if key.as_str().trim().is_empty() {
                 return Err(StoreError::DataCorruption(
                     "persisted idempotency metadata is invalid".to_string(),
                 ));
             }
-            for mutation in mutations {
-                match mutation {
-                    DurableMutation::RecordWorkflowReplayIdentity(identity)
-                        if identity.as_str().trim().is_empty() =>
-                    {
-                        return Err(StoreError::DataCorruption(
-                            "persisted idempotency mutation has an empty replay identity"
-                                .to_string(),
-                        ));
-                    }
-                    DurableMutation::AdmitAttempt(admission) if admission.run_id != self.run_id => {
-                        return Err(StoreError::DataCorruption(
-                            "persisted idempotency admission has the wrong run identity"
-                                .to_string(),
-                        ));
-                    }
-                    DurableMutation::RecordCancellation(cancellation)
-                        if cancellation.run_id != self.run_id =>
-                    {
-                        return Err(StoreError::DataCorruption(
-                            "persisted idempotency cancellation has the wrong run identity"
-                                .to_string(),
-                        ));
-                    }
-                    _ => {}
-                }
-            }
         }
 
+        let mut committed_batches = self.idempotency.values().collect::<Vec<_>>();
+        committed_batches.sort_by_key(|(_, revision)| *revision);
         let mut reconstructed = Self::new(self.run_id.clone());
-        reconstructed.workflow_replay_identity = self.workflow_replay_identity.clone();
-        for admission in &self.admission_history {
-            apply_mutation(
-                &mut reconstructed,
-                &DurableMutation::AdmitAttempt(admission.clone()),
-            )
-            .map_err(persisted_mutation_error)?;
+        let mut expected_revision = StoreRevision::INITIAL.get() + 1;
+        for (mutations, revision) in committed_batches {
+            if mutations.is_empty() || revision.get() != expected_revision {
+                return Err(StoreError::DataCorruption(
+                    "persisted idempotency revisions are not contiguous".to_string(),
+                ));
+            }
+            for mutation in mutations {
+                apply_mutation(&mut reconstructed, mutation).map_err(persisted_mutation_error)?;
+            }
+            reconstructed.revision = *revision;
+            expected_revision = expected_revision.checked_add(1).ok_or_else(|| {
+                StoreError::DataCorruption(
+                    "persisted idempotency revision sequence is exhausted".to_string(),
+                )
+            })?;
         }
-        for intent in self.intents.values() {
-            apply_mutation(
-                &mut reconstructed,
-                &DurableMutation::RecordIntent(intent.clone()),
-            )
-            .map_err(persisted_mutation_error)?;
-        }
-        for dispatch in &self.dispatch_history {
-            apply_mutation(
-                &mut reconstructed,
-                &DurableMutation::RecordDispatch(dispatch.clone()),
-            )
-            .map_err(persisted_mutation_error)?;
-        }
-        for outcome in &self.outcome_history {
-            apply_mutation(
-                &mut reconstructed,
-                &DurableMutation::RecordOutcome(outcome.clone()),
-            )
-            .map_err(persisted_mutation_error)?;
-        }
-        for cancellation in self.cancellations.values() {
-            apply_mutation(
-                &mut reconstructed,
-                &DurableMutation::RecordCancellation(cancellation.clone()),
-            )
-            .map_err(persisted_mutation_error)?;
-        }
-        for completion in &self.completion_history {
-            apply_mutation(
-                &mut reconstructed,
-                &DurableMutation::RecordCompletion(completion.clone()),
-            )
-            .map_err(persisted_mutation_error)?;
+        if self.revision.get() != expected_revision - 1 {
+            return Err(StoreError::DataCorruption(
+                "persisted revision does not match idempotency history".to_string(),
+            ));
         }
 
-        if reconstructed.admissions != self.admissions
+        if reconstructed.revision != self.revision
+            || reconstructed.workflow_replay_identity != self.workflow_replay_identity
+            || reconstructed.admissions != self.admissions
             || reconstructed.admission_history != self.admission_history
             || reconstructed.intents != self.intents
             || reconstructed.task_operations != self.task_operations
@@ -1207,4 +1160,44 @@ pub(crate) fn apply_mutation(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persisted_validation_replays_idempotency_batches() {
+        let run_id = RunId::new("persisted-validation-run").expect("run id is valid");
+        let identity = WorkflowReplayIdentity::new("workflow:v1");
+        let idempotency_key = IdempotencyKey::new("identity").expect("key is valid");
+        let mut state = DurableRunState::new(run_id);
+        state.revision = StoreRevision(1);
+        state.workflow_replay_identity = Some(identity.clone());
+        state.idempotency.insert(
+            idempotency_key,
+            (
+                vec![DurableMutation::RecordWorkflowReplayIdentity(
+                    identity.clone(),
+                )],
+                StoreRevision(1),
+            ),
+        );
+        state
+            .validate_persisted()
+            .expect("valid idempotency batch replays");
+
+        state
+            .idempotency
+            .values_mut()
+            .next()
+            .expect("entry exists")
+            .0 = vec![DurableMutation::RecordWorkflowReplayIdentity(
+            WorkflowReplayIdentity::new("workflow:v2"),
+        )];
+        assert!(matches!(
+            state.validate_persisted(),
+            Err(StoreError::DataCorruption(_))
+        ));
+    }
 }

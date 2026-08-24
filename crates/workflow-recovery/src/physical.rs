@@ -14,10 +14,13 @@ use std::fmt::Display;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const RUNS: TableDefinition<&str, &[u8]> = TableDefinition::new("kernis_runs_v1");
 const FORMAT_MAGIC: &[u8] = b"KERNIS-DURABLE-STATE";
 const FORMAT_VERSION: u16 = 1;
+const DATABASE_OPEN_RETRIES: usize = 40;
+const DATABASE_OPEN_RETRY_DELAY: Duration = Duration::from_millis(5);
 
 /// Physical durable store using one embedded redb file.
 ///
@@ -52,16 +55,22 @@ impl FileDurableStore {
 
         let store = Self { path };
         let existed = store.path.exists();
-        let database = if existed {
-            Database::open(&store.path).map_err(map_database_error)?
+        let (database, created_by_store) = if existed {
+            (open_existing_database(&store.path)?, false)
         } else {
-            Database::create(&store.path).map_err(map_database_error)?
+            match Database::create(&store.path) {
+                Ok(database) => (database, true),
+                Err(DatabaseError::DatabaseAlreadyOpen) => {
+                    (open_existing_database(&store.path)?, false)
+                }
+                Err(error) => return Err(map_database_error(error)),
+            }
         };
 
         if database_has_table(&database)? {
             return Ok(store);
         }
-        if existed {
+        if existed || !created_by_store {
             return Err(StoreError::DataCorruption(
                 "physical store is missing the Kernis durable-state table".to_string(),
             ));
@@ -78,7 +87,7 @@ impl FileDurableStore {
     }
 
     fn database(&self) -> Result<Database, StoreError> {
-        Database::open(&self.path).map_err(map_database_error)
+        open_existing_database(&self.path)
     }
 }
 
@@ -211,6 +220,22 @@ fn database_has_table(database: &Database) -> Result<bool, StoreError> {
         Err(redb::TableError::TableDoesNotExist(_)) => Ok(false),
         Err(error) => Err(map_table_error(error)),
     }
+}
+
+fn open_existing_database(path: &Path) -> Result<Database, StoreError> {
+    for attempt in 0..=DATABASE_OPEN_RETRIES {
+        match Database::open(path) {
+            Ok(database) => return Ok(database),
+            Err(DatabaseError::DatabaseAlreadyOpen) if attempt < DATABASE_OPEN_RETRIES => {
+                std::thread::sleep(DATABASE_OPEN_RETRY_DELAY);
+            }
+            Err(DatabaseError::DatabaseAlreadyOpen) => {
+                return Err(StoreError::BackendUnavailable);
+            }
+            Err(error) => return Err(map_database_error(error)),
+        }
+    }
+    Err(StoreError::BackendUnavailable)
 }
 
 fn initialize_table(database: &Database) -> Result<(), StoreError> {

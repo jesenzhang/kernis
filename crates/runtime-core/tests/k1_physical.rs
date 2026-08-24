@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use workflow_graph::{Task, WorkflowGraph, WorkflowMutation};
 use workflow_recovery::{
-    EffectSemantics, FileDurableStore, KnownEffectOutcome, OperationId,
+    EffectSemantics, FileDurableStore, KnownEffectOutcome, OperationId, RecoveryAction,
 };
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -140,6 +140,99 @@ fn runtime_reopens_physical_store_without_redispatch_or_duplicate_completion() {
         .expect("replayed state loads");
     assert_eq!(replayed.dispatch_history().len(), 1);
     assert_eq!(replayed.completion_history().len(), 1);
+}
+
+#[test]
+fn runtime_reopens_physical_store_before_and_after_dispatch_boundaries() {
+    let temp = TempStore::new("dispatch-windows");
+    let run_id = RunId::new("physical-runtime-dispatch-windows").expect("run id is valid");
+    let operation_id = operation("physical-dispatch-operation");
+    let workflow = single_task_workflow("task");
+    let mut runtime = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow.clone(),
+        capability_graph::Scope::root(),
+        [(
+            id("task"),
+            TaskConfig::new().with_effect(operation_id.clone(), EffectSemantics::Idempotent),
+        )],
+        FileDurableStore::open(&temp.path).expect("physical store opens"),
+    )
+    .expect("runtime starts");
+    let admitted_attempt = match runtime.step().expect("attempt admits") {
+        StepResult::EffectPending { attempt_id, .. } => attempt_id,
+        other => panic!("expected pending effect, got {other:?}"),
+    };
+    drop(runtime);
+
+    let mut before_dispatch = Runtime::<FileDurableStore>::restore_run(
+        run_id.clone(),
+        workflow.clone(),
+        capability_graph::Scope::root(),
+        [(
+            id("task"),
+            TaskConfig::new().with_effect(operation_id.clone(), EffectSemantics::Idempotent),
+        )],
+        FileDurableStore::open(&temp.path).expect("physical store reopens before dispatch"),
+    )
+    .expect("restore before dispatch succeeds");
+    assert_eq!(
+        before_dispatch
+            .step()
+            .expect("admitted attempt remains pending"),
+        StepResult::EffectPending {
+            task_id: id("task"),
+            attempt_id: admitted_attempt.clone(),
+            operation_id: operation_id.clone(),
+        }
+    );
+    drop(before_dispatch);
+
+    let mut after_dispatch = Runtime::<FileDurableStore>::restore_run(
+        run_id.clone(),
+        workflow.clone(),
+        capability_graph::Scope::root(),
+        [(
+            id("task"),
+            TaskConfig::new().with_effect(operation_id.clone(), EffectSemantics::Idempotent),
+        )],
+        FileDurableStore::open(&temp.path).expect("physical store reopens for dispatch"),
+    )
+    .expect("restore for dispatch succeeds");
+    after_dispatch
+        .dispatch_effect(&operation_id)
+        .expect("dispatch commits");
+    drop(after_dispatch);
+
+    let mut unknown_outcome = Runtime::<FileDurableStore>::restore_run(
+        run_id.clone(),
+        workflow,
+        capability_graph::Scope::root(),
+        [(
+            id("task"),
+            TaskConfig::new().with_effect(operation_id.clone(), EffectSemantics::Idempotent),
+        )],
+        FileDurableStore::open(&temp.path).expect("physical store reopens after dispatch"),
+    )
+    .expect("restore after dispatch succeeds");
+    assert_eq!(
+        unknown_outcome
+            .step()
+            .expect("unknown outcome blocks safely"),
+        StepResult::Blocked {
+            task_id: id("task"),
+            operation_id: Some(operation_id.clone()),
+            action: RecoveryAction::RetrySameOperation,
+        }
+    );
+    let retried_attempt = unknown_outcome
+        .dispatch_effect(&operation_id)
+        .expect("idempotent retry commits");
+    assert_ne!(retried_attempt, admitted_attempt);
+    let state = unknown_outcome
+        .durable_state()
+        .expect("physical state loads");
+    assert_eq!(state.dispatches(&operation_id).count(), 2);
 }
 
 #[test]
