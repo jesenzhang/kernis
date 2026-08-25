@@ -57,7 +57,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 
 | Milestone | Outcome | Depends on | Status | Review |
 | --- | --- | --- | --- | --- |
-| K1 | Embedded physical durability | M2-B contract closure | Accepted candidate, ready for integration | Independent - APPROVE |
+| K1 | Embedded physical durability | M2-B contract closure | Integrated | Independent - APPROVE |
 | K2 | Declarative configuration and cold reconstruction | K1 | Planned | Independent |
 | K3 | Explicit asynchronous execution boundary | K2 | Planned | Independent |
 | K4 | Runtime and plugin composition API | K2, K3 | Planned | Independent |
@@ -72,7 +72,7 @@ records the new evidence and preserves completed contracts.
 
 ### K1 Closeout Repair status
 
-Status: Accepted candidate, ready for integration. The repair closed idempotency
+Status: Integrated. The repair closed idempotency
 lineage validation, bootstrap error classification, identity deserialization
 invariants, ledger-only physical wire state, cross-process/logical-corruption
 proof, and the interrupted `create_run` to workflow-identity crash window. A
@@ -80,10 +80,9 @@ further concurrent first-open CI stability repair is recorded under K1
 completion evidence below. Both independent durability/recovery reviews returned
 APPROVE with no blocker.
 
-Repository truth: `main` is still at `b6d28b2c` and does not yet contain the
-candidate; K1 is therefore an accepted feature-branch candidate awaiting
-integration, not an integrated milestone. It must not be described as the final
-integrated K1 HEAD until `main` contains the candidate and its CI passes.
+Repository truth: `main` now contains the candidate at
+`e84acf331f4813e52e853fcb28db2caf2c8bdf62`. Full GitHub CI on that exact SHA
+passed (Format, Clippy, Test, Graph lab); K1 is an integrated milestone.
 
 ### Outcome
 
@@ -154,18 +153,16 @@ independent review.
 
 ### K1 Closeout Repair completion evidence
 
-Result: Accepted candidate, ready for integration. K1 is independently
-reviewable and its physical adapter contract is closed; it is pending main
-integration.
+Result: Integrated. K1 is independently reviewable and its physical adapter
+contract is closed; the accepted candidate has been fast-forwarded onto `main`.
 
 Base: `31abe5145c2822ac11ce7d70557a069f098f0437`
 
-Accepted candidate implementation HEAD: `ceda06fcd0e81e232a12b9768e974f58bd909bab`
-on `feat/k1-s1-durable-store-port` (implementation; the documentation commit
-records this evidence). Earlier accepted K1 implementation review:
-`c12befe4287cdebfcb737c39ebadd693ed71f92b`. `main` remains at
-`b6d28b2c92c04747c1825c45c319471e02ff1a5c`; do not label any branch SHA as the
-final integrated K1 HEAD until `main` contains it.
+Final integrated `main` HEAD: `e84acf331f4813e52e853fcb28db2caf2c8bdf62`.
+Accepted candidate implementation SHA on `feat/k1-s1-durable-store-port`:
+`ceda06fcd0e81e232a12b9768e974f58bd909bab` (implementation; the documentation
+commit records this evidence). Earlier accepted K1 implementation review:
+`c12befe4287cdebfcb737c39ebadd693ed71f92b`.
 
 Bootstrap crash window: Closed. An existing row is repaired only when the
 pristine bootstrap predicate holds; identity recovery uses the existing
@@ -173,7 +170,10 @@ pristine bootstrap predicate holds; identity recovery uses the existing
 
 #### Concurrent first-open CI stability repair
 
-Status: Accepted candidate, ready for integration.
+Status: Integrated and proven on `main`.
+
+Main CI evidence: GitHub Actions run `32829753451` for the exact final SHA
+`e84acf3` on `main` passed all four gates (Format, Clippy, Test, Graph lab).
 
 Root cause: On the failed final GitHub run
 (`concurrent_first_openers_wait_for_bootstrap_instead_of_reporting_corruption`)
@@ -226,8 +226,8 @@ incompatible versions and invalid replay lineage fail closed.
 Independent review: Spec review APPROVE, 0 blockers; standards/architecture
 review APPROVE for the earlier `5a3e09e..c12befe` delta, 0 documented breaches
 and 1 LOW judgement-call smell. The concurrent first-open CI stability repair
-delta (`ab92bbe..ceda06f`) requires its own focused independent review; see K1
-closeout.
+delta (`ab92bbe..e84acf3`) had its focused independent review and returned
+APPROVE, 0 blockers before `main` integration.
 
 Remaining risks and non-goals: No fsync or power-loss guarantee, schema
 migration framework, distributed store, worker lease/fencing, compaction,
