@@ -18,7 +18,7 @@ use std::time::Duration;
 
 const RUNS: TableDefinition<&str, &[u8]> = TableDefinition::new("kernis_runs_v1");
 const FORMAT_MAGIC: &[u8] = b"KERNIS-DURABLE-STATE";
-const FORMAT_VERSION: u16 = 3;
+const FORMAT_VERSION: u16 = 4;
 const CHECKSUM_LEN: usize = std::mem::size_of::<u64>();
 const DATABASE_OPEN_RETRIES: usize = 40;
 const DATABASE_OPEN_RETRY_DELAY: Duration = Duration::from_millis(5);
@@ -304,10 +304,10 @@ fn decode_state(encoded: &[u8]) -> Result<DurableRunState, StoreError> {
             "durable state checksum mismatch".to_string(),
         ));
     }
-    let (state, remainder) = postcard::take_from_bytes::<DurableRunState>(&encoded[header_len..])
-        .map_err(|error| {
-        StoreError::DataCorruption(format!("durable state payload is invalid: {error:?}"))
-    })?;
+    let (mut state, remainder) =
+        postcard::take_from_bytes::<DurableRunState>(&encoded[header_len..]).map_err(|error| {
+            StoreError::DataCorruption(format!("durable state payload is invalid: {error:?}"))
+        })?;
     if !remainder.is_empty() {
         return Err(StoreError::DataCorruption(
             "durable state payload has trailing bytes".to_string(),

@@ -271,6 +271,8 @@ pub struct CommitLedgerEntry {
     pub mutations: Vec<DurableMutation>,
     /// Durable revision assigned to this commit.
     pub revision: StoreRevision,
+    /// Binding over the key, mutation batch, and revision.
+    pub binding: u64,
 }
 
 impl CommitRequest {
@@ -580,7 +582,9 @@ pub struct DurableRunState {
     completions: BTreeMap<Id, CompletionRecord>,
     completion_history: Vec<CompletionRecord>,
     commit_ledger: Vec<CommitLedgerEntry>,
-    /// Materialized lookup index derived from [`Self::commit_ledger`].
+    /// Materialized lookup index derived from [`Self::commit_ledger`]. It is
+    /// rebuilt after deserialization and is not itself durable truth.
+    #[serde(skip)]
     pub(crate) idempotency: BTreeMap<IdempotencyKey, (Vec<DurableMutation>, StoreRevision)>,
 }
 
@@ -762,7 +766,7 @@ impl DurableRunState {
         self.task_operations.get(task_id)
     }
 
-    pub(crate) fn validate_persisted(&self) -> Result<(), StoreError> {
+    pub(crate) fn validate_persisted(&mut self) -> Result<(), StoreError> {
         if self
             .workflow_replay_identity
             .as_ref()
@@ -792,6 +796,13 @@ impl DurableRunState {
                     "persisted commit ledger is invalid".to_string(),
                 ));
             }
+            if entry.binding
+                != commit_binding(&entry.idempotency_key, &entry.mutations, entry.revision)
+            {
+                return Err(StoreError::DataCorruption(
+                    "persisted commit ledger binding is invalid".to_string(),
+                ));
+            }
             if reconstructed_index
                 .insert(
                     entry.idempotency_key.clone(),
@@ -819,12 +830,6 @@ impl DurableRunState {
             ));
         }
 
-        if self.idempotency != reconstructed_index {
-            return Err(StoreError::DataCorruption(
-                "persisted idempotency index does not match commit ledger".to_string(),
-            ));
-        }
-
         if reconstructed.revision != self.revision
             || reconstructed.workflow_replay_identity != self.workflow_replay_identity
             || reconstructed.admissions != self.admissions
@@ -843,6 +848,7 @@ impl DurableRunState {
                 "persisted durable facts do not form a consistent lineage".to_string(),
             ));
         }
+        self.idempotency = reconstructed_index;
         Ok(())
     }
 
@@ -853,14 +859,31 @@ impl DurableRunState {
         revision: StoreRevision,
     ) {
         self.revision = revision;
+        let binding = commit_binding(&idempotency_key, &mutations, revision);
         self.commit_ledger.push(CommitLedgerEntry {
             idempotency_key: idempotency_key.clone(),
             mutations: mutations.clone(),
             revision,
+            binding,
         });
         self.idempotency
             .insert(idempotency_key, (mutations, revision));
     }
+}
+
+fn commit_binding(
+    idempotency_key: &IdempotencyKey,
+    mutations: &[DurableMutation],
+    revision: StoreRevision,
+) -> u64 {
+    let encoded = postcard::to_allocvec(&(idempotency_key, mutations, revision))
+        .expect("typed durable commit binding is serializable");
+    let mut hash = 0xcbf29ce484222325;
+    for byte in encoded {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 fn persisted_mutation_error(error: StoreError) -> StoreError {
@@ -1264,12 +1287,7 @@ mod tests {
             .validate_persisted()
             .expect("valid idempotency batch replays");
 
-        state
-            .idempotency
-            .values_mut()
-            .next()
-            .expect("entry exists")
-            .0 = vec![DurableMutation::RecordWorkflowReplayIdentity(
+        state.commit_ledger[0].mutations = vec![DurableMutation::RecordWorkflowReplayIdentity(
             WorkflowReplayIdentity::new("workflow:v2").expect("identity is valid"),
         )];
         assert!(matches!(
@@ -1279,7 +1297,7 @@ mod tests {
     }
 
     #[test]
-    fn persisted_validation_rejects_rekeyed_idempotency_history() {
+    fn persisted_validation_rejects_rekeyed_commit_ledger_entry() {
         let run_id = RunId::new("rekeyed-history-run").expect("run id is valid");
         let identity = WorkflowReplayIdentity::new("workflow:v1").expect("identity is valid");
         let original_key = IdempotencyKey::new("original-key").expect("key is valid");
@@ -1291,11 +1309,7 @@ mod tests {
             vec![DurableMutation::RecordWorkflowReplayIdentity(identity)],
             StoreRevision(1),
         );
-        let entry = state
-            .idempotency
-            .remove(&original_key)
-            .expect("original entry exists");
-        state.idempotency.insert(replacement_key, entry);
+        state.commit_ledger[0].idempotency_key = replacement_key;
 
         assert!(matches!(
             state.validate_persisted(),
@@ -1328,16 +1342,7 @@ mod tests {
             )],
             StoreRevision(2),
         );
-        let first_entry = state
-            .idempotency
-            .remove(&first_key)
-            .expect("first entry exists");
-        let second_entry = state
-            .idempotency
-            .remove(&second_key)
-            .expect("second entry exists");
-        state.idempotency.insert(first_key, second_entry);
-        state.idempotency.insert(second_key, first_entry);
+        state.commit_ledger.swap(0, 1);
 
         assert!(matches!(
             state.validate_persisted(),
