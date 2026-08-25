@@ -6,8 +6,8 @@
 //! public `StoreError` categories.
 
 use crate::durable::{
-    CommitRequest, CommitResult, DurableRunState, DurableStore, StoreError, StoreRevision,
-    apply_mutation,
+    CommitRequest, CommitResult, DurableRunState, DurableStore, PersistedRunSnapshot, StoreError,
+    StoreRevision, apply_mutation,
 };
 use redb::{Database, DatabaseError, ReadableTable, TableDefinition};
 use std::fmt::Display;
@@ -18,7 +18,7 @@ use std::time::Duration;
 
 const RUNS: TableDefinition<&str, &[u8]> = TableDefinition::new("kernis_runs_v1");
 const FORMAT_MAGIC: &[u8] = b"KERNIS-DURABLE-STATE";
-const FORMAT_VERSION: u16 = 4;
+const FORMAT_VERSION: u16 = 5;
 const CHECKSUM_LEN: usize = std::mem::size_of::<u64>();
 const DATABASE_OPEN_RETRIES: usize = 40;
 const DATABASE_OPEN_RETRY_DELAY: Duration = Duration::from_millis(5);
@@ -268,7 +268,8 @@ fn initialize_table(database: &Database) -> Result<(), StoreError> {
 }
 
 fn encode_state(state: &DurableRunState) -> Result<Vec<u8>, StoreError> {
-    let payload = postcard::to_allocvec(state).map_err(|error| {
+    let snapshot = state.persisted_snapshot()?;
+    let payload = postcard::to_allocvec(&snapshot).map_err(|error| {
         StoreError::IoFailure(format!("durable state encoding failed: {error:?}"))
     })?;
     let mut encoded = Vec::with_capacity(FORMAT_MAGIC.len() + 2 + CHECKSUM_LEN + payload.len());
@@ -304,17 +305,18 @@ fn decode_state(encoded: &[u8]) -> Result<DurableRunState, StoreError> {
             "durable state checksum mismatch".to_string(),
         ));
     }
-    let (mut state, remainder) =
-        postcard::take_from_bytes::<DurableRunState>(&encoded[header_len..]).map_err(|error| {
-            StoreError::DataCorruption(format!("durable state payload is invalid: {error:?}"))
-        })?;
+    let (snapshot, remainder) = postcard::take_from_bytes::<PersistedRunSnapshot>(
+        &encoded[header_len..],
+    )
+    .map_err(|error| {
+        StoreError::DataCorruption(format!("durable state payload is invalid: {error:?}"))
+    })?;
     if !remainder.is_empty() {
         return Err(StoreError::DataCorruption(
             "durable state payload has trailing bytes".to_string(),
         ));
     }
-    state.validate_persisted()?;
-    Ok(state)
+    DurableRunState::from_persisted_snapshot(snapshot)
 }
 
 fn checksum(bytes: &[u8]) -> u64 {

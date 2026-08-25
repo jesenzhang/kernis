@@ -275,6 +275,12 @@ pub struct CommitLedgerEntry {
     pub binding: u64,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PersistedRunSnapshot {
+    pub(crate) run_id: RunId,
+    pub(crate) commit_ledger: Vec<CommitLedgerEntry>,
+}
+
 impl CommitRequest {
     /// Creates a request containing one typed mutation.
     #[must_use]
@@ -565,7 +571,7 @@ impl fmt::Display for StoreError {
 impl std::error::Error for StoreError {}
 
 /// Materialized durable facts for one run, suitable for restart inspection.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DurableRunState {
     run_id: RunId,
     pub(crate) revision: StoreRevision,
@@ -584,7 +590,6 @@ pub struct DurableRunState {
     commit_ledger: Vec<CommitLedgerEntry>,
     /// Materialized lookup index derived from [`Self::commit_ledger`]. It is
     /// rebuilt after deserialization and is not itself durable truth.
-    #[serde(skip)]
     pub(crate) idempotency: BTreeMap<IdempotencyKey, (Vec<DurableMutation>, StoreRevision)>,
 }
 
@@ -784,51 +789,7 @@ impl DurableRunState {
             }
         }
 
-        let mut reconstructed = Self::new(self.run_id.clone());
-        let mut reconstructed_index = BTreeMap::new();
-        let mut expected_revision = StoreRevision::INITIAL.get() + 1;
-        for entry in &self.commit_ledger {
-            if entry.idempotency_key.as_str().trim().is_empty()
-                || entry.mutations.is_empty()
-                || entry.revision.get() != expected_revision
-            {
-                return Err(StoreError::DataCorruption(
-                    "persisted commit ledger is invalid".to_string(),
-                ));
-            }
-            if entry.binding
-                != commit_binding(&entry.idempotency_key, &entry.mutations, entry.revision)
-            {
-                return Err(StoreError::DataCorruption(
-                    "persisted commit ledger binding is invalid".to_string(),
-                ));
-            }
-            if reconstructed_index
-                .insert(
-                    entry.idempotency_key.clone(),
-                    (entry.mutations.clone(), entry.revision),
-                )
-                .is_some()
-            {
-                return Err(StoreError::DataCorruption(
-                    "persisted commit ledger reuses an idempotency key".to_string(),
-                ));
-            }
-            for mutation in &entry.mutations {
-                apply_mutation(&mut reconstructed, mutation).map_err(persisted_mutation_error)?;
-            }
-            reconstructed.revision = entry.revision;
-            expected_revision = expected_revision.checked_add(1).ok_or_else(|| {
-                StoreError::DataCorruption(
-                    "persisted idempotency revision sequence is exhausted".to_string(),
-                )
-            })?;
-        }
-        if self.revision.get() != expected_revision - 1 {
-            return Err(StoreError::DataCorruption(
-                "persisted revision does not match commit ledger".to_string(),
-            ));
-        }
+        let reconstructed = replay_commit_ledger(self.run_id.clone(), &self.commit_ledger)?;
 
         if reconstructed.revision != self.revision
             || reconstructed.workflow_replay_identity != self.workflow_replay_identity
@@ -843,13 +804,28 @@ impl DurableRunState {
             || reconstructed.outcome_history != self.outcome_history
             || reconstructed.completions != self.completions
             || reconstructed.completion_history != self.completion_history
+            || reconstructed.idempotency != self.idempotency
         {
             return Err(StoreError::DataCorruption(
                 "persisted durable facts do not form a consistent lineage".to_string(),
             ));
         }
-        self.idempotency = reconstructed_index;
         Ok(())
+    }
+
+    pub(crate) fn persisted_snapshot(&self) -> Result<PersistedRunSnapshot, StoreError> {
+        let mut validated = self.clone();
+        validated.validate_persisted()?;
+        Ok(PersistedRunSnapshot {
+            run_id: validated.run_id,
+            commit_ledger: validated.commit_ledger,
+        })
+    }
+
+    pub(crate) fn from_persisted_snapshot(
+        snapshot: PersistedRunSnapshot,
+    ) -> Result<Self, StoreError> {
+        replay_commit_ledger(snapshot.run_id, &snapshot.commit_ledger)
     }
 
     pub(crate) fn record_commit(
@@ -869,6 +845,58 @@ impl DurableRunState {
         self.idempotency
             .insert(idempotency_key, (mutations, revision));
     }
+}
+
+fn replay_commit_ledger(
+    run_id: RunId,
+    commit_ledger: &[CommitLedgerEntry],
+) -> Result<DurableRunState, StoreError> {
+    let mut reconstructed = DurableRunState::new(run_id);
+    let mut expected_revision = StoreRevision::INITIAL.get() + 1;
+    for entry in commit_ledger {
+        if entry.idempotency_key.as_str().trim().is_empty()
+            || entry.mutations.is_empty()
+            || entry.revision.get() != expected_revision
+        {
+            return Err(StoreError::DataCorruption(
+                "persisted commit ledger is invalid".to_string(),
+            ));
+        }
+        if entry.binding != commit_binding(&entry.idempotency_key, &entry.mutations, entry.revision)
+        {
+            return Err(StoreError::DataCorruption(
+                "persisted commit ledger binding is invalid".to_string(),
+            ));
+        }
+        if reconstructed
+            .idempotency
+            .insert(
+                entry.idempotency_key.clone(),
+                (entry.mutations.clone(), entry.revision),
+            )
+            .is_some()
+        {
+            return Err(StoreError::DataCorruption(
+                "persisted commit ledger reuses an idempotency key".to_string(),
+            ));
+        }
+        for mutation in &entry.mutations {
+            apply_mutation(&mut reconstructed, mutation).map_err(persisted_mutation_error)?;
+        }
+        reconstructed.revision = entry.revision;
+        reconstructed.commit_ledger.push(entry.clone());
+        expected_revision = expected_revision.checked_add(1).ok_or_else(|| {
+            StoreError::DataCorruption(
+                "persisted idempotency revision sequence is exhausted".to_string(),
+            )
+        })?;
+    }
+    if reconstructed.revision.get() != expected_revision - 1 {
+        return Err(StoreError::DataCorruption(
+            "persisted revision does not match commit ledger".to_string(),
+        ));
+    }
+    Ok(reconstructed)
 }
 
 fn commit_binding(

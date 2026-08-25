@@ -10,8 +10,8 @@ use workflow_recovery::{
     AttemptAdmission, AttemptId, CancellationRecord, CapabilityReplayIdentity, CommitRequest,
     CompletionRecord, DispatchRecord, DurableJournal, DurableMutation, DurableStore, EffectIntent,
     EffectSemantics, FileDurableStore, IdempotencyKey, InMemoryDurableStore, KnownEffectOutcome,
-    OperationId, OutcomeRecord, RecoveryAction, RunId, StoreError, StoreErrorKind, StoreInvariant,
-    StoreRevision, WorkflowReplayIdentity, classify_recovery,
+    OperationId, OutcomeRecord, RecoveryDecision, RecoveryReason, RunId, StoreError,
+    StoreErrorKind, StoreInvariant, StoreRevision, WorkflowReplayIdentity, classify_recovery,
 };
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -386,7 +386,16 @@ fn physical_store_survives_process_restart_between_outcome_and_completion() {
         .expect("reopened state rebuilds recovery journal");
     let decision = classify_recovery(&workflow, &journal, &operation("child-operation"))
         .expect("reopened state classifies recovery");
-    assert_eq!(decision.action, RecoveryAction::CompleteWithoutReexecution);
+    assert_eq!(
+        decision,
+        RecoveryDecision {
+            action: workflow_recovery::RecoveryAction::CompleteWithoutReexecution,
+            reason: RecoveryReason::KnownSuccess {
+                operation_id: operation("child-operation"),
+                attempt_id: attempt("child-attempt"),
+            },
+        }
+    );
 
     let attempt_id = attempt("child-attempt");
     let completion = store.commit(CommitRequest::single(

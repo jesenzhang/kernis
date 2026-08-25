@@ -22,8 +22,8 @@ coordination, copy-on-write pages, and storage checksums; `workflow-recovery`
 continues to own CAS validation, idempotency, typed fact invariants, and
 backend-neutral error classification.
 
-The durable value is a version-4 `postcard 1.1.3` snapshot of
-`DurableRunState`, prefixed with a Kernis format magic, schema version, and
+The durable value is a version-5 `postcard 1.1.3` snapshot of the run id and
+ordered commit ledger, prefixed with a Kernis format magic, schema version, and
 deterministic payload checksum. The snapshot carries an ordered commit ledger
 as the replay authority; its idempotency map is only a materialized lookup
 index and must match the ledger exactly. The checksum detects logical snapshot
