@@ -11,10 +11,10 @@ mod physical;
 mod recovery;
 
 pub use durable::{
-    AttemptAdmission, CancellationRecord, CapabilityReplayIdentity, CommitRequest, CommitResult,
-    CompletionRecord, DurableMutation, DurableRunState, DurableStore, IdempotencyKey,
-    InMemoryDurableStore, RunId, StoreError, StoreErrorKind, StoreInvariant, StoreRevision,
-    WorkflowReplayIdentity,
+    AttemptAdmission, CancellationRecord, CapabilityReplayIdentity, CommitLedgerEntry,
+    CommitRequest, CommitResult, CompletionRecord, DurableMutation, DurableRunState, DurableStore,
+    IdempotencyKey, InMemoryDurableStore, RunId, StoreError, StoreErrorKind, StoreInvariant,
+    StoreRevision, WorkflowReplayIdentity,
 };
 pub use journal::{DurableJournal, JournalError, JournalInvariant};
 pub use model::{

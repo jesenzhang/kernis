@@ -22,15 +22,19 @@ coordination, copy-on-write pages, and storage checksums; `workflow-recovery`
 continues to own CAS validation, idempotency, typed fact invariants, and
 backend-neutral error classification.
 
-The durable value is a versioned `postcard 1.1.3` snapshot of
+The durable value is a version-3 `postcard 1.1.3` snapshot of
 `DurableRunState`, prefixed with a Kernis format magic, schema version, and
-deterministic payload checksum. The checksum detects logical snapshot
+deterministic payload checksum. The snapshot carries an ordered commit ledger
+as the replay authority; its idempotency map is only a materialized lookup
+index and must match the ledger exactly. The checksum detects logical snapshot
 mutation before deserialization; redb's page checksums remain a separate
-physical integrity boundary. `serde` derives are applied only to the stable durable fact types. Runtime
-objects such as Fibers, capability handles, streams, registries, disposers,
-and effect closures remain outside the snapshot. The shared `kernis-core::Id`
-primitive is included because it is the identifier field inside those stable
-facts; it is not a serialization commitment for process-local runtime objects.
+physical integrity boundary. `serde` derives are applied only to the stable
+durable fact types. Runtime objects such as Fibers, capability handles,
+streams, registries, disposers, and effect closures remain outside the
+snapshot. The shared `kernis-core::Id` primitive is included because it is the
+identifier field inside those stable facts; it is not a serialization
+commitment for process-local runtime objects. Older snapshot versions fail
+closed rather than being migrated.
 
 ### Focused comparison
 
@@ -45,9 +49,10 @@ logical `FileDurableStore` connection. This lets separately opened store values
 observe the same file and exercise expected-revision CAS/idempotency without
 retaining a process-local database handle. A redb physical lock contention is
 reported as `StoreError::BackendUnavailable` rather than being confused with a
-domain revision conflict. An empty redb file with no Kernis table is treated as
-an incomplete bootstrap and reports `BackendUnavailable`; a populated file
-with an incompatible table reports `DataCorruption`.
+domain revision conflict. Active bootstrap lock contention reports
+`BackendUnavailable`; after the bounded bootstrap wait, a persistent redb file
+with no Kernis table reports `DataCorruption`, as does a populated file with an
+incompatible table.
 
 K1 claims atomic redb commit transactions, typed schema/version/checksum
 rejection, lineage validation, CAS, idempotent replay, and successful reopen

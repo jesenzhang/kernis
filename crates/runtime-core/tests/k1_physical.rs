@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 
 use kernis_core::Id;
+use redb::{Database, ReadableTable, TableDefinition};
 use runtime_core::{RunId, Runtime, RuntimeError, StepResult, TaskConfig};
 use std::fs;
 use std::path::PathBuf;
@@ -11,6 +12,9 @@ use workflow_recovery::{
 };
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+const RUNS: TableDefinition<&str, &[u8]> = TableDefinition::new("kernis_runs_v1");
+const FORMAT_MAGIC: &[u8] = b"KERNIS-DURABLE-STATE";
+const CHECKSUM_LEN: usize = std::mem::size_of::<u64>();
 
 struct TempStore {
     directory: PathBuf,
@@ -60,6 +64,49 @@ fn single_task_workflow(task_id: &str) -> WorkflowGraph {
         )
         .expect("workflow is valid");
     workflow
+}
+
+fn checksum(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+fn rekey_snapshot_with_valid_checksum(path: &PathBuf, run_id: &RunId) {
+    let database = Database::open(path).expect("physical database opens for corruption setup");
+    let write = database
+        .begin_write()
+        .expect("corruption transaction begins");
+    {
+        let mut table = write.open_table(RUNS).expect("durable table opens");
+        let encoded = table
+            .get(run_id.as_str())
+            .expect("run row reads")
+            .expect("run row exists")
+            .value()
+            .to_vec();
+        let original = b"workflow-replay-identity";
+        let replacement = b"workflow-replay-identitX";
+        assert_eq!(original.len(), replacement.len());
+        let offset = encoded
+            .windows(original.len())
+            .position(|window| window == original)
+            .expect("idempotency key is present in the snapshot");
+        let mut corrupted = encoded;
+        corrupted[offset..offset + replacement.len()].copy_from_slice(replacement);
+        let header_len = FORMAT_MAGIC.len() + std::mem::size_of::<u16>() + CHECKSUM_LEN;
+        let checksum_offset = FORMAT_MAGIC.len() + std::mem::size_of::<u16>();
+        let snapshot_checksum = checksum(&corrupted[header_len..]);
+        corrupted[checksum_offset..checksum_offset + CHECKSUM_LEN]
+            .copy_from_slice(&snapshot_checksum.to_le_bytes());
+        table
+            .insert(run_id.as_str(), corrupted.as_slice())
+            .expect("corrupted snapshot writes");
+    }
+    write.commit().expect("corruption transaction commits");
 }
 
 #[test]
@@ -327,6 +374,37 @@ fn runtime_restore_rejects_corrupt_physical_state_before_recovery() {
     drop(runtime);
 
     fs::write(&temp.path, b"not a redb database").expect("test corrupts backend");
+    let restored = Runtime::<FileDurableStore>::restore_run(
+        run_id,
+        workflow,
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        store,
+    );
+
+    assert!(matches!(
+        restored,
+        Err(RuntimeError::Store(StoreError::DataCorruption(_)))
+    ));
+}
+
+#[test]
+fn runtime_restore_rejects_logically_corrupt_snapshot_with_valid_checksum() {
+    let temp = TempStore::new("logical-corruption");
+    let run_id = RunId::new("physical-runtime-logical-corruption").expect("run id is valid");
+    let workflow = single_task_workflow("task");
+    let runtime = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow.clone(),
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FileDurableStore::open(&temp.path).expect("physical store opens"),
+    )
+    .expect("runtime starts");
+    let store = runtime.store().clone();
+    drop(runtime);
+
+    rekey_snapshot_with_valid_checksum(&temp.path, &run_id);
     let restored = Runtime::<FileDurableStore>::restore_run(
         run_id,
         workflow,

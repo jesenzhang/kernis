@@ -169,6 +169,7 @@ dependencies = [
  "capability-graph",
  "execution-stream",
  "kernis-core",
+ "redb",
  "tokio",
  "workflow-graph",
  "workflow-recovery",

@@ -457,7 +457,7 @@ where
     {
         ensure_unfinished_workflow(&workflow)?;
         let task_configs = collect_task_configs(&workflow, task_configs)?;
-        let replay_identity = workflow_replay_identity(&workflow, &task_configs);
+        let replay_identity = workflow_replay_identity(&workflow, &task_configs)?;
         let created_revision = store.create_run(run_id.clone())?;
         let store_revision = store
             .commit(CommitRequest::single(
@@ -497,7 +497,7 @@ where
         ensure_unfinished_workflow(&workflow)?;
         let task_configs = collect_task_configs(&workflow, task_configs)?;
         let state = store.load_run(&run_id)?;
-        let expected_identity = workflow_replay_identity(&workflow, &task_configs);
+        let expected_identity = workflow_replay_identity(&workflow, &task_configs)?;
         if state.workflow_replay_identity() != Some(&expected_identity) {
             return Err(RuntimeError::WorkflowReplayIdentityMismatch {
                 expected: expected_identity,
@@ -637,7 +637,7 @@ where
         }
         let mut candidate_configs = self.task_configs.clone();
         candidate_configs.insert(task_id, config);
-        let replay_identity = workflow_replay_identity(&self.workflow, &candidate_configs);
+        let replay_identity = workflow_replay_identity(&self.workflow, &candidate_configs)?;
         self.commit_workflow_identity(replay_identity)?;
         self.task_configs = candidate_configs;
         Ok(())
@@ -654,7 +654,7 @@ where
     {
         let mut candidate = self.workflow.clone();
         let record = candidate.apply_batch(expected_revision, batch)?;
-        let replay_identity = workflow_replay_identity(&candidate, &self.task_configs);
+        let replay_identity = workflow_replay_identity(&candidate, &self.task_configs)?;
         self.commit_workflow_identity(replay_identity)?;
         self.workflow = candidate;
         Ok(record)
@@ -1232,7 +1232,7 @@ where
 fn workflow_replay_identity(
     workflow: &WorkflowGraph,
     task_configs: &BTreeMap<Id, TaskConfig>,
-) -> WorkflowReplayIdentity {
+) -> Result<WorkflowReplayIdentity, StoreError> {
     let mut canonical = String::from("kernis-workflow-replay-v1");
     append_identity_part(&mut canonical, "tasks");
     for task in workflow.tasks() {

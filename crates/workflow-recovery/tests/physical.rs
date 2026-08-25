@@ -5,12 +5,13 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use workflow_graph::{Task, WorkflowGraph, WorkflowMutation};
 use workflow_recovery::{
     AttemptAdmission, AttemptId, CancellationRecord, CapabilityReplayIdentity, CommitRequest,
-    CompletionRecord, DispatchRecord, DurableMutation, DurableStore, EffectIntent, EffectSemantics,
-    FileDurableStore, IdempotencyKey, InMemoryDurableStore, KnownEffectOutcome, OperationId,
-    OutcomeRecord, RunId, StoreError, StoreErrorKind, StoreInvariant, StoreRevision,
-    WorkflowReplayIdentity,
+    CompletionRecord, DispatchRecord, DurableJournal, DurableMutation, DurableStore, EffectIntent,
+    EffectSemantics, FileDurableStore, IdempotencyKey, InMemoryDurableStore, KnownEffectOutcome,
+    OperationId, OutcomeRecord, RecoveryAction, RunId, StoreError, StoreErrorKind, StoreInvariant,
+    StoreRevision, WorkflowReplayIdentity, classify_recovery,
 };
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -49,6 +50,10 @@ fn run() -> RunId {
 
 fn operation(value: &str) -> OperationId {
     OperationId::new(value).expect("test operation is valid")
+}
+
+fn identity(value: &str) -> WorkflowReplayIdentity {
+    WorkflowReplayIdentity::new(value).expect("test workflow identity is valid")
 }
 
 fn attempt(value: &str) -> AttemptId {
@@ -94,9 +99,7 @@ fn supported_fact_sequence() -> Vec<DurableMutation> {
     let attempt_id = attempt("conformance-attempt");
     let cancelled_attempt = attempt("conformance-cancelled");
     vec![
-        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new(
-            "workflow:conformance:v1",
-        )),
+        DurableMutation::RecordWorkflowReplayIdentity(identity("workflow:conformance:v1")),
         DurableMutation::RecordIntent(EffectIntent {
             task_id: id("conformance-effect-task"),
             operation_id: operation_id.clone(),
@@ -147,9 +150,7 @@ fn physical_store_reopens_with_all_supported_fact_classes() {
         &mut store,
         StoreRevision::INITIAL,
         "identity",
-        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new(
-            "workflow:v1:stable",
-        )),
+        DurableMutation::RecordWorkflowReplayIdentity(identity("workflow:v1:stable")),
     );
     let operation_id = operation("operation-1");
     let attempt_id = attempt("attempt-1");
@@ -266,9 +267,7 @@ fn physical_store_preserves_atomic_batches_cas_and_idempotent_replay() {
         expected_revision: StoreRevision::INITIAL,
         idempotency_key: key("invalid-batch"),
         mutations: vec![
-            DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new(
-                "workflow:v1",
-            )),
+            DurableMutation::RecordWorkflowReplayIdentity(identity("workflow:v1")),
             DurableMutation::RecordDispatch(DispatchRecord {
                 operation_id: operation("missing"),
                 attempt_id: attempt("missing"),
@@ -289,7 +288,7 @@ fn physical_store_preserves_atomic_batches_cas_and_idempotent_replay() {
         run(),
         StoreRevision::INITIAL,
         key("identity"),
-        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new("workflow:v1")),
+        DurableMutation::RecordWorkflowReplayIdentity(identity("workflow:v1")),
     );
     let committed = first.commit(request.clone()).expect("commit succeeds");
     assert!(!committed.replayed);
@@ -301,7 +300,7 @@ fn physical_store_preserves_atomic_batches_cas_and_idempotent_replay() {
         run(),
         StoreRevision::INITIAL,
         key("stale"),
-        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new("workflow:v2")),
+        DurableMutation::RecordWorkflowReplayIdentity(identity("workflow:v2")),
     ));
     assert!(matches!(stale, Err(StoreError::RevisionConflict { .. })));
     assert_eq!(
@@ -309,7 +308,7 @@ fn physical_store_preserves_atomic_batches_cas_and_idempotent_replay() {
             .load_run(&run())
             .expect("state loads")
             .workflow_replay_identity(),
-        Some(&WorkflowReplayIdentity::new("workflow:v1"))
+        Some(&identity("workflow:v1"))
     );
 }
 
@@ -371,6 +370,24 @@ fn physical_store_survives_process_restart_between_outcome_and_completion() {
             .is_some()
     );
 
+    let mut workflow = WorkflowGraph::default();
+    workflow
+        .apply_batch(
+            workflow.revision(),
+            [WorkflowMutation::AddTask {
+                task: Task {
+                    id: id("effect-task"),
+                    label: "effect-task".to_owned(),
+                },
+            }],
+        )
+        .expect("recovery workflow is valid");
+    let journal = DurableJournal::from_durable_state(&before_completion)
+        .expect("reopened state rebuilds recovery journal");
+    let decision = classify_recovery(&workflow, &journal, &operation("child-operation"))
+        .expect("reopened state classifies recovery");
+    assert_eq!(decision.action, RecoveryAction::CompleteWithoutReexecution);
+
     let attempt_id = attempt("child-attempt");
     let completion = store.commit(CommitRequest::single(
         run(),
@@ -401,7 +418,7 @@ fn child_writes_after_outcome() {
         &mut store,
         StoreRevision::INITIAL,
         "identity",
-        DurableMutation::RecordWorkflowReplayIdentity(WorkflowReplayIdentity::new("workflow:v1")),
+        DurableMutation::RecordWorkflowReplayIdentity(identity("workflow:v1")),
     );
     let operation_id = operation("child-operation");
     let attempt_id = attempt("child-attempt");
@@ -528,12 +545,12 @@ fn physical_backend_errors_keep_categories_distinct() {
 }
 
 #[test]
-fn physical_open_distinguishes_incomplete_bootstrap_from_incompatible_schema() {
+fn physical_open_rejects_empty_bootstrap_and_incompatible_schema_as_corruption() {
     let empty = TempStore::new("empty-bootstrap");
     let database = redb::Database::create(&empty.path).expect("bare redb database creates");
     drop(database);
     let incomplete = FileDurableStore::open(&empty.path).expect_err("empty bootstrap is rejected");
-    assert_eq!(incomplete.kind(), StoreErrorKind::BackendUnavailable);
+    assert_eq!(incomplete.kind(), StoreErrorKind::DataCorruption);
 
     let incompatible = TempStore::new("incompatible-schema");
     const FOREIGN: redb::TableDefinition<&str, &[u8]> =

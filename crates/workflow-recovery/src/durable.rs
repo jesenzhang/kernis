@@ -9,7 +9,7 @@ use crate::model::{
     RecoveredEffectState,
 };
 use kernis_core::Id;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -43,20 +43,33 @@ impl fmt::Display for RunId {
 /// caller. It is deliberately not a topology revision: equivalent topology
 /// and configuration must produce the same identity even when their mutation
 /// history was assembled differently.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct WorkflowReplayIdentity(String);
 
 impl WorkflowReplayIdentity {
     /// Creates an identity from a caller-generated canonical representation.
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    pub fn new(value: impl Into<String>) -> Result<Self, StoreError> {
+        let value = value.into();
+        if value.trim().is_empty() {
+            return Err(StoreError::EmptyWorkflowReplayIdentity);
+        }
+        Ok(Self(value))
     }
 
     /// Returns the canonical identity representation.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for WorkflowReplayIdentity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
     }
 }
 
@@ -174,7 +187,7 @@ pub struct CompletionRecord {
 }
 
 /// Caller-supplied identity for an idempotent durable mutation.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct IdempotencyKey(String);
 
 impl IdempotencyKey {
@@ -194,6 +207,16 @@ impl IdempotencyKey {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for IdempotencyKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
     }
 }
 
@@ -233,6 +256,21 @@ pub struct CommitRequest {
     pub idempotency_key: IdempotencyKey,
     /// Typed mutations applied atomically and in order.
     pub mutations: Vec<DurableMutation>,
+}
+
+/// One ordered durable commit entry.
+///
+/// This ledger is the replay authority for commit order. The idempotency map
+/// in [`DurableRunState`] is only a materialized lookup index and must match
+/// this ledger exactly when a state is loaded.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CommitLedgerEntry {
+    /// Key used to replay the commit idempotently.
+    pub idempotency_key: IdempotencyKey,
+    /// Typed mutation batch committed at this revision.
+    pub mutations: Vec<DurableMutation>,
+    /// Durable revision assigned to this commit.
+    pub revision: StoreRevision,
 }
 
 impl CommitRequest {
@@ -541,6 +579,8 @@ pub struct DurableRunState {
     outcome_history: Vec<OutcomeRecord>,
     completions: BTreeMap<Id, CompletionRecord>,
     completion_history: Vec<CompletionRecord>,
+    commit_ledger: Vec<CommitLedgerEntry>,
+    /// Materialized lookup index derived from [`Self::commit_ledger`].
     pub(crate) idempotency: BTreeMap<IdempotencyKey, (Vec<DurableMutation>, StoreRevision)>,
 }
 
@@ -561,6 +601,7 @@ impl DurableRunState {
             outcome_history: Vec::new(),
             completions: BTreeMap::new(),
             completion_history: Vec::new(),
+            commit_ledger: Vec::new(),
             idempotency: BTreeMap::new(),
         }
     }
@@ -680,6 +721,12 @@ impl DurableRunState {
         self.completions.get(task_id)
     }
 
+    /// Returns the ordered durable commit ledger.
+    #[must_use]
+    pub fn commit_ledger(&self) -> &[CommitLedgerEntry] {
+        &self.commit_ledger
+    }
+
     /// Returns the outcome of the latest dispatch, if known.
     #[must_use]
     pub fn latest_outcome(&self, operation_id: &OperationId) -> Option<&OutcomeRecord> {
@@ -733,20 +780,33 @@ impl DurableRunState {
             }
         }
 
-        let mut committed_batches = self.idempotency.values().collect::<Vec<_>>();
-        committed_batches.sort_by_key(|(_, revision)| *revision);
         let mut reconstructed = Self::new(self.run_id.clone());
+        let mut reconstructed_index = BTreeMap::new();
         let mut expected_revision = StoreRevision::INITIAL.get() + 1;
-        for (mutations, revision) in committed_batches {
-            if mutations.is_empty() || revision.get() != expected_revision {
+        for entry in &self.commit_ledger {
+            if entry.idempotency_key.as_str().trim().is_empty()
+                || entry.mutations.is_empty()
+                || entry.revision.get() != expected_revision
+            {
                 return Err(StoreError::DataCorruption(
-                    "persisted idempotency revisions are not contiguous".to_string(),
+                    "persisted commit ledger is invalid".to_string(),
                 ));
             }
-            for mutation in mutations {
+            if reconstructed_index
+                .insert(
+                    entry.idempotency_key.clone(),
+                    (entry.mutations.clone(), entry.revision),
+                )
+                .is_some()
+            {
+                return Err(StoreError::DataCorruption(
+                    "persisted commit ledger reuses an idempotency key".to_string(),
+                ));
+            }
+            for mutation in &entry.mutations {
                 apply_mutation(&mut reconstructed, mutation).map_err(persisted_mutation_error)?;
             }
-            reconstructed.revision = *revision;
+            reconstructed.revision = entry.revision;
             expected_revision = expected_revision.checked_add(1).ok_or_else(|| {
                 StoreError::DataCorruption(
                     "persisted idempotency revision sequence is exhausted".to_string(),
@@ -755,7 +815,13 @@ impl DurableRunState {
         }
         if self.revision.get() != expected_revision - 1 {
             return Err(StoreError::DataCorruption(
-                "persisted revision does not match idempotency history".to_string(),
+                "persisted revision does not match commit ledger".to_string(),
+            ));
+        }
+
+        if self.idempotency != reconstructed_index {
+            return Err(StoreError::DataCorruption(
+                "persisted idempotency index does not match commit ledger".to_string(),
             ));
         }
 
@@ -778,6 +844,22 @@ impl DurableRunState {
             ));
         }
         Ok(())
+    }
+
+    pub(crate) fn record_commit(
+        &mut self,
+        idempotency_key: IdempotencyKey,
+        mutations: Vec<DurableMutation>,
+        revision: StoreRevision,
+    ) {
+        self.revision = revision;
+        self.commit_ledger.push(CommitLedgerEntry {
+            idempotency_key: idempotency_key.clone(),
+            mutations: mutations.clone(),
+            revision,
+        });
+        self.idempotency
+            .insert(idempotency_key, (mutations, revision));
     }
 }
 
@@ -867,9 +949,7 @@ impl DurableStore for InMemoryDurableStore {
             apply_mutation(&mut candidate, mutation)?;
         }
         candidate.revision = revision;
-        candidate
-            .idempotency
-            .insert(request.idempotency_key, (request.mutations, revision));
+        candidate.record_commit(request.idempotency_key, request.mutations, revision);
         *state = candidate;
         Ok(CommitResult {
             revision,
@@ -1169,19 +1249,16 @@ mod tests {
     #[test]
     fn persisted_validation_replays_idempotency_batches() {
         let run_id = RunId::new("persisted-validation-run").expect("run id is valid");
-        let identity = WorkflowReplayIdentity::new("workflow:v1");
+        let identity = WorkflowReplayIdentity::new("workflow:v1").expect("identity is valid");
         let idempotency_key = IdempotencyKey::new("identity").expect("key is valid");
         let mut state = DurableRunState::new(run_id);
-        state.revision = StoreRevision(1);
         state.workflow_replay_identity = Some(identity.clone());
-        state.idempotency.insert(
+        state.record_commit(
             idempotency_key,
-            (
-                vec![DurableMutation::RecordWorkflowReplayIdentity(
-                    identity.clone(),
-                )],
-                StoreRevision(1),
-            ),
+            vec![DurableMutation::RecordWorkflowReplayIdentity(
+                identity.clone(),
+            )],
+            StoreRevision(1),
         );
         state
             .validate_persisted()
@@ -1193,8 +1270,119 @@ mod tests {
             .next()
             .expect("entry exists")
             .0 = vec![DurableMutation::RecordWorkflowReplayIdentity(
-            WorkflowReplayIdentity::new("workflow:v2"),
+            WorkflowReplayIdentity::new("workflow:v2").expect("identity is valid"),
         )];
+        assert!(matches!(
+            state.validate_persisted(),
+            Err(StoreError::DataCorruption(_))
+        ));
+    }
+
+    #[test]
+    fn persisted_validation_rejects_rekeyed_idempotency_history() {
+        let run_id = RunId::new("rekeyed-history-run").expect("run id is valid");
+        let identity = WorkflowReplayIdentity::new("workflow:v1").expect("identity is valid");
+        let original_key = IdempotencyKey::new("original-key").expect("key is valid");
+        let replacement_key = IdempotencyKey::new("replacement-key").expect("key is valid");
+        let mut state = DurableRunState::new(run_id);
+        state.workflow_replay_identity = Some(identity.clone());
+        state.record_commit(
+            original_key.clone(),
+            vec![DurableMutation::RecordWorkflowReplayIdentity(identity)],
+            StoreRevision(1),
+        );
+        let entry = state
+            .idempotency
+            .remove(&original_key)
+            .expect("original entry exists");
+        state.idempotency.insert(replacement_key, entry);
+
+        assert!(matches!(
+            state.validate_persisted(),
+            Err(StoreError::DataCorruption(_))
+        ));
+    }
+
+    #[test]
+    fn persisted_validation_rejects_reordered_commit_revisions() {
+        let run_id = RunId::new("reordered-history-run").expect("run id is valid");
+        let first_identity =
+            WorkflowReplayIdentity::new("workflow:first").expect("identity is valid");
+        let second_identity =
+            WorkflowReplayIdentity::new("workflow:second").expect("identity is valid");
+        let first_key = IdempotencyKey::new("first-key").expect("key is valid");
+        let second_key = IdempotencyKey::new("second-key").expect("key is valid");
+        let mut state = DurableRunState::new(run_id);
+        state.workflow_replay_identity = Some(second_identity.clone());
+        state.record_commit(
+            first_key.clone(),
+            vec![DurableMutation::RecordWorkflowReplayIdentity(
+                first_identity.clone(),
+            )],
+            StoreRevision(1),
+        );
+        state.record_commit(
+            second_key.clone(),
+            vec![DurableMutation::RecordWorkflowReplayIdentity(
+                second_identity,
+            )],
+            StoreRevision(2),
+        );
+        let first_entry = state
+            .idempotency
+            .remove(&first_key)
+            .expect("first entry exists");
+        let second_entry = state
+            .idempotency
+            .remove(&second_key)
+            .expect("second entry exists");
+        state.idempotency.insert(first_key, second_entry);
+        state.idempotency.insert(second_key, first_entry);
+
+        assert!(matches!(
+            state.validate_persisted(),
+            Err(StoreError::DataCorruption(_))
+        ));
+    }
+
+    #[test]
+    fn persisted_validation_rejects_commit_ledger_key_or_order_tampering() {
+        let run_id = RunId::new("ledger-tamper-run").expect("run id is valid");
+        let first_identity =
+            WorkflowReplayIdentity::new("workflow:first").expect("identity is valid");
+        let second_identity =
+            WorkflowReplayIdentity::new("workflow:second").expect("identity is valid");
+        let first_key = IdempotencyKey::new("first-key").expect("key is valid");
+        let second_key = IdempotencyKey::new("second-key").expect("key is valid");
+        let mut state = DurableRunState::new(run_id);
+        state.workflow_replay_identity = Some(second_identity.clone());
+        state.record_commit(
+            first_key,
+            vec![DurableMutation::RecordWorkflowReplayIdentity(
+                first_identity,
+            )],
+            StoreRevision(1),
+        );
+        state.record_commit(
+            second_key,
+            vec![DurableMutation::RecordWorkflowReplayIdentity(
+                second_identity,
+            )],
+            StoreRevision(2),
+        );
+        state
+            .validate_persisted()
+            .expect("baseline ledger is valid");
+
+        let mut key_tampered = state.clone();
+        key_tampered.commit_ledger[0].idempotency_key =
+            IdempotencyKey::new("tampered-key").expect("key is valid");
+        assert!(matches!(
+            key_tampered.validate_persisted(),
+            Err(StoreError::DataCorruption(_))
+        ));
+
+        state.commit_ledger.swap(0, 1);
         assert!(matches!(
             state.validate_persisted(),
             Err(StoreError::DataCorruption(_))

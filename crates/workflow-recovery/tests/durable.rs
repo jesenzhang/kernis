@@ -9,7 +9,7 @@ use workflow_recovery::{
     AttemptAdmission, AttemptId, CapabilityReplayIdentity, CommitRequest, DurableMutation,
     DurableStore, EffectIntent, EffectSemantics, FileDurableStore, IdempotencyKey,
     InMemoryDurableStore, KnownEffectOutcome, OperationId, OutcomeRecord, RunId, StoreError,
-    StoreErrorKind, StoreInvariant, StoreRevision,
+    StoreErrorKind, StoreInvariant, StoreRevision, WorkflowReplayIdentity,
 };
 use workflow_recovery::{CancellationRecord, CompletionRecord, DispatchRecord};
 
@@ -710,3 +710,18 @@ test_both_backends!(
     effect_completion_requires_latest_successful_dispatch,
     effect_completion_requires_latest_successful_dispatch_for
 );
+
+#[test]
+fn identity_newtypes_reject_blank_postcard_deserialization() {
+    assert!(matches!(
+        WorkflowReplayIdentity::new(" "),
+        Err(StoreError::EmptyWorkflowReplayIdentity)
+    ));
+    assert!(matches!(
+        IdempotencyKey::new(" "),
+        Err(StoreError::EmptyIdempotencyKey)
+    ));
+    let blank = postcard::to_allocvec(&" ".to_owned()).expect("blank string encodes");
+    assert!(postcard::from_bytes::<WorkflowReplayIdentity>(&blank).is_err());
+    assert!(postcard::from_bytes::<IdempotencyKey>(&blank).is_err());
+}

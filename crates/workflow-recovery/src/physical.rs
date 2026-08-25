@@ -18,7 +18,7 @@ use std::time::Duration;
 
 const RUNS: TableDefinition<&str, &[u8]> = TableDefinition::new("kernis_runs_v1");
 const FORMAT_MAGIC: &[u8] = b"KERNIS-DURABLE-STATE";
-const FORMAT_VERSION: u16 = 2;
+const FORMAT_VERSION: u16 = 3;
 const CHECKSUM_LEN: usize = std::mem::size_of::<u64>();
 const DATABASE_OPEN_RETRIES: usize = 40;
 const DATABASE_OPEN_RETRY_DELAY: Duration = Duration::from_millis(5);
@@ -80,16 +80,9 @@ impl FileDurableStore {
         if wait_for_initialized_table(&store.path)? {
             return Ok(store);
         }
-        let database = open_existing_database(&store.path)?;
-        let has_any_table = database_has_any_table(&database)?;
-        drop(database);
-        if has_any_table {
-            Err(StoreError::DataCorruption(
-                "physical store is missing the Kernis durable-state table".to_string(),
-            ))
-        } else {
-            Err(StoreError::BackendUnavailable)
-        }
+        Err(StoreError::DataCorruption(
+            "physical store is missing the Kernis durable-state table".to_string(),
+        ))
     }
 
     /// Returns the database path used by this logical connection.
@@ -203,9 +196,10 @@ impl DurableStore for FileDurableStore {
                 apply_mutation(&mut candidate, mutation)?;
             }
             candidate.revision = revision;
-            candidate.idempotency.insert(
+            candidate.record_commit(
                 request.idempotency_key.clone(),
-                (request.mutations.clone(), revision),
+                request.mutations.clone(),
+                revision,
             );
             let encoded = encode_state(&candidate)?;
             table
@@ -232,12 +226,6 @@ fn database_has_table(database: &Database) -> Result<bool, StoreError> {
         Err(redb::TableError::TableDoesNotExist(_)) => Ok(false),
         Err(error) => Err(map_table_error(error)),
     }
-}
-
-fn database_has_any_table(database: &Database) -> Result<bool, StoreError> {
-    let read = database.begin_read().map_err(map_transaction_error)?;
-    let mut tables = read.list_tables().map_err(map_storage_error)?;
-    Ok(tables.next().is_some())
 }
 
 fn open_existing_database(path: &Path) -> Result<Database, StoreError> {
