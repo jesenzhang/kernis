@@ -57,7 +57,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 
 | Milestone | Outcome | Depends on | Status | Review |
 | --- | --- | --- | --- | --- |
-| K1 | Embedded physical durability | M2-B contract closure | Completed | Independent - APPROVE |
+| K1 | Embedded physical durability | M2-B contract closure | Accepted candidate, ready for integration | Independent - APPROVE |
 | K2 | Declarative configuration and cold reconstruction | K1 | Planned | Independent |
 | K3 | Explicit asynchronous execution boundary | K2 | Planned | Independent |
 | K4 | Runtime and plugin composition API | K2, K3 | Planned | Independent |
@@ -72,11 +72,18 @@ records the new evidence and preserves completed contracts.
 
 ### K1 Closeout Repair status
 
-Status: Completed. The repair closed idempotency lineage validation, bootstrap
-error classification, identity deserialization invariants, ledger-only physical
-wire state, cross-process/logical-corruption proof, and the interrupted
-`create_run` to workflow-identity crash window. Both independent
-durability/recovery reviews returned APPROVE with no blocker.
+Status: Accepted candidate, ready for integration. The repair closed idempotency
+lineage validation, bootstrap error classification, identity deserialization
+invariants, ledger-only physical wire state, cross-process/logical-corruption
+proof, and the interrupted `create_run` to workflow-identity crash window. A
+further concurrent first-open CI stability repair is recorded under K1
+completion evidence below. Both independent durability/recovery reviews returned
+APPROVE with no blocker.
+
+Repository truth: `main` is still at `b6d28b2c` and does not yet contain the
+candidate; K1 is therefore an accepted feature-branch candidate awaiting
+integration, not an integrated milestone. It must not be described as the final
+integrated K1 HEAD until `main` contains the candidate and its CI passes.
 
 ### Outcome
 
@@ -147,23 +154,67 @@ independent review.
 
 ### K1 Closeout Repair completion evidence
 
-Result: Completed. K1 is independently reviewable and its physical adapter
-contract is closed.
+Result: Accepted candidate, ready for integration. K1 is independently
+reviewable and its physical adapter contract is closed; it is pending main
+integration.
 
 Base: `31abe5145c2822ac11ce7d70557a069f098f0437`
 
-Final integrated HEAD: `c12befe4287cdebfcb737c39ebadd693ed71f92b` (implementation;
-the following documentation commit records this evidence).
+Accepted candidate implementation HEAD: `ceda06fcd0e81e232a12b9768e974f58bd909bab`
+on `feat/k1-s1-durable-store-port` (implementation; the documentation commit
+records this evidence). Earlier accepted K1 implementation review:
+`c12befe4287cdebfcb737c39ebadd693ed71f92b`. `main` remains at
+`b6d28b2c92c04747c1825c45c319471e02ff1a5c`; do not label any branch SHA as the
+final integrated K1 HEAD until `main` contains it.
 
 Bootstrap crash window: Closed. An existing row is repaired only when the
 pristine bootstrap predicate holds; identity recovery uses the existing
 `workflow-replay-identity` idempotency key and `StoreRevision::INITIAL` CAS.
 
+#### Concurrent first-open CI stability repair
+
+Status: Accepted candidate, ready for integration.
+
+Root cause: On the failed final GitHub run
+(`concurrent_first_openers_wait_for_bootstrap_instead_of_reporting_corruption`)
+a first opener that was not the creator exhausted the normal-operation
+acquisition budget (`40 * 5ms = 200ms`) while the winning opener still held the
+redb handle mid-bootstrap (create + table-init + durable commit). redb allows
+exactly one `Database` handle per file, so that `DatabaseAlreadyOpen` was
+transient bootstrap ownership, but the tiny iteration-based budget misclassified
+it as `StoreError::BackendUnavailable` under CI load.
+
+Repair: A `FileDurableStore::open` bootstrap path now uses a named, bounded,
+wall-clock policy (`BOOTSTRAP_WAIT_DEADLINE = 5s`, `BOOTSTRAP_WAIT_POLL = 10ms`)
+via a dedicated `open_bootstrap_database` helper. It retries only
+`DatabaseError::DatabaseAlreadyOpen`, so ordinary permission/I/O/corruption
+errors still map immediately and are never retried. After the bounded deadline
+the backend is still classified `BackendUnavailable`; an opened-but-structurally
+uninitialized store still fails closed as `DataCorruption`. The small normal
+`open_existing_database` budget used by ordinary CRUD operations is unchanged,
+so general runtime contention semantics are preserved and no global ownership
+primitive was added.
+
+Focused race stress: 100/100 consecutive focused passes, plus 20/20 full
+`physical` suite runs.
+
+Focused verification: `cargo test -p workflow-recovery --all-features` (all
+green); `cargo test -p workflow-recovery --test physical --all-features` (8
+passed); `cargo test -p runtime-core --test k1_physical --all-features` (9
+passed, 0 failed), including physical interrupted-bootstrap reopen,
+conflicting-definition rejection, non-pristine missing-identity rejection,
+initialized-run reclassification, physical/logical recovery and corruption.
+
+Broad verification: `cargo fmt --all -- --check` PASS; `cargo clippy --workspace
+--all-targets --all-features -- -D warnings` PASS; `cargo test --workspace
+--all-features` PASS; `cargo run -p graph-lab` PASS.
+
 Implementation blocks / explicit Slices actually used: Fresh-context continuous
 repair with no explicit Slice. The blocks were failing acceptance tests, the
 ordered commit ledger and binding validation, fallible identity constructors and
-serde, bootstrap/error-category closure, ledger-only v5 snapshot replay, and
-cross-process/logical-corruption proof.
+serde, bootstrap/error-category closure, ledger-only v5 snapshot replay,
+cross-process/logical-corruption proof, and the concurrent first-open CI
+stability repair above.
 
 Material decisions: `WorkflowGraph` remains topology, prerequisite, and
 completion authority. The durable store persists only `run_id` and the ordered
@@ -172,22 +223,11 @@ ledger replay. Each ledger entry binds idempotency key, mutation batch, and
 revision. Physical values use the v5 postcard snapshot with an outer checksum;
 incompatible versions and invalid replay lineage fail closed.
 
-Focused verification: `cargo test -p workflow-recovery --all-features` (51
-passed, 7 filtered) and `cargo test -p runtime-core --test k1_physical
---all-features` (9 passed), including physical interrupted-bootstrap reopen,
-same-definition recovery, conflicting-definition rejection, non-pristine
-missing-identity rejection, normal initialized-run regression, exact
-cross-process recovery decisions, ledger tamper/CAS/idempotency checks, and
-checksum-valid logical corruption rejection.
-
-Broad verification: `cargo fmt --all -- --check`; `cargo clippy --workspace
---all-targets --all-features -- -D warnings`; `cargo test --workspace
---all-features` (210 passed, 7 filtered across 27 suites); `cargo run -p
-graph-lab` passed.
-
 Independent review: Spec review APPROVE, 0 blockers; standards/architecture
-review APPROVE, 0 documented breaches and 1 LOW judgement-call smell, both
-against `5a3e09e..c12befe`.
+review APPROVE for the earlier `5a3e09e..c12befe` delta, 0 documented breaches
+and 1 LOW judgement-call smell. The concurrent first-open CI stability repair
+delta (`ab92bbe..ceda06f`) requires its own focused independent review; see K1
+closeout.
 
 Remaining risks and non-goals: No fsync or power-loss guarantee, schema
 migration framework, distributed store, worker lease/fencing, compaction,
