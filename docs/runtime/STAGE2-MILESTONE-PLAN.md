@@ -74,8 +74,9 @@ records the new evidence and preserves completed contracts.
 
 Status: Completed. The repair closed idempotency lineage validation, bootstrap
 error classification, identity deserialization invariants, ledger-only physical
-wire state, and the cross-process/logical-corruption acceptance proof. Both
-independent durability/recovery reviews returned APPROVE with no blocker.
+wire state, cross-process/logical-corruption proof, and the interrupted
+`create_run` to workflow-identity crash window. Both independent
+durability/recovery reviews returned APPROVE with no blocker.
 
 ### Outcome
 
@@ -151,8 +152,12 @@ contract is closed.
 
 Base: `31abe5145c2822ac11ce7d70557a069f098f0437`
 
-Final integrated HEAD: `4fd5dd81e58d760aa001f2b6e4ab554b06873800` (implementation;
+Final integrated HEAD: `c12befe4287cdebfcb737c39ebadd693ed71f92b` (implementation;
 the following documentation commit records this evidence).
+
+Bootstrap crash window: Closed. An existing row is repaired only when the
+pristine bootstrap predicate holds; identity recovery uses the existing
+`workflow-replay-identity` idempotency key and `StoreRevision::INITIAL` CAS.
 
 Implementation blocks / explicit Slices actually used: Fresh-context continuous
 repair with no explicit Slice. The blocks were failing acceptance tests, the
@@ -169,16 +174,20 @@ incompatible versions and invalid replay lineage fail closed.
 
 Focused verification: `cargo test -p workflow-recovery --all-features` (51
 passed, 7 filtered) and `cargo test -p runtime-core --test k1_physical
---all-features` (5 passed), including exact cross-process recovery decisions,
-empty-bootstrap classification, identity serde rejection, ledger tamper/CAS/
-idempotency checks, and checksum-valid logical corruption rejection.
+--all-features` (9 passed), including physical interrupted-bootstrap reopen,
+same-definition recovery, conflicting-definition rejection, non-pristine
+missing-identity rejection, normal initialized-run regression, exact
+cross-process recovery decisions, ledger tamper/CAS/idempotency checks, and
+checksum-valid logical corruption rejection.
 
 Broad verification: `cargo fmt --all -- --check`; `cargo clippy --workspace
 --all-targets --all-features -- -D warnings`; `cargo test --workspace
---all-features` (206 passed, 7 filtered across 27 suites).
+--all-features` (210 passed, 7 filtered across 27 suites); `cargo run -p
+graph-lab` passed.
 
 Independent review: Spec review APPROVE, 0 blockers; standards/architecture
-review APPROVE, 0 blockers, both against `31abe514..4fd5dd81`.
+review APPROVE, 0 documented breaches and 1 LOW judgement-call smell, both
+against `5a3e09e..c12befe`.
 
 Remaining risks and non-goals: No fsync or power-loss guarantee, schema
 migration framework, distributed store, worker lease/fencing, compaction,
