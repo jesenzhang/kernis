@@ -633,6 +633,27 @@ impl DurableRunState {
         self.workflow_replay_identity.as_ref()
     }
 
+    /// Returns whether the run is an untouched bootstrap row whose first
+    /// workflow identity commit may have been interrupted.
+    #[must_use]
+    pub fn is_pristine_bootstrap(&self) -> bool {
+        self.revision == StoreRevision::INITIAL
+            && self.workflow_replay_identity.is_none()
+            && self.admissions.is_empty()
+            && self.admission_history.is_empty()
+            && self.intents.is_empty()
+            && self.task_operations.is_empty()
+            && self.cancellations.is_empty()
+            && self.dispatches.is_empty()
+            && self.dispatch_history.is_empty()
+            && self.outcomes.is_empty()
+            && self.outcome_history.is_empty()
+            && self.completions.is_empty()
+            && self.completion_history.is_empty()
+            && self.commit_ledger.is_empty()
+            && self.idempotency.is_empty()
+    }
+
     /// Returns all admitted attempts in durable admission order.
     pub fn attempts(&self) -> impl Iterator<Item = &AttemptAdmission> {
         self.admission_history.iter()

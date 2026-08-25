@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use workflow_graph::{Task, WorkflowGraph, WorkflowMutation};
 use workflow_recovery::{
-    EffectSemantics, FileDurableStore, KnownEffectOutcome, OperationId, RecoveryAction, StoreError,
+    AttemptAdmission, AttemptId, CommitRequest, DurableMutation, DurableStore, EffectSemantics,
+    FileDurableStore, IdempotencyKey, KnownEffectOutcome, OperationId, RecoveryAction, StoreError,
+    StoreRevision,
 };
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -355,6 +357,175 @@ fn runtime_reopens_physical_no_effect_completion_and_dependency_chain() {
     );
     let state = final_restart.durable_state().expect("chain state loads");
     assert_eq!(state.completion_history().len(), 2);
+}
+
+#[test]
+fn runtime_recovers_interrupted_physical_bootstrap_after_reopen() {
+    let temp = TempStore::new("interrupted-bootstrap");
+    let run_id = RunId::new("physical-interrupted-bootstrap").expect("run id is valid");
+    let workflow = single_task_workflow("task");
+    let mut store = FileDurableStore::open(&temp.path).expect("physical store opens");
+    assert_eq!(
+        store.create_run(run_id.clone()).expect("run creates"),
+        StoreRevision::INITIAL
+    );
+    drop(store);
+
+    let mut runtime = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow,
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FileDurableStore::open(&temp.path).expect("physical store reopens"),
+    )
+    .expect("interrupted bootstrap resumes");
+    let state = runtime.durable_state().expect("state loads");
+    assert!(state.workflow_replay_identity().is_some());
+    assert_eq!(state.revision().get(), 1);
+    assert_eq!(state.commit_ledger().len(), 1);
+    assert_eq!(
+        state
+            .commit_ledger()
+            .iter()
+            .filter(|entry| entry.idempotency_key.as_str() == "workflow-replay-identity")
+            .count(),
+        1
+    );
+    assert!(matches!(
+        runtime.step().expect("recovered runtime is usable"),
+        StepResult::Completed { .. }
+    ));
+}
+
+#[test]
+fn runtime_rejects_conflicting_definition_after_interrupted_bootstrap_recovery() {
+    let temp = TempStore::new("interrupted-bootstrap-conflict");
+    let run_id = RunId::new("physical-interrupted-bootstrap-conflict").expect("run id is valid");
+    let first_workflow = single_task_workflow("first-task");
+    let second_workflow = single_task_workflow("second-task");
+    let mut store = FileDurableStore::open(&temp.path).expect("physical store opens");
+    store.create_run(run_id.clone()).expect("run creates");
+    drop(store);
+
+    let first = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        first_workflow,
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FileDurableStore::open(&temp.path).expect("physical store reopens"),
+    )
+    .expect("first definition establishes identity");
+    let established_identity = first
+        .durable_state()
+        .expect("established state loads")
+        .workflow_replay_identity()
+        .cloned()
+        .expect("identity is committed");
+    drop(first);
+
+    let conflicting = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        second_workflow,
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FileDurableStore::open(&temp.path).expect("physical store reopens for conflict"),
+    );
+    assert!(matches!(
+        conflicting,
+        Err(RuntimeError::Store(StoreError::RunAlreadyExists(_)))
+    ));
+
+    let state = FileDurableStore::open(&temp.path)
+        .expect("physical store reopens for assertion")
+        .load_run(&run_id)
+        .expect("state loads after conflict");
+    assert_eq!(
+        state.workflow_replay_identity(),
+        Some(&established_identity)
+    );
+    assert_eq!(state.revision().get(), 1);
+    assert_eq!(state.commit_ledger().len(), 1);
+}
+
+#[test]
+fn runtime_rejects_non_pristine_missing_identity_without_repair() {
+    let temp = TempStore::new("missing-identity-fact");
+    let run_id = RunId::new("physical-missing-identity-fact").expect("run id is valid");
+    let attempt_id = AttemptId::new("preidentity-attempt").expect("attempt id is valid");
+    let workflow = single_task_workflow("task");
+    let mut store = FileDurableStore::open(&temp.path).expect("physical store opens");
+    store.create_run(run_id.clone()).expect("run creates");
+    store
+        .commit(CommitRequest::single(
+            run_id.clone(),
+            StoreRevision::INITIAL,
+            IdempotencyKey::new("preidentity-attempt").expect("idempotency key is valid"),
+            DurableMutation::AdmitAttempt(AttemptAdmission {
+                run_id: run_id.clone(),
+                task_id: id("task"),
+                attempt_id,
+                operation_id: None,
+                capabilities: Vec::new(),
+            }),
+        ))
+        .expect("non-identity fact commits");
+    drop(store);
+
+    let result = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow,
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FileDurableStore::open(&temp.path).expect("physical store reopens"),
+    );
+    assert!(matches!(
+        result,
+        Err(RuntimeError::Store(StoreError::RunAlreadyExists(_)))
+    ));
+
+    let state = FileDurableStore::open(&temp.path)
+        .expect("physical store reopens for assertion")
+        .load_run(&run_id)
+        .expect("state loads after rejection");
+    assert!(state.workflow_replay_identity().is_none());
+    assert_eq!(state.attempts().count(), 1);
+    assert_eq!(state.revision().get(), 1);
+    assert_eq!(state.commit_ledger().len(), 1);
+}
+
+#[test]
+fn runtime_rejects_already_initialized_run_without_bootstrap_reclassification() {
+    let temp = TempStore::new("initialized-bootstrap");
+    let run_id = RunId::new("physical-initialized-bootstrap").expect("run id is valid");
+    let workflow = single_task_workflow("task");
+    let first = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow.clone(),
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FileDurableStore::open(&temp.path).expect("physical store opens"),
+    )
+    .expect("runtime starts");
+    drop(first);
+
+    let result = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow,
+        capability_graph::Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FileDurableStore::open(&temp.path).expect("physical store reopens"),
+    );
+    assert!(matches!(
+        result,
+        Err(RuntimeError::Store(StoreError::RunAlreadyExists(_)))
+    ));
+    let state = FileDurableStore::open(&temp.path)
+        .expect("physical store reopens for assertion")
+        .load_run(&run_id)
+        .expect("state loads");
+    assert!(state.workflow_replay_identity().is_some());
+    assert_eq!(state.revision().get(), 1);
+    assert_eq!(state.commit_ledger().len(), 1);
 }
 
 #[test]

@@ -458,7 +458,17 @@ where
         ensure_unfinished_workflow(&workflow)?;
         let task_configs = collect_task_configs(&workflow, task_configs)?;
         let replay_identity = workflow_replay_identity(&workflow, &task_configs)?;
-        let created_revision = store.create_run(run_id.clone())?;
+        let created_revision = match store.create_run(run_id.clone()) {
+            Ok(revision) => revision,
+            Err(StoreError::RunAlreadyExists(existing_run_id)) => {
+                let state = store.load_run(&run_id)?;
+                if !state.is_pristine_bootstrap() {
+                    return Err(StoreError::RunAlreadyExists(existing_run_id).into());
+                }
+                StoreRevision::INITIAL
+            }
+            Err(error) => return Err(error.into()),
+        };
         let store_revision = store
             .commit(CommitRequest::single(
                 run_id.clone(),
