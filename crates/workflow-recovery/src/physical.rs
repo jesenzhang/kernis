@@ -20,8 +20,28 @@ const RUNS: TableDefinition<&str, &[u8]> = TableDefinition::new("kernis_runs_v1"
 const FORMAT_MAGIC: &[u8] = b"KERNIS-DURABLE-STATE";
 const FORMAT_VERSION: u16 = 5;
 const CHECKSUM_LEN: usize = std::mem::size_of::<u64>();
+/// Normal-operation contention budget for ordinary CRUD database handles.
+/// Circuits only after a short fixed iteration budget; this is not the
+/// bootstrap policy (see [`BOOTSTRAP_WAIT_DEADLINE`]).
 const DATABASE_OPEN_RETRIES: usize = 40;
 const DATABASE_OPEN_RETRY_DELAY: Duration = Duration::from_millis(5);
+
+/// First-open bootstrap contention policy.
+///
+/// redb allows exactly one `Database` handle per physical file, so a
+/// [`DatabaseError::DatabaseAlreadyOpen`] observed while a fresh store is
+/// being created means *another opener currently owns the file and is
+/// mid-bootstrap*, not a permanent backend failure. This wall-clock deadline
+/// bounds how long a first-open caller waits for that transient ownership to
+/// clear before it classifies the backend as unavailable. It is deliberately
+/// separate from the small normal-operation budget above: a one-time
+/// bootstrap may legitimately hold the handle for much longer than a routine
+/// commit, because it performs create plus table-init plus a durable commit.
+const BOOTSTRAP_WAIT_DEADLINE: Duration = Duration::from_secs(5);
+/// Poll interval between acquisition attempts while waiting out bootstrap
+/// ownership. Kept short so success latency stays low and is not dominated by
+/// the deadline.
+const BOOTSTRAP_WAIT_POLL: Duration = Duration::from_millis(10);
 
 /// Physical durable store using one embedded redb file.
 ///
@@ -58,12 +78,14 @@ impl FileDurableStore {
         let store = Self { path };
         let existed = store.path.exists();
         let (database, created_by_store) = if existed {
-            (open_existing_database(&store.path)?, false)
+            (open_bootstrap_database(&store.path)?, false)
         } else {
             match Database::create(&store.path) {
                 Ok(database) => (database, true),
+                // Another opener owns the file and is mid-creation. That is
+                // transient bootstrap contention, not permanent unavailability.
                 Err(DatabaseError::DatabaseAlreadyOpen) => {
-                    (open_existing_database(&store.path)?, false)
+                    (open_bootstrap_database(&store.path)?, false)
                 }
                 Err(error) => return Err(map_database_error(error)),
             }
@@ -225,6 +247,28 @@ fn database_has_table(database: &Database) -> Result<bool, StoreError> {
         Ok(_table) => Ok(true),
         Err(redb::TableError::TableDoesNotExist(_)) => Ok(false),
         Err(error) => Err(map_table_error(error)),
+    }
+}
+
+fn open_bootstrap_database(path: &Path) -> Result<Database, StoreError> {
+    let deadline = std::time::Instant::now() + BOOTSTRAP_WAIT_DEADLINE;
+    loop {
+        match Database::open(path) {
+            Ok(database) => return Ok(database),
+            // `DatabaseAlreadyOpen` while bootstrapping a fresh store means
+            // another opener currently owns the file and is mid
+            // create/table-init. Wait out that transient ownership up to the
+            // bounded policy deadline. Every other error maps immediately, so
+            // permission/I/O/corruption is never retried.
+            Err(DatabaseError::DatabaseAlreadyOpen) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(BOOTSTRAP_WAIT_POLL);
+            }
+            // The backend is still actively unavailable after the bounded
+            // bootstrap window; classify it as such rather than retrying
+            // forever.
+            Err(DatabaseError::DatabaseAlreadyOpen) => return Err(StoreError::BackendUnavailable),
+            Err(error) => return Err(map_database_error(error)),
+        }
     }
 }
 
