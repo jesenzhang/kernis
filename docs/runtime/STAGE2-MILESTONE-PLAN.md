@@ -266,6 +266,11 @@ definition plus durable state, without cloning a previously live
 - Do not make the persistent store a service locator or plugin loader.
 - Existing direct construction APIs remain supported unless an explicit
   compatibility decision supersedes them.
+- Preserve the exact main-branch `kernis-workflow-replay-v1` algorithm for
+  `start_run*`, `restore_run`, and their live-object identity mutations.
+- Keep declarative `kernis-run-definition-v1` canonicalization separate from
+  legacy live-object identity provenance; do not add automatic fallback or
+  durable identity migration.
 
 **Non-goals**
 
@@ -283,6 +288,9 @@ definition plus durable state, without cloning a previously live
   lifecycle or execution observations.
 - Approved A-to-B-to-A definition transitions cannot replay a stale identity
   update.
+- A K1/main durable run restores through the legacy API, while a declarative
+  runtime rejects `configure_task` and `apply_workflow_mutation` before any
+  legacy identity write.
 
 ### Decision and risk boundaries
 
@@ -306,7 +314,7 @@ Result: Candidate / implementation PASS; K2 is not integrated.
 Base: `1e8cf70` (`main`, K1 integrated).
 
 Final integrated HEAD: N/A while the candidate awaits independent review;
-implementation candidate commit is `017e2af`.
+implementation candidate commit is `5fe0ea4`.
 
 Implementation blocks / explicit Slices actually used: One continuous K2
 milestone; no explicit Slice or handoff was needed.
@@ -314,18 +322,22 @@ milestone; no explicit Slice or handoff was needed.
 Material decisions: Added serializable-friendly `RunDefinition`,
 `TaskDefinition`, `CapabilityRequirement`, `DefinitionIdentity`, and a
 process-local `FactoryRegistry`; kept `WorkflowGraph`, capability scope, and
-`DurableStore` as the existing authorities; reused the durable replay-identity
-mutation and revision-CAS protocol; excluded task display labels from the
-versioned `kernis-run-definition-v1` identity.
+`DurableStore` as the existing authorities; kept the exact main-branch
+`kernis-workflow-replay-v1` live-object algorithm separate from the
+`kernis-run-definition-v1` canonicalizer; tracked identity provenance
+internally; rejected legacy mutators on declarative runtimes before durable
+writes; reused the durable replay-identity mutation and revision-CAS protocol;
+excluded task display labels only from the versioned RunDefinition identity.
 
-Focused verification: K2 declarative suite 10 passed; runtime-core K1 physical
-suite 9 passed; workflow-recovery physical suite 9 passed; staged diff check
-passed.
+Focused verification: K2 declarative suite 14 passed; runtime-core K1 physical
+suite 9 passed; workflow-recovery all-features suite 51 passed; staged diff
+check passed.
 
 Broad verification: `cargo fmt --all -- --check` passed; workspace clippy with
-`-D warnings` passed with exit code 0; workspace tests 223 passed; graph-lab
-smoke passed; no separate repository architecture verifier exists beyond the
-CI gates inspected in `.github/workflows/ci.yml`.
+`-D warnings` passed with exit code 0; workspace tests 227 passed; graph-lab
+smoke passed; `git diff --check main...HEAD` passed; no separate repository
+architecture verifier exists beyond the CI gates inspected in
+`.github/workflows/ci.yml`.
 
 Independent review: Pending; candidate is ready for independent review of the
 public definition and replay-identity contract.

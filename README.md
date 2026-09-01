@@ -96,9 +96,9 @@ future validated references.
   contract closure implemented.
 - Stage 2 K1: embedded physical `FileDurableStore` implemented with redb,
   versioned typed snapshots, reopen, CAS/idempotency, and crash-window proof.
-- Stage 2 K2: declarative definition, process-local factory separation, and
-  cold reconstruction candidate implemented on
-  `feat/k2-declarative-cold-reconstruction`; not integrated.
+- Stage 2 K2: declarative definition, process-local factory separation, cold
+  reconstruction, and K1 legacy-identity compatibility candidate implemented
+  on `feat/k2-declarative-cold-reconstruction`; not integrated.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at

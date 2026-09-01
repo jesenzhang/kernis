@@ -55,13 +55,34 @@ facts through `WorkflowGraph::replay_with_facts`, and rebuilds capability pins
 from fresh scope entries.
 
 The existing `start_run*` and `restore_run` live-object APIs remain available
-for compatibility and continue to use the existing authorities directly.
+for compatibility and continue to use the existing authorities directly. They
+retain the exact main-branch `kernis-workflow-replay-v1` canonicalization,
+including its task-label field and legacy field ordering. They are separate
+from the K2 definition canonicalizer; K2 does not silently reinterpret an
+existing K1 durable identity.
 
-## Canonical identity
+Runtime identity provenance is tracked internally. A runtime started or
+restored through the declarative APIs is marked as declarative, and the legacy
+`configure_task` and `apply_workflow_mutation` APIs return typed
+`RuntimeError::DeclarativeMutationUnsupported` before changing workflow state,
+task configuration, or durable identity. A complete definition-based
+reconfiguration protocol is outside K2.
 
-The canonical representation is explicitly versioned as
-`kernis-run-definition-v1` and uses length-prefixed textual fields. It is not
-based on Rust `Debug` output or an incidental serializer format. Task and
+## K1 compatibility and migration
+
+`restore_run` remains the compatibility path for K1/main durable runs whose
+identity starts with `kernis-workflow-replay-v1`; a fixed physical fixture
+proves that the exact legacy identity still restores after K2. Conversely,
+`restore_from_definition` requires the exact `kernis-run-definition-v1`
+identity produced by `RunDefinition`. There is no automatic migration or
+fallback matching between the two formats.
+
+## RunDefinition canonical identity
+
+Only `RunDefinition` uses the K2 canonical representation. It is explicitly
+versioned as `kernis-run-definition-v1` and uses length-prefixed textual
+fields. It is not based on Rust `Debug` output or an incidental serializer
+format. Task and
 capability declarations, prerequisite edges, capability requirements, and
 effect configuration are sorted by logical identity before canonicalization.
 
@@ -73,13 +94,17 @@ the identity. Equivalent authoring order produces the same identity.
 ## Failure behavior
 
 Definition validation rejects duplicate task/capability declarations,
-duplicate task configuration inputs, duplicate requirements, invalid topology,
-duplicate operation identity, and capability identity disagreement with typed
-`DefinitionError` values. A missing factory returns typed
+duplicate requirements, invalid topology, duplicate operation identity, and
+capability identity disagreement with typed `DefinitionError` values. The
+legacy live-object task-configuration collection retains main's existing
+last-write-wins behavior; declarative definitions have one validated task
+declaration per logical task and do not route through that collection. A
+missing factory returns typed
 `FactoryResolutionError::MissingFactory` before store creation or task
 execution. A durable identity mismatch returns `RuntimeError::DefinitionMismatch`
-before factory construction. Durable backend failures remain wrapped by the
-existing typed `RuntimeError::Store` boundary.
+before factory construction, and legacy mutators are rejected on declarative
+runtimes before a durable commit. Durable backend failures remain wrapped by
+the existing typed `RuntimeError::Store` boundary.
 
 Definition identity transitions continue to use the existing durable revision
 CAS and idempotency protocol. A stale identity writer cannot overwrite a
@@ -94,9 +119,11 @@ serialization of arbitrary Rust closures and runtime objects.
 
 ## Evidence
 
-The K2 candidate test suite covers canonical ordering and label semantics,
-typed duplicate rejection, missing-factory fail-closed behavior, dependency
-ordered capability construction, definition mismatch before construction,
-revision-CAS protection for an A-to-B-to-A transition, and a child-process
+The K2 candidate test suite covers canonical ordering and RunDefinition label
+semantics, typed declarative duplicate rejection, the fixed main-branch legacy
+identity fixture, missing-factory fail-closed behavior, dependency-ordered
+capability construction, definition mismatch before construction, typed
+declarative provenance rejection for legacy mutators, separate legacy and
+declarative durable-boundary CAS transitions, and a child-process
 physical-store write followed by fresh declarative reconstruction and effect
 recovery.
