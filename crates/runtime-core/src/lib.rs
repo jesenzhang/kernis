@@ -7,6 +7,9 @@
 //! and replacement. This crate owns coordination and disposable observations
 //! only.
 
+mod definition;
+use definition::ValidatedRunDefinition;
+
 use capability_graph::{
     CapabilityContext, CapabilityHandle, CapabilityRegistry, EntryId, Generation,
     ReactiveCapabilityRuntime, Scope, ScopeError,
@@ -16,6 +19,7 @@ use execution_stream::{
     StreamItem, StreamSequencer,
 };
 use kernis_core::Id;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use workflow_graph::{
@@ -30,6 +34,10 @@ use workflow_recovery::{
     StoreInvariant, StoreRevision, WorkflowReplayIdentity, classify_recovery,
 };
 
+pub use definition::{
+    CapabilityDeclaration, CapabilityRequirement, DefinitionError, DefinitionIdentity,
+    FactoryRegistry, FactoryResolutionError, RUN_DEFINITION_FORMAT, RunDefinition, TaskDefinition,
+};
 pub use workflow_recovery::RunId;
 
 /// A capability handle pinned for the complete lifetime of one task attempt.
@@ -80,7 +88,7 @@ impl TaskAttempt {
 }
 
 /// Runtime configuration for one logical external effect.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct EffectSpec {
     /// Stable logical operation identity.
     pub operation_id: OperationId,
@@ -89,7 +97,7 @@ pub struct EffectSpec {
 }
 
 /// Runtime inputs for a task; workflow topology and completion remain in the graph.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaskConfig {
     required_capabilities: BTreeMap<Id, Option<String>>,
     effect: Option<EffectSpec>,
@@ -235,9 +243,57 @@ pub enum Cancellation {
     },
 }
 
+/// Failure while assembling fresh process-local objects from a valid
+/// declarative definition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReconstructionError {
+    /// The capability topology could not be resolved by its authority.
+    CapabilityGraph(capability_graph::CapabilityGraphError),
+    /// Publication into the fresh capability scope failed.
+    CapabilityPublication {
+        /// Capability being published.
+        capability_id: Id,
+        /// Typed scope failure returned by the capability authority.
+        error: ScopeError,
+    },
+    /// An internal reconstruction invariant was violated after validation.
+    ReconstructionInvariantViolation {
+        /// Stable description of the violated invariant.
+        reason: String,
+    },
+}
+
+impl fmt::Display for ReconstructionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CapabilityGraph(error) => {
+                write!(f, "capability graph reconstruction error: {error}")
+            }
+            Self::CapabilityPublication {
+                capability_id,
+                error,
+            } => write!(
+                f,
+                "failed to publish reconstructed capability {capability_id}: {error}"
+            ),
+            Self::ReconstructionInvariantViolation { reason } => {
+                write!(f, "reconstruction invariant violation: {reason}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ReconstructionError {}
+
 /// Errors returned by the synchronous runtime coordinator.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeError {
+    /// A declarative run definition failed validation.
+    Definition(DefinitionError),
+    /// A required process-local factory could not be resolved or ran.
+    Factory(FactoryResolutionError),
+    /// Fresh process-local runtime assembly failed after definition checks.
+    Reconstruction(ReconstructionError),
     /// Workflow topology or completion rejected a mutation.
     Workflow(WorkflowGraphError),
     /// Capability admission or lookup rejected an attempt.
@@ -268,6 +324,13 @@ pub enum RuntimeError {
     /// The supplied topology/configuration does not match the durable run.
     WorkflowReplayIdentityMismatch {
         /// Identity computed from the supplied workflow and configuration.
+        expected: WorkflowReplayIdentity,
+        /// Identity recorded by the durable run, if present.
+        actual: Option<WorkflowReplayIdentity>,
+    },
+    /// The supplied declarative definition does not match durable authority.
+    DefinitionMismatch {
+        /// Identity computed from the supplied declarative definition.
         expected: WorkflowReplayIdentity,
         /// Identity recorded by the durable run, if present.
         actual: Option<WorkflowReplayIdentity>,
@@ -305,6 +368,24 @@ impl From<WorkflowGraphError> for RuntimeError {
     }
 }
 
+impl From<DefinitionError> for RuntimeError {
+    fn from(error: DefinitionError) -> Self {
+        Self::Definition(error)
+    }
+}
+
+impl From<FactoryResolutionError> for RuntimeError {
+    fn from(error: FactoryResolutionError) -> Self {
+        Self::Factory(error)
+    }
+}
+
+impl From<ReconstructionError> for RuntimeError {
+    fn from(error: ReconstructionError) -> Self {
+        Self::Reconstruction(error)
+    }
+}
+
 impl From<ScopeError> for RuntimeError {
     fn from(error: ScopeError) -> Self {
         Self::Capability(error)
@@ -332,6 +413,9 @@ impl From<SequenceError> for RuntimeError {
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Definition(error) => write!(f, "definition error: {error}"),
+            Self::Factory(error) => write!(f, "factory resolution error: {error}"),
+            Self::Reconstruction(error) => write!(f, "reconstruction error: {error}"),
             Self::Workflow(error) => write!(f, "workflow error: {error}"),
             Self::Capability(error) => write!(f, "capability error: {error}"),
             Self::Journal(error) => write!(f, "journal error: {error}"),
@@ -355,6 +439,14 @@ impl fmt::Display for RuntimeError {
             Self::WorkflowReplayIdentityMismatch { expected, actual } => write!(
                 f,
                 "workflow replay identity mismatch: expected {expected}, durable state has "
+            )
+            .and_then(|_| match actual {
+                Some(actual) => write!(f, "{actual}"),
+                None => f.write_str("none"),
+            }),
+            Self::DefinitionMismatch { expected, actual } => write!(
+                f,
+                "run definition identity mismatch: expected {expected}, durable state has "
             )
             .and_then(|_| match actual {
                 Some(actual) => write!(f, "{actual}"),
@@ -435,12 +527,52 @@ impl Runtime<InMemoryDurableStore> {
             InMemoryDurableStore::new(),
         )
     }
+
+    /// Starts a run from stable declarative inputs and fresh process-local
+    /// factories using the deterministic in-memory store.
+    pub fn start_from_definition(
+        run_id: RunId,
+        definition: RunDefinition,
+        factories: &FactoryRegistry,
+    ) -> Result<Self, RuntimeError> {
+        Self::start_from_definition_with_store(
+            run_id,
+            definition,
+            factories,
+            InMemoryDurableStore::new(),
+        )
+    }
 }
 
 impl<S> Runtime<S>
 where
     S: DurableStore,
 {
+    /// Starts a run from a declarative definition and a caller-supplied
+    /// durable store.
+    ///
+    /// Definition validation and factory availability checks happen before
+    /// the store is changed or any runtime lifecycle observation can occur.
+    pub fn start_from_definition_with_store(
+        run_id: RunId,
+        definition: RunDefinition,
+        factories: &FactoryRegistry,
+        store: S,
+    ) -> Result<Self, RuntimeError> {
+        let validated = definition.validated()?;
+        factories.validate(&validated)?;
+        let (workflow, task_configs) = runtime_inputs(&validated)?;
+        let scope = reconstruct_scope(&validated, factories)?;
+        Self::start_with_identity(
+            run_id,
+            workflow,
+            scope,
+            task_configs,
+            validated.identity,
+            store,
+        )
+    }
+
     /// Starts a deterministic run using the caller-supplied durable store.
     ///
     /// The runtime takes ownership of the store and creates the run exactly
@@ -450,7 +582,7 @@ where
         workflow: WorkflowGraph,
         scope: Scope,
         task_configs: I,
-        mut store: S,
+        store: S,
     ) -> Result<Self, RuntimeError>
     where
         I: IntoIterator<Item = (Id, TaskConfig)>,
@@ -458,6 +590,25 @@ where
         ensure_unfinished_workflow(&workflow)?;
         let task_configs = collect_task_configs(&workflow, task_configs)?;
         let replay_identity = workflow_replay_identity(&workflow, &task_configs)?;
+        Self::start_with_identity(
+            run_id,
+            workflow,
+            scope,
+            task_configs,
+            replay_identity,
+            store,
+        )
+    }
+
+    fn start_with_identity(
+        run_id: RunId,
+        workflow: WorkflowGraph,
+        scope: Scope,
+        task_configs: BTreeMap<Id, TaskConfig>,
+        replay_identity: WorkflowReplayIdentity,
+        mut store: S,
+    ) -> Result<Self, RuntimeError> {
+        ensure_unfinished_workflow(&workflow)?;
         let created_revision = match store.create_run(run_id.clone()) {
             Ok(revision) => revision,
             Err(StoreError::RunAlreadyExists(existing_run_id)) => {
@@ -488,6 +639,33 @@ where
         )
     }
 
+    /// Restores a fresh runtime from a declarative definition, a fresh
+    /// process-local factory registry, and durable facts.
+    ///
+    /// Factories are only looked up during the preflight phase. Their
+    /// constructors run after the durable definition identity has been
+    /// accepted, and the returned scope, coordinator, observations, and
+    /// attempt pins are all newly allocated.
+    pub fn restore_from_definition(
+        run_id: RunId,
+        definition: RunDefinition,
+        factories: &FactoryRegistry,
+        store: S,
+    ) -> Result<Self, RuntimeError> {
+        let validated = definition.validated()?;
+        factories.validate(&validated)?;
+        let state = store.load_run(&run_id)?;
+        if state.workflow_replay_identity() != Some(&validated.identity) {
+            return Err(RuntimeError::DefinitionMismatch {
+                expected: validated.identity,
+                actual: state.workflow_replay_identity().cloned(),
+            });
+        }
+        let (workflow, task_configs) = runtime_inputs(&validated)?;
+        let scope = reconstruct_scope(&validated, factories)?;
+        Self::restore_loaded(run_id, workflow, scope, task_configs, store, state)
+    }
+
     /// Restores a fresh process-local runtime from durable facts and supplied
     /// workflow/capability configuration.
     ///
@@ -514,6 +692,17 @@ where
                 actual: state.workflow_replay_identity().cloned(),
             });
         }
+        Self::restore_loaded(run_id, workflow, scope, task_configs, store, state)
+    }
+
+    fn restore_loaded(
+        run_id: RunId,
+        workflow: WorkflowGraph,
+        scope: Scope,
+        task_configs: BTreeMap<Id, TaskConfig>,
+        store: S,
+        state: DurableRunState,
+    ) -> Result<Self, RuntimeError> {
         let workflow = replay_workflow(&workflow, state.completion_history())?;
         let mut runtime = Self::build(
             run_id,
@@ -1222,6 +1411,121 @@ fn ensure_unfinished_workflow(workflow: &WorkflowGraph) -> Result<(), RuntimeErr
     Ok(())
 }
 
+fn runtime_inputs(
+    definition: &ValidatedRunDefinition,
+) -> Result<(WorkflowGraph, BTreeMap<Id, TaskConfig>), RuntimeError> {
+    let mut mutations = Vec::with_capacity(
+        definition.tasks.len()
+            + definition
+                .tasks
+                .values()
+                .map(|task| task.dependencies.len())
+                .sum::<usize>(),
+    );
+    let mut task_configs = BTreeMap::new();
+
+    for task in definition.tasks.values() {
+        mutations.push(workflow_graph::WorkflowMutation::AddTask {
+            task: workflow_graph::Task {
+                id: task.id.clone(),
+                label: task.label.clone(),
+            },
+        });
+
+        let mut config = TaskConfig::new();
+        for requirement in &task.required_capabilities {
+            config = config.require_capability_with_identity(
+                requirement.capability_id.clone(),
+                requirement.definition_identity.as_str().to_owned(),
+            );
+        }
+        if let Some(effect) = &task.effect {
+            config = config.with_effect(effect.operation_id.clone(), effect.semantics);
+        }
+        task_configs.insert(task.id.clone(), config);
+    }
+    for task in definition.tasks.values() {
+        for dependency_id in &task.dependencies {
+            mutations.push(workflow_graph::WorkflowMutation::AddDependency {
+                task_id: task.id.clone(),
+                dependency_id: dependency_id.clone(),
+            });
+        }
+    }
+
+    let mut workflow = WorkflowGraph::default();
+    if !mutations.is_empty() {
+        workflow.apply_batch(workflow.revision(), mutations)?;
+    }
+    Ok((workflow, task_configs))
+}
+
+fn reconstruct_scope(
+    definition: &ValidatedRunDefinition,
+    factories: &FactoryRegistry,
+) -> Result<Scope, RuntimeError> {
+    let mut graph = capability_graph::CapabilityGraph::default();
+    for capability in definition.capabilities.values() {
+        let mut capability_definition = capability_graph::CapabilityDefinition::new(
+            capability.id.clone(),
+            capability.kind.clone(),
+        )
+        .with_replay_identity(capability.definition_identity.as_str().to_owned());
+        for dependency in &capability.dependencies {
+            capability_definition.add_dependency(dependency.capability_id.clone());
+        }
+        graph.insert(capability_definition);
+    }
+    let resolution = graph
+        .resolve()
+        .map_err(ReconstructionError::CapabilityGraph)?;
+    let scope = Scope::root();
+
+    for capability_id in resolution.construction_order() {
+        let capability = definition.capabilities.get(capability_id).ok_or_else(|| {
+            ReconstructionError::ReconstructionInvariantViolation {
+                reason: format!("resolved unknown capability {capability_id}"),
+            }
+        })?;
+        let factory = factories
+            .factory_for(&capability.id, &capability.definition_identity)
+            .ok_or_else(|| ReconstructionError::ReconstructionInvariantViolation {
+                reason: format!(
+                    "prevalidated factory disappeared for capability {} definition {}",
+                    capability.id, capability.definition_identity
+                ),
+            })?;
+        let mut capability_definition = capability_graph::CapabilityDefinition::new(
+            capability.id.clone(),
+            capability.kind.clone(),
+        )
+        .with_replay_identity(capability.definition_identity.as_str().to_owned());
+        for dependency in &capability.dependencies {
+            capability_definition.add_dependency(dependency.capability_id.clone());
+        }
+        let capability_id = capability.id.clone();
+        let definition_identity = capability.definition_identity.clone();
+        scope
+            .provide(capability_definition, move |dependencies| {
+                factory(dependencies)
+            })
+            .map_err(|error| match error {
+                ScopeError::ConstructionFailed { reason, .. } => {
+                    RuntimeError::Factory(FactoryResolutionError::ConstructionFailed {
+                        capability_id,
+                        definition_identity,
+                        reason,
+                    })
+                }
+                error => RuntimeError::Reconstruction(ReconstructionError::CapabilityPublication {
+                    capability_id,
+                    error,
+                }),
+            })?;
+    }
+    Ok(scope)
+}
+
 fn collect_task_configs<I>(
     workflow: &WorkflowGraph,
     task_configs: I,
@@ -1234,7 +1538,11 @@ where
         if workflow.task(&task_id).is_none() {
             return Err(RuntimeError::UnknownTask(task_id));
         }
-        configs.insert(task_id, config);
+        if configs.insert(task_id.clone(), config).is_some() {
+            return Err(RuntimeError::Definition(
+                DefinitionError::DuplicateTaskConfiguration(task_id),
+            ));
+        }
     }
     Ok(configs)
 }
@@ -1243,12 +1551,11 @@ fn workflow_replay_identity(
     workflow: &WorkflowGraph,
     task_configs: &BTreeMap<Id, TaskConfig>,
 ) -> Result<WorkflowReplayIdentity, StoreError> {
-    let mut canonical = String::from("kernis-workflow-replay-v1");
+    let mut canonical = String::from(RUN_DEFINITION_FORMAT);
     append_identity_part(&mut canonical, "tasks");
     for task in workflow.tasks() {
         append_identity_part(&mut canonical, "task");
         append_identity_part(&mut canonical, task.id.as_str());
-        append_identity_part(&mut canonical, &task.label);
         if let Some(config) = task_configs.get(&task.id) {
             append_identity_part(&mut canonical, "config");
             for (capability_id, definition_identity) in &config.required_capabilities {

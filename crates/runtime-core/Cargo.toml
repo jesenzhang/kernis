@@ -9,6 +9,7 @@ license.workspace = true
 capability-graph = { path = "../capability-graph" }
 execution-stream = { path = "../execution-stream" }
 kernis-core = { path = "../core" }
+serde = { version = "1.0", features = ["derive"] }
 workflow-graph = { path = "../workflow-graph" }
 workflow-recovery = { path = "../workflow-recovery" }
 

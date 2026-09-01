@@ -58,7 +58,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | Milestone | Outcome | Depends on | Status | Review |
 | --- | --- | --- | --- | --- |
 | K1 | Embedded physical durability | M2-B contract closure | Integrated | Independent - APPROVE |
-| K2 | Declarative configuration and cold reconstruction | K1 | Planned | Independent |
+| K2 | Declarative configuration and cold reconstruction | K1 | In Progress / Candidate | Independent |
 | K3 | Explicit asynchronous execution boundary | K2 | Planned | Independent |
 | K4 | Runtime and plugin composition API | K2, K3 | Planned | Independent |
 | K5 | Minimal loader boundary | K4 | Planned | Independent |

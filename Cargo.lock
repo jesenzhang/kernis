@@ -170,6 +170,7 @@ dependencies = [
  "execution-stream",
  "kernis-core",
  "redb",
+ "serde",
  "tokio",
  "workflow-graph",
  "workflow-recovery",
