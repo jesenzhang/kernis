@@ -5,8 +5,10 @@
 //! external-effect facts, while [`DurableJournal`] is the compatibility view,
 //! [`capability_graph::Scope`] remains the authority for capability lifetime
 //! and replacement. This crate owns coordination and disposable observations
-//! only.
+//! only. [`RuntimeDriver`] provides an optional executor-neutral asynchronous
+//! ownership seam without changing the synchronous Runtime semantics.
 
+mod async_driver;
 mod definition;
 use definition::ValidatedRunDefinition;
 
@@ -34,6 +36,10 @@ use workflow_recovery::{
     StoreInvariant, StoreRevision, WorkflowReplayIdentity, classify_recovery,
 };
 
+pub use async_driver::{
+    DriveResult, DriverError, DriverExit, DriverFuture, EffectDispatchError, EffectDispatchFuture,
+    EffectDispatchRequest, EffectDispatcher, RuntimeDriver, RuntimeHandle, ShutdownStatus,
+};
 pub use definition::{
     CapabilityDeclaration, CapabilityRequirement, DefinitionError, DefinitionIdentity,
     FactoryRegistry, FactoryResolutionError, RUN_DEFINITION_FORMAT, RunDefinition, TaskDefinition,

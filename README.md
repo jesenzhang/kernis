@@ -97,8 +97,11 @@ future validated references.
 - Stage 2 K1: embedded physical `FileDurableStore` implemented with redb,
   versioned typed snapshots, reopen, CAS/idempotency, and crash-window proof.
 - Stage 2 K2: declarative definition, process-local factory separation, cold
-  reconstruction, and K1 legacy-identity compatibility candidate implemented
-  on `feat/k2-declarative-cold-reconstruction`; not integrated.
+  reconstruction, and K1 legacy-identity compatibility candidate are present
+  on local `main` at `684ae84`; formal K2 closeout still awaits independent
+  review.
+- Stage 2 K3: executor-neutral single-owner async driver candidate is being
+  implemented on `feat/k3-explicit-async-boundary`.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at

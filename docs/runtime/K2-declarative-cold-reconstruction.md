@@ -4,6 +4,10 @@ Status: In Progress / Candidate
 
 Base: `1e8cf70` (`main`, K1 integrated)
 
+Candidate checkpoint: `684ae84a3da94472e4b2263a5c3bfd734574c96f`, now present on
+local `main` to satisfy the K3 integration precondition. This does not change
+the formal status: K2 still awaits independent review.
+
 K2 adds a stable declaration boundary around the existing deterministic
 Runtime Core. The declaration is an input to reconstruction; it is not a new
 workflow, capability, or durable authority.

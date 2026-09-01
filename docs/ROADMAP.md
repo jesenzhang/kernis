@@ -33,8 +33,9 @@ implementation plan is maintained in
 5. K5 Minimal Loader Boundary;
 6. K6 Runtime Kernel API Stabilization and R2 Closeout.
 
-K2 is currently In Progress / Candidate on the feature branch
-`feat/k2-declarative-cold-reconstruction`; it is not integrated.
+K2 remains In Progress / Candidate pending independent review. Its candidate
+checkpoint is present on local `main` at `684ae84` as the K3 integration
+precondition; K3 work continues on `feat/k3-explicit-async-boundary`.
 
 The milestone is the delivery unit. Slice boundaries are introduced only when
 current implementation risk, ownership, verification, or context quality makes
