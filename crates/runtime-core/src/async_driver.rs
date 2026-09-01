@@ -295,6 +295,9 @@ struct MailboxState {
     commands: VecDeque<DriverCommand>,
     closed: bool,
     waker: Option<Waker>,
+    shutdown_execution_events: Vec<StreamItem<RuntimeEvent>>,
+    shutdown_progress_events: Vec<KeyedStreamItem<Id, RuntimeEvent>>,
+    shutdown_telemetry_events: Vec<StreamItem<RuntimeEvent>>,
 }
 
 impl CommandMailbox {
@@ -304,6 +307,9 @@ impl CommandMailbox {
                 commands: VecDeque::new(),
                 closed: false,
                 waker: None,
+                shutdown_execution_events: Vec::new(),
+                shutdown_progress_events: Vec::new(),
+                shutdown_telemetry_events: Vec::new(),
             })),
         }
     }
@@ -329,15 +335,74 @@ impl CommandMailbox {
         }
     }
 
-    fn close_and_reject_pending(&self) {
+    fn close_and_reject_pending(
+        &self,
+        execution_events: Vec<StreamItem<RuntimeEvent>>,
+        progress_events: Vec<KeyedStreamItem<Id, RuntimeEvent>>,
+        telemetry_events: Vec<StreamItem<RuntimeEvent>>,
+    ) {
         let pending = {
             let mut state = lock(&self.state);
             state.closed = true;
             state.waker = None;
+            state.shutdown_execution_events = execution_events;
+            state.shutdown_progress_events = progress_events;
+            state.shutdown_telemetry_events = telemetry_events;
             state.commands.drain(..).collect::<Vec<_>>()
         };
         for command in pending {
-            command.reject(DriverError::ShuttingDown);
+            self.complete_after_close(command);
+        }
+    }
+
+    fn take_shutdown_execution_events(&self) -> Option<Vec<StreamItem<RuntimeEvent>>> {
+        let mut state = lock(&self.state);
+        if state.closed {
+            Some(std::mem::take(&mut state.shutdown_execution_events))
+        } else {
+            None
+        }
+    }
+
+    fn take_shutdown_progress_events(&self) -> Option<Vec<KeyedStreamItem<Id, RuntimeEvent>>> {
+        let mut state = lock(&self.state);
+        if state.closed {
+            Some(std::mem::take(&mut state.shutdown_progress_events))
+        } else {
+            None
+        }
+    }
+
+    fn take_shutdown_telemetry_events(&self) -> Option<Vec<StreamItem<RuntimeEvent>>> {
+        let mut state = lock(&self.state);
+        if state.closed {
+            Some(std::mem::take(&mut state.shutdown_telemetry_events))
+        } else {
+            None
+        }
+    }
+
+    fn complete_after_close(&self, command: DriverCommand) {
+        match command {
+            DriverCommand::DrainExecutionEvents { reply } => {
+                match self.take_shutdown_execution_events() {
+                    Some(events) => reply.complete(Ok(events)),
+                    None => reply.complete(Err(DriverError::ShuttingDown)),
+                }
+            }
+            DriverCommand::DrainProgressEvents { reply } => {
+                match self.take_shutdown_progress_events() {
+                    Some(events) => reply.complete(Ok(events)),
+                    None => reply.complete(Err(DriverError::ShuttingDown)),
+                }
+            }
+            DriverCommand::DrainTelemetryEvents { reply } => {
+                match self.take_shutdown_telemetry_events() {
+                    Some(events) => reply.complete(Ok(events)),
+                    None => reply.complete(Err(DriverError::ShuttingDown)),
+                }
+            }
+            command => command.reject(DriverError::ShuttingDown),
         }
     }
 }
@@ -460,19 +525,25 @@ impl RuntimeHandle {
     }
 
     /// Drains lifecycle observations without exposing the runtime owner.
+    ///
+    /// After a successful shutdown, the final buffered lifecycle observations
+    /// remain available through this handle and are returned once.
     pub fn drain_execution_events(&self) -> DriverFuture<Vec<StreamItem<RuntimeEvent>>> {
         let (reply, future) = response_channel();
         self.submit(DriverCommand::DrainExecutionEvents { reply }, future)
     }
 
     /// Drains coalescible progress observations without exposing the runtime
-    /// owner.
+    /// owner. Final buffered progress observations remain drainable once after
+    /// a successful shutdown.
     pub fn drain_progress_events(&self) -> DriverFuture<Vec<KeyedStreamItem<Id, RuntimeEvent>>> {
         let (reply, future) = response_channel();
         self.submit(DriverCommand::DrainProgressEvents { reply }, future)
     }
 
     /// Drains lossy telemetry observations without exposing the runtime owner.
+    /// Final buffered telemetry observations remain drainable once after a
+    /// successful shutdown.
     pub fn drain_telemetry_events(&self) -> DriverFuture<Vec<StreamItem<RuntimeEvent>>> {
         let (reply, future) = response_channel();
         self.submit(DriverCommand::DrainTelemetryEvents { reply }, future)
@@ -489,7 +560,7 @@ impl RuntimeHandle {
 
     fn submit<T>(&self, command: DriverCommand, future: DriverFuture<T>) -> DriverFuture<T> {
         if let Err(command) = self.mailbox.submit(command) {
-            command.reject(DriverError::ShuttingDown);
+            self.mailbox.complete_after_close(command);
         }
         future
     }
@@ -562,8 +633,15 @@ where
                 }
                 DriverCommand::Shutdown { reply } => match self.shutdown_now() {
                     Ok(status) => {
+                        let execution_events = self.runtime.drain_execution_events();
+                        let progress_events = self.runtime.drain_progress_events();
+                        let telemetry_events = self.runtime.drain_telemetry_events();
                         reply.complete(Ok(status.clone()));
-                        self.mailbox.close_and_reject_pending();
+                        self.mailbox.close_and_reject_pending(
+                            execution_events,
+                            progress_events,
+                            telemetry_events,
+                        );
                         return DriverExit {
                             runtime: self.runtime,
                             status,

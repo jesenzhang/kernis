@@ -429,14 +429,18 @@ their existing authorities; made durable dispatch and exact `AttemptId`
 lineage precede external calls; preserved unknown outcomes and explicit
 idempotent retry/reconciliation semantics; and kept shutdown classification
 and lossless lifecycle backpressure inside the driver. No Tokio type or async
-DurableStore API crosses the public kernel seam.
+DurableStore API crosses the public kernel seam. Successful shutdown transfers
+final buffered observations to a post-shutdown handle drain before releasing
+the runtime; the driver is intentionally `Send` while remaining executor-
+neutral through standard-library futures.
 
-Focused verification: K3 async suite 18 passed; K1 physical suite 9 passed;
-K2 declarative suite 14 passed; workflow-recovery all-features suite 51
-passed.
+Focused verification: K3 async suite 21 passed; K1 physical suite 9 passed;
+K2 declarative suite 14 passed; existing runtime suite 9 passed; M2-B durable
+suite 18 passed; M2-C1 repair suite 1 passed; M2-C2 integration suite 4
+passed; workflow-recovery all-features suite 51 passed.
 
 Broad verification: format, workspace clippy with `-D warnings`, workspace
-tests (245 passed), graph-lab smoke, and the K2-base diff check passed locally.
+tests (248 passed), graph-lab smoke, and the K2-base diff check passed locally.
 These are candidate results, not CI or integration claims.
 
 Independent review: Deferred until all K3 implementation, documentation,

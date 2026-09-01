@@ -496,6 +496,77 @@ async fn cancellation_after_known_outcome_cannot_erase_dispatch() {
 }
 
 #[tokio::test]
+async fn shutdown_during_dispatch_settles_known_outcome_without_redispatch() {
+    let (started_sender, started_receiver) = oneshot::channel();
+    let (release_sender, release_receiver) = oneshot::channel();
+    let dispatcher = WaitingDispatcher::new(started_sender, release_receiver);
+    let requests = dispatcher.requests.clone();
+    let (handle, join) = start_driver(
+        effect_runtime("shutdown-during-known", EffectSemantics::Idempotent),
+        dispatcher,
+    );
+    let drive = handle.drive();
+    started_receiver.await.expect("dispatcher starts");
+    let shutdown = handle.shutdown();
+    release_sender
+        .send(Ok(KnownEffectOutcome::Succeeded))
+        .expect("known outcome releases");
+
+    assert!(matches!(
+        drive.await.expect("in-flight effect completes"),
+        DriveResult::EffectCompleted {
+            outcome: KnownEffectOutcome::Succeeded,
+            ..
+        }
+    ));
+    assert_eq!(
+        shutdown.await.expect("shutdown settles known outcome"),
+        ShutdownStatus::Clean
+    );
+    assert_eq!(requests.lock().expect("requests lock is healthy").len(), 1);
+    let events = handle
+        .drain_execution_events()
+        .await
+        .expect("shutdown retains terminal lifecycle events");
+    assert!(events.iter().any(|item| matches!(
+        &item.payload,
+        RuntimeEvent::TaskCompleted { task_id, .. } if task_id == &id("task")
+    )));
+    let _ = join.await.expect("driver task joins");
+}
+
+#[tokio::test]
+async fn shutdown_during_dispatch_preserves_unknown_classification() {
+    let (started_sender, started_receiver) = oneshot::channel();
+    let (release_sender, release_receiver) = oneshot::channel();
+    let dispatcher = WaitingDispatcher::new(started_sender, release_receiver);
+    let requests = dispatcher.requests.clone();
+    let (handle, join) = start_driver(
+        effect_runtime("shutdown-during-unknown", EffectSemantics::Idempotent),
+        dispatcher,
+    );
+    let drive = handle.drive();
+    started_receiver.await.expect("dispatcher starts");
+    let shutdown = handle.shutdown();
+    release_sender
+        .send(Err(EffectDispatchError::unknown("shutdown lost reply")))
+        .expect("unknown outcome releases");
+
+    assert!(matches!(
+        drive.await.expect("in-flight effect completes"),
+        DriveResult::EffectUnknown { .. }
+    ));
+    assert_eq!(
+        shutdown.await.expect("shutdown preserves unknown outcome"),
+        ShutdownStatus::PendingUnknown {
+            operation_id: operation("operation")
+        }
+    );
+    assert_eq!(requests.lock().expect("requests lock is healthy").len(), 1);
+    let _ = join.await.expect("driver task joins");
+}
+
+#[tokio::test]
 async fn known_failure_remains_observed_on_shutdown() {
     let dispatcher = ScriptedDispatcher::new([ScriptedReply::Known(KnownEffectOutcome::Failed)]);
     let (handle, join) = start_driver(
@@ -524,6 +595,48 @@ async fn known_failure_remains_observed_on_shutdown() {
         ShutdownStatus::ObservedFailure {
             operation_id: operation("operation")
         }
+    );
+    let _ = join.await.expect("driver task joins");
+}
+
+#[tokio::test]
+async fn shutdown_keeps_terminal_execution_events_drainable() {
+    let dispatcher = ScriptedDispatcher::new([ScriptedReply::Known(KnownEffectOutcome::Succeeded)]);
+    let (handle, join) = start_driver(
+        effect_runtime("shutdown-terminal-events", EffectSemantics::Idempotent),
+        dispatcher,
+    );
+    let request = match handle.drive().await.expect("effect drive succeeds") {
+        DriveResult::EffectCompleted { request, .. } => request,
+        other => panic!("expected completed effect, got {other:?}"),
+    };
+
+    assert_eq!(
+        handle
+            .shutdown()
+            .await
+            .expect("shutdown settles known success"),
+        ShutdownStatus::Clean
+    );
+    let events = handle
+        .drain_execution_events()
+        .await
+        .expect("terminal lifecycle events remain drainable");
+    assert_eq!(events.len(), 2);
+    assert!(matches!(
+        &events[0].payload,
+        RuntimeEvent::TaskStarted { attempt_id, .. } if attempt_id == &request.attempt_id
+    ));
+    assert!(matches!(
+        &events[1].payload,
+        RuntimeEvent::TaskCompleted { attempt_id, .. } if attempt_id == &request.attempt_id
+    ));
+    assert!(
+        handle
+            .drain_execution_events()
+            .await
+            .expect("subsequent terminal drain succeeds")
+            .is_empty()
     );
     let _ = join.await.expect("driver task joins");
 }

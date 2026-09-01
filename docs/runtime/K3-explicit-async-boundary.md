@@ -43,8 +43,10 @@ Shutdown settles known successful outcomes without re-execution. It classifies
 un-dispatched durable intents as `PendingDispatch`, idempotent unknown
 outcomes as `PendingUnknown`, non-idempotent unknown outcomes as
 `ReconciliationRequired`, and known failures as `ObservedFailure`. A
-successful shutdown closes admission and releases the runtime exactly once; a
-store or lifecycle-buffer failure leaves the owner alive for a drain/retry.
+successful shutdown transfers any final buffered observations to the handle's
+post-shutdown drain path, then closes admission and releases the runtime
+exactly once; a store or lifecycle-buffer failure leaves the owner alive for a
+drain/retry.
 
 ## Evidence
 
@@ -55,6 +57,8 @@ The K3 focused suite is `cargo test -p runtime-core --test k3_async
 - one dispatch for concurrent wakeups;
 - cancellation before dispatch, behind an in-flight unknown outcome, and
   after a known outcome;
+- shutdown queued behind an in-flight known or unknown outcome, including
+  terminal lifecycle-event visibility after known-success settlement;
 - explicit idempotent retry with the same logical operation and a new attempt;
 - non-idempotent unknown-outcome reconciliation;
 - prepared-work shutdown classification;
@@ -64,18 +68,19 @@ The K3 focused suite is `cargo test -p runtime-core --test k3_async
   `PendingUnknown`, `ReconciliationRequired`, and `ObservedFailure`
   classifications, plus no duplicate external call after a known outcome.
 
-Focused compatibility evidence: the K3 suite has 18 passing tests; the K1
-physical suite has 9; the K2 declarative suite has 14; and
-`cargo test -p workflow-recovery --all-features` has 51. The workspace suite,
-format, clippy, graph-lab, and final diff checks are recorded only after the
-final checkpoint verification below.
+Focused compatibility evidence: the K3 suite has 21 passing tests; the K1
+physical suite has 9; the K2 declarative suite has 14; the existing runtime
+suite has 9; M2-B durable tests have 18; M2-C1 repair tests have 1; M2-C2
+integration tests have 4; and `cargo test -p workflow-recovery --all-features`
+has 51. The workspace suite, format, clippy, graph-lab, and final diff checks
+are recorded only after the final checkpoint verification below.
 
 ## Candidate checkpoint verification
 
 - `cargo fmt --all -- --check`: PASS
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
   PASS, 0 errors
-- `cargo test --workspace --all-features`: PASS, 245 tests
+- `cargo test --workspace --all-features`: PASS, 248 tests
 - `cargo run -p graph-lab`: PASS
 - `git diff --check 684ae84a3da94472e4b2263a5c3bfd734574c96f...HEAD`: PASS
 
@@ -84,10 +89,13 @@ non-idempotent unknown work, and known failure; the known-success case also
 proves that a reopened `FileDurableStore` does not call the external adapter a
 second time. These are local candidate results, not CI or integration claims.
 
-The public candidate is isolated to `runtime-core`'s async-driver module and a
-single crate-level re-export. No durable schema or existing authority depends
-on it, so API stabilization or removal can remain a later decision without
-pulling lifecycle or composition semantics into K3.
+The K3 driver is an intentional `Send` boundary: its store, dispatcher, and
+effect futures are `Send`, while executor neutrality is provided by standard
+library futures rather than a Tokio-specific contract. The public candidate
+is isolated to `runtime-core`'s async-driver module and a single crate-level
+re-export. No durable schema or existing authority depends on it, so API
+stabilization or removal can remain a later decision without pulling lifecycle
+or composition semantics into K3.
 
 This document remains a candidate record until the final verification and
 independent review are complete. K3 is not marked integrated by this branch.

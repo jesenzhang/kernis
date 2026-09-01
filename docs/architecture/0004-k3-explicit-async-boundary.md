@@ -54,9 +54,11 @@ Add an executor-neutral `RuntimeDriver<S, D>` module in `runtime-core`.
   prepared-but-not-dispatched work, reports idempotent unknown work as
   pending, reports non-idempotent unknown work as requiring reconciliation,
   and keeps a known failure explicitly observed rather than inventing a retry.
-  A shutdown inspection/store failure leaves the driver alive so the caller
-  can retry; ownership is released exactly once only on a successful shutdown
-  response.
+  Any buffered observations, including lifecycle events emitted while
+  settling known successes, are transferred to the handle's post-shutdown
+  drain path and remain available once. A shutdown inspection/store failure
+  leaves the driver alive so the caller can retry; ownership is released
+  exactly once only on a successful shutdown response.
 * Lossless execution-stream backpressure is retained inside the driver. A
   rejected lifecycle item is returned in the typed drive result and kept for
   `retry_execution_event` after the caller drains the stream. Durable facts and
@@ -75,12 +77,17 @@ attempt lineage, backpressure retention, and shutdown classification stay
 local to the driver implementation. Concurrent wakeups are harmlessly
 serialized; they do not create a second Runtime owner or duplicate a dispatch.
 
-The async host is executor-neutral but still requires `S: Send` and
-`EffectDispatcher: Send` when used as an owned asynchronous task. A dispatcher
-adapter must choose how to classify provider failures and must preserve the
-operation's idempotency semantics when handling an unknown result. Distributed
-leases, remote workers, async store implementations, and provider-specific
-reconciliation remain later milestones or adapter concerns.
+The K3 driver is intentionally a `Send` boundary: `S`, `EffectDispatcher`,
+and each returned effect future must satisfy `Send`, so the command handle can
+be shared across threads and the owner can be placed on a multithreaded
+executor. Executor-neutral means that the seam uses standard-library futures
+and synchronization rather than a specific runtime; a single-threaded
+executor may still use these `Send` types, while a `!Send` local-only adapter
+is outside K3. A dispatcher adapter must choose how to classify provider
+failures and must preserve the operation's idempotency semantics when handling
+an unknown result. Distributed leases, remote workers, async store
+implementations, and provider-specific reconciliation remain later milestones
+or adapter concerns.
 
 The public candidate surface is intentionally isolated for reversibility. K3
 adds one production module and one crate-level re-export; no other crate,
