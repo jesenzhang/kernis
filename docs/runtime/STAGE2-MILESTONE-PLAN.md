@@ -415,9 +415,9 @@ model. Concurrency and lifecycle changes require independent review.
 Result: Candidate / implementation PASS; K3 is not integrated.
 
 Integrated K2 base: `684ae84a3da94472e4b2263a5c3bfd734574c96f` on local `main`.
-The implementation/test checkpoint before this documentation closeout is
-`d277b53`; the final local checkpoint is reported separately after the
-documentation and milestone verification are complete.
+The previous implementation/test checkpoint is `bd785f7`; this follow-up adds
+the final observation-retention and failed-shutdown proof before the final
+local checkpoint is reported separately.
 
 Implementation blocks / explicit Slices actually used: One continuous K3
 milestone; no explicit Slice or handoff was needed.
@@ -434,13 +434,13 @@ final buffered observations to a post-shutdown handle drain before releasing
 the runtime; the driver is intentionally `Send` while remaining executor-
 neutral through standard-library futures.
 
-Focused verification: K3 async suite 21 passed; K1 physical suite 9 passed;
+Focused verification: K3 async suite 23 passed; K1 physical suite 9 passed;
 K2 declarative suite 14 passed; existing runtime suite 9 passed; M2-B durable
 suite 18 passed; M2-C1 repair suite 1 passed; M2-C2 integration suite 4
 passed; workflow-recovery all-features suite 51 passed.
 
 Broad verification: format, workspace clippy with `-D warnings`, workspace
-tests (248 passed), graph-lab smoke, and the K2-base diff check passed locally.
+tests (250 passed), graph-lab smoke, and the K2-base diff check passed locally.
 These are candidate results, not CI or integration claims.
 
 Independent review: Deferred until all K3 implementation, documentation,

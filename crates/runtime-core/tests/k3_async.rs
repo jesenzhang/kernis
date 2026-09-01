@@ -4,8 +4,8 @@ use capability_graph::Scope;
 use kernis_core::Id;
 use runtime_core::{
     Cancellation, DriveResult, DriverError, DriverExit, EffectDispatchError, EffectDispatchFuture,
-    EffectDispatchRequest, EffectDispatcher, RunId, Runtime, RuntimeDriver, RuntimeEvent,
-    RuntimeHandle, ShutdownStatus, StepResult, TaskConfig,
+    EffectDispatchRequest, EffectDispatcher, RunId, Runtime, RuntimeDriver, RuntimeError,
+    RuntimeEvent, RuntimeHandle, ShutdownStatus, StepResult, TaskConfig,
 };
 use std::collections::VecDeque;
 use std::fs;
@@ -642,6 +642,64 @@ async fn shutdown_keeps_terminal_execution_events_drainable() {
 }
 
 #[tokio::test]
+async fn shutdown_keeps_progress_and_telemetry_drainable() {
+    let mut runtime = Runtime::start_run(
+        RunId::new("shutdown-observations").expect("run id is valid"),
+        workflow_with_task(),
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+    )
+    .expect("runtime starts");
+    runtime
+        .emit_progress(&id("task"), 37)
+        .expect("progress observation records");
+    runtime
+        .emit_telemetry("before shutdown")
+        .expect("telemetry observation records");
+    let (handle, join) = start_driver(runtime, ScriptedDispatcher::new([]));
+
+    assert_eq!(
+        handle.shutdown().await.expect("shutdown succeeds"),
+        ShutdownStatus::Clean
+    );
+    let progress = handle
+        .drain_progress_events()
+        .await
+        .expect("post-shutdown progress drains");
+    assert_eq!(progress.len(), 1);
+    assert_eq!(progress[0].key, id("task"));
+    assert!(matches!(
+        &progress[0].item.payload,
+        RuntimeEvent::TaskProgress { task_id, progress } if task_id == &id("task") && *progress == 37
+    ));
+    assert!(
+        handle
+            .drain_progress_events()
+            .await
+            .expect("subsequent progress drain succeeds")
+            .is_empty()
+    );
+
+    let telemetry = handle
+        .drain_telemetry_events()
+        .await
+        .expect("post-shutdown telemetry drains");
+    assert_eq!(telemetry.len(), 1);
+    assert!(matches!(
+        &telemetry[0].payload,
+        RuntimeEvent::Telemetry { message } if message == "before shutdown"
+    ));
+    assert!(
+        handle
+            .drain_telemetry_events()
+            .await
+            .expect("subsequent telemetry drain succeeds")
+            .is_empty()
+    );
+    let _ = join.await.expect("driver task joins");
+}
+
+#[tokio::test]
 async fn idempotent_unknown_outcome_is_explicitly_recoverable_and_not_retried_implicitly() {
     let dispatcher = ScriptedDispatcher::new([ScriptedReply::Unknown("lost reply".to_owned())]);
     let requests = dispatcher.requests.clone();
@@ -808,6 +866,157 @@ fn many_task_runtime(count: usize) -> Runtime {
         )],
     )
     .expect("runtime starts")
+}
+
+fn shutdown_backpressure_runtime() -> Runtime {
+    let mut workflow = WorkflowGraph::default();
+    let tasks = (0..65)
+        .map(|index| WorkflowMutation::AddTask {
+            task: Task {
+                id: id(&format!("task-{index:03}")),
+                label: format!("task-{index:03}"),
+            },
+        })
+        .collect::<Vec<_>>();
+    let mut mutations = tasks;
+    mutations.extend((0..63).map(|index| WorkflowMutation::AddDependency {
+        task_id: id("task-063"),
+        dependency_id: id(&format!("task-{index:03}")),
+    }));
+    mutations.push(WorkflowMutation::AddDependency {
+        task_id: id("task-064"),
+        dependency_id: id("task-063"),
+    });
+    workflow
+        .apply_batch(workflow.revision(), mutations)
+        .expect("dependent workflow is valid");
+
+    let target_operation = operation("shutdown-operation");
+    let pending_operation = operation("pending-operation");
+    let target_config = effect_config(&target_operation, EffectSemantics::Idempotent);
+    let pending_config = effect_config(&pending_operation, EffectSemantics::Idempotent);
+    let mut runtime = Runtime::start_run(
+        RunId::new("shutdown-backpressure").expect("run id is valid"),
+        workflow,
+        Scope::root(),
+        [
+            (id("task-063"), target_config),
+            (id("task-064"), pending_config),
+        ],
+    )
+    .expect("runtime starts");
+
+    runtime
+        .record_effect_intent(
+            id("task-063"),
+            target_operation.clone(),
+            EffectSemantics::Idempotent,
+        )
+        .expect("target intent records");
+    let target_attempt = runtime
+        .dispatch_effect(&target_operation)
+        .expect("target dispatch records");
+    runtime
+        .record_effect_outcome(
+            &target_operation,
+            target_attempt,
+            KnownEffectOutcome::Succeeded,
+        )
+        .expect("target outcome records");
+    runtime
+        .record_effect_intent(
+            id("task-064"),
+            pending_operation.clone(),
+            EffectSemantics::Idempotent,
+        )
+        .expect("pending intent records");
+    runtime
+        .dispatch_effect(&pending_operation)
+        .expect("pending dispatch records");
+
+    for _ in 0..63 {
+        assert!(matches!(
+            runtime.step().expect("prerequisite step succeeds"),
+            StepResult::Completed { .. }
+        ));
+    }
+    runtime
+}
+
+#[tokio::test]
+async fn failed_shutdown_keeps_driver_alive_for_lossless_drain_and_retry() {
+    let dispatcher = ScriptedDispatcher::new([]);
+    let requests = dispatcher.requests.clone();
+    let (handle, join) = start_driver(shutdown_backpressure_runtime(), dispatcher);
+
+    assert!(matches!(
+        handle.shutdown().await,
+        Err(DriverError::Runtime(
+            RuntimeError::ExecutionBackpressure { .. }
+        ))
+    ));
+    let drained = handle
+        .drain_execution_events()
+        .await
+        .expect("failed shutdown leaves lifecycle buffer drainable");
+    assert_eq!(drained.len(), 128);
+    assert_eq!(
+        drained
+            .first()
+            .expect("first lifecycle event exists")
+            .sequence
+            .get(),
+        1
+    );
+    assert_eq!(
+        drained
+            .last()
+            .expect("last lifecycle event exists")
+            .sequence
+            .get(),
+        128
+    );
+
+    assert!(matches!(
+        handle.wake().await.expect("driver remains usable after failure"),
+        DriveResult::Step(StepResult::Blocked {
+            task_id,
+            operation_id: Some(operation_id),
+            action: RecoveryAction::RetrySameOperation,
+        }) if task_id == id("task-064") && operation_id == operation("pending-operation")
+    ));
+    assert!(
+        requests
+            .lock()
+            .expect("requests lock is healthy")
+            .is_empty()
+    );
+    assert_eq!(
+        handle
+            .shutdown()
+            .await
+            .expect("retryable shutdown succeeds"),
+        ShutdownStatus::PendingUnknown {
+            operation_id: operation("pending-operation")
+        }
+    );
+    let terminal = handle
+        .drain_execution_events()
+        .await
+        .expect("post-retry terminal event drains");
+    assert_eq!(terminal.len(), 1);
+    assert!(matches!(
+        &terminal[0].payload,
+        RuntimeEvent::TaskCompleted { task_id, .. } if task_id == &id("task-063")
+    ));
+    assert!(
+        handle
+            .drain_execution_events()
+            .await
+            .expect("terminal drain remains idempotent")
+            .is_empty()
+    );
+    let _ = join.await.expect("driver task joins");
 }
 
 #[tokio::test]

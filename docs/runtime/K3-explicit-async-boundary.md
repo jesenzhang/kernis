@@ -59,6 +59,8 @@ The K3 focused suite is `cargo test -p runtime-core --test k3_async
   after a known outcome;
 - shutdown queued behind an in-flight known or unknown outcome, including
   terminal lifecycle-event visibility after known-success settlement;
+- successful shutdown retention for execution, progress, and telemetry
+  observations, plus failed-shutdown drain/retry recovery;
 - explicit idempotent retry with the same logical operation and a new attempt;
 - non-idempotent unknown-outcome reconciliation;
 - prepared-work shutdown classification;
@@ -68,7 +70,7 @@ The K3 focused suite is `cargo test -p runtime-core --test k3_async
   `PendingUnknown`, `ReconciliationRequired`, and `ObservedFailure`
   classifications, plus no duplicate external call after a known outcome.
 
-Focused compatibility evidence: the K3 suite has 21 passing tests; the K1
+Focused compatibility evidence: the K3 suite has 23 passing tests; the K1
 physical suite has 9; the K2 declarative suite has 14; the existing runtime
 suite has 9; M2-B durable tests have 18; M2-C1 repair tests have 1; M2-C2
 integration tests have 4; and `cargo test -p workflow-recovery --all-features`
@@ -80,7 +82,7 @@ are recorded only after the final checkpoint verification below.
 - `cargo fmt --all -- --check`: PASS
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
   PASS, 0 errors
-- `cargo test --workspace --all-features`: PASS, 248 tests
+- `cargo test --workspace --all-features`: PASS, 250 tests
 - `cargo run -p graph-lab`: PASS
 - `git diff --check 684ae84a3da94472e4b2263a5c3bfd734574c96f...HEAD`: PASS
 
