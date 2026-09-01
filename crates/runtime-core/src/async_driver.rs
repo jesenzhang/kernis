@@ -142,6 +142,13 @@ pub enum ShutdownStatus {
         /// Operation requiring external reconciliation.
         operation_id: OperationId,
     },
+    /// A known failure has been durably recorded and remains an observed
+    /// failure because the synchronous recovery policy does not invent a
+    /// retry.
+    ObservedFailure {
+        /// Operation whose known failure remains observed.
+        operation_id: OperationId,
+    },
 }
 
 /// Error returned by a driver command.
@@ -158,8 +165,8 @@ pub enum DriverError {
         operation_id: OperationId,
         /// Attempt reported by the pending step.
         expected: AttemptId,
-        /// Attempt returned by the durable dispatch operation.
-        actual: AttemptId,
+        /// Attempt currently retained by the runtime, if one was found.
+        actual: Option<AttemptId>,
     },
 }
 
@@ -172,10 +179,16 @@ impl fmt::Display for DriverError {
                 operation_id,
                 expected,
                 actual,
-            } => write!(
-                f,
-                "attempt lineage mismatch for {operation_id}: expected {expected}, got {actual}"
-            ),
+            } => {
+                write!(
+                    f,
+                    "attempt lineage mismatch for {operation_id}: expected {expected}, got "
+                )?;
+                match actual {
+                    Some(actual) => write!(f, "{actual}"),
+                    None => f.write_str("none"),
+                }
+            }
         }
     }
 }
@@ -595,6 +608,25 @@ where
             Ok(intent) => intent.clone(),
             Err(error) => return Err(self.runtime_error(RuntimeError::Journal(error))),
         };
+        if let Some(expected) = expected_attempt_id.as_ref() {
+            let actual = self
+                .runtime
+                .attempts()
+                .iter()
+                .rev()
+                .find(|attempt| {
+                    attempt.task_id == intent.task_id
+                        && attempt.operation_id.as_ref() == Some(&operation_id)
+                })
+                .map(|attempt| attempt.attempt_id.clone());
+            if actual.as_ref() != Some(expected) {
+                return Err(DriverError::AttemptLineageMismatch {
+                    operation_id,
+                    expected: expected.clone(),
+                    actual,
+                });
+            }
+        }
         let attempt_id = match self.runtime.dispatch_effect(&operation_id) {
             Ok(attempt_id) => attempt_id,
             Err(error) => return Err(self.runtime_error(error)),
@@ -604,7 +636,7 @@ where
                 return Err(DriverError::AttemptLineageMismatch {
                     operation_id,
                     expected,
-                    actual: attempt_id,
+                    actual: Some(attempt_id),
                 });
             }
         }
@@ -688,15 +720,17 @@ where
             .runtime
             .durable_state()
             .map_err(|error| self.runtime_error(error))?;
-        let known_successes = state
+        let known_outcomes = state
             .operation_ids()
             .into_iter()
             .filter(|operation_id| {
-                state.effect_state(operation_id)
-                    == RecoveredEffectState::OutcomeKnown(KnownEffectOutcome::Succeeded)
+                matches!(
+                    state.effect_state(operation_id),
+                    RecoveredEffectState::OutcomeKnown(_)
+                )
             })
             .collect::<Vec<_>>();
-        for operation_id in known_successes {
+        for operation_id in known_outcomes {
             if let Err(error) = self.runtime.recover(&operation_id) {
                 return Err(self.runtime_error(error));
             }
@@ -717,6 +751,7 @@ where
 fn classify_shutdown(state: &DurableRunState) -> ShutdownStatus {
     let mut pending_dispatch = None;
     let mut pending_unknown = None;
+    let mut observed_failure = None;
     for operation_id in state.operation_ids() {
         let Some(intent) = state.intent(&operation_id) else {
             continue;
@@ -735,13 +770,21 @@ fn classify_shutdown(state: &DurableRunState) -> ShutdownStatus {
                     pending_unknown = Some(operation_id);
                 }
             }
-            RecoveredEffectState::NotPrepared | RecoveredEffectState::OutcomeKnown(_) => {}
+            RecoveredEffectState::OutcomeKnown(KnownEffectOutcome::Failed) => {
+                if observed_failure.is_none() {
+                    observed_failure = Some(operation_id);
+                }
+            }
+            RecoveredEffectState::OutcomeKnown(KnownEffectOutcome::Succeeded)
+            | RecoveredEffectState::NotPrepared => {}
         }
     }
     if let Some(operation_id) = pending_unknown {
         ShutdownStatus::PendingUnknown { operation_id }
     } else if let Some(operation_id) = pending_dispatch {
         ShutdownStatus::PendingDispatch { operation_id }
+    } else if let Some(operation_id) = observed_failure {
+        ShutdownStatus::ObservedFailure { operation_id }
     } else {
         ShutdownStatus::Clean
     }

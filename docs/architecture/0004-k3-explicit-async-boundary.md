@@ -48,12 +48,13 @@ Add an executor-neutral `RuntimeDriver<S, D>` module in `runtime-core`.
   an in-flight dispatch are observed only after that dispatch resolves, so a
   cancellation cannot erase or race the external ownership fact.
 * Shutdown is an explicit command. It admits no later commands after a
-  successful shutdown, settles known successful outcomes without re-execution,
-  reports prepared-but-not-dispatched work, reports idempotent unknown work as
-  pending, and reports non-idempotent unknown work as requiring
-  reconciliation. A shutdown inspection/store failure leaves the driver alive
-  so the caller can retry; ownership is released exactly once only on a
-  successful shutdown response.
+  successful shutdown, settles known outcomes without re-execution, reports
+  prepared-but-not-dispatched work, reports idempotent unknown work as
+  pending, reports non-idempotent unknown work as requiring reconciliation,
+  and keeps a known failure explicitly observed rather than inventing a retry.
+  A shutdown inspection/store failure leaves the driver alive so the caller
+  can retry; ownership is released exactly once only on a successful shutdown
+  response.
 * Lossless execution-stream backpressure is retained inside the driver. A
   rejected lifecycle item is returned in the typed drive result and kept for
   `retry_execution_event` after the caller drains the stream. Durable facts and
@@ -92,4 +93,3 @@ reconciliation remain later milestones or adapter concerns.
   external side effect.
 * Running multiple driver tasks over one Runtime: parallel ownership would
   require a new actor/scheduling contract and is outside K3.
-

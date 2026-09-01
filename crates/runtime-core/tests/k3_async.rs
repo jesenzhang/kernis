@@ -496,6 +496,39 @@ async fn cancellation_after_known_outcome_cannot_erase_dispatch() {
 }
 
 #[tokio::test]
+async fn known_failure_remains_observed_on_shutdown() {
+    let dispatcher = ScriptedDispatcher::new([ScriptedReply::Known(KnownEffectOutcome::Failed)]);
+    let (handle, join) = start_driver(
+        effect_runtime("known-failure", EffectSemantics::Idempotent),
+        dispatcher,
+    );
+    assert!(matches!(
+        handle.drive().await.expect("known failure is recorded"),
+        DriveResult::EffectCompleted {
+            outcome: KnownEffectOutcome::Failed,
+            ..
+        }
+    ));
+    assert!(matches!(
+        handle
+            .drive()
+            .await
+            .expect("known failure remains observed"),
+        DriveResult::Step(StepResult::Blocked {
+            action: RecoveryAction::ObserveFailure,
+            ..
+        })
+    ));
+    assert_eq!(
+        handle.shutdown().await.expect("shutdown succeeds"),
+        ShutdownStatus::ObservedFailure {
+            operation_id: operation("operation")
+        }
+    );
+    let _ = join.await.expect("driver task joins");
+}
+
+#[tokio::test]
 async fn idempotent_unknown_outcome_is_explicitly_recoverable_and_not_retried_implicitly() {
     let dispatcher = ScriptedDispatcher::new([ScriptedReply::Unknown("lost reply".to_owned())]);
     let requests = dispatcher.requests.clone();
@@ -782,6 +815,104 @@ impl Drop for TempStore {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.directory);
     }
+}
+
+#[tokio::test]
+async fn physical_restart_preserves_pre_dispatch_shutdown_classification() {
+    let temp = TempStore::new("prepared-restart");
+    let run_id = RunId::new("physical-prepared-restart").expect("run id is valid");
+    let operation_id = operation("operation");
+    let workflow = workflow_with_task();
+    let config = effect_config(&operation_id, EffectSemantics::Idempotent);
+    let runtime = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        [(id("task"), config.clone())],
+        FileDurableStore::open(&temp.path).expect("physical store opens"),
+    )
+    .expect("physical runtime starts");
+    let mut runtime = runtime;
+    runtime
+        .record_effect_intent(
+            id("task"),
+            operation_id.clone(),
+            EffectSemantics::Idempotent,
+        )
+        .expect("prepared intent records");
+    drop(runtime);
+
+    let restored = Runtime::<FileDurableStore>::restore_run(
+        run_id,
+        workflow,
+        Scope::root(),
+        [(id("task"), config)],
+        FileDurableStore::open(&temp.path).expect("physical store reopens"),
+    )
+    .expect("prepared runtime restores");
+    let dispatcher = ScriptedDispatcher::new([]);
+    let requests = dispatcher.requests.clone();
+    let (handle, join) = start_driver(restored, dispatcher);
+    assert_eq!(
+        handle.shutdown().await.expect("shutdown succeeds"),
+        ShutdownStatus::PendingDispatch { operation_id }
+    );
+    assert!(
+        requests
+            .lock()
+            .expect("requests lock is healthy")
+            .is_empty()
+    );
+    let _ = join.await.expect("driver task joins");
+}
+
+#[tokio::test]
+async fn physical_restart_preserves_idempotent_unknown_shutdown_classification() {
+    let temp = TempStore::new("unknown-restart");
+    let run_id = RunId::new("physical-unknown-restart").expect("run id is valid");
+    let operation_id = operation("operation");
+    let workflow = workflow_with_task();
+    let config = effect_config(&operation_id, EffectSemantics::Idempotent);
+    let runtime = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        [(id("task"), config.clone())],
+        FileDurableStore::open(&temp.path).expect("physical store opens"),
+    )
+    .expect("physical runtime starts");
+    let mut runtime = runtime;
+    assert!(matches!(
+        runtime.step().expect("effect admission succeeds"),
+        StepResult::EffectPending { .. }
+    ));
+    runtime
+        .dispatch_effect(&operation_id)
+        .expect("dispatch fact commits");
+    drop(runtime);
+
+    let restored = Runtime::<FileDurableStore>::restore_run(
+        run_id,
+        workflow,
+        Scope::root(),
+        [(id("task"), config)],
+        FileDurableStore::open(&temp.path).expect("physical store reopens"),
+    )
+    .expect("unknown runtime restores");
+    let dispatcher = ScriptedDispatcher::new([]);
+    let requests = dispatcher.requests.clone();
+    let (handle, join) = start_driver(restored, dispatcher);
+    assert_eq!(
+        handle.shutdown().await.expect("shutdown succeeds"),
+        ShutdownStatus::PendingUnknown { operation_id }
+    );
+    assert!(
+        requests
+            .lock()
+            .expect("requests lock is healthy")
+            .is_empty()
+    );
+    let _ = join.await.expect("driver task joins");
 }
 
 #[tokio::test]

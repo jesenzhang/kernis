@@ -41,10 +41,10 @@ with external ownership.
 
 Shutdown settles known successful outcomes without re-execution. It classifies
 un-dispatched durable intents as `PendingDispatch`, idempotent unknown
-outcomes as `PendingUnknown`, and non-idempotent unknown outcomes as
-`ReconciliationRequired`. A successful shutdown closes admission and releases
-the runtime exactly once; a store or lifecycle-buffer failure leaves the owner
-alive for a drain/retry.
+outcomes as `PendingUnknown`, non-idempotent unknown outcomes as
+`ReconciliationRequired`, and known failures as `ObservedFailure`. A
+successful shutdown closes admission and releases the runtime exactly once; a
+store or lifecycle-buffer failure leaves the owner alive for a drain/retry.
 
 ## Evidence
 
@@ -65,4 +65,3 @@ The K3 focused suite is `cargo test -p runtime-core --test k3_async
 
 This document remains a candidate record until the final verification and
 independent review are complete. K3 is not marked integrated by this branch.
-
