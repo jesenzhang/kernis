@@ -36,8 +36,10 @@ Add an executor-neutral `RuntimeDriver<S, D>` module in `runtime-core`.
   command. Unknown external results remain unknown durable facts.
 * `EffectDispatchRequest` contains the `RunId`, task id, logical
   `OperationId`, exact `AttemptId`, and `EffectSemantics`. The dispatcher has no
-  authority to choose or replace an attempt identity. A driver invariant check
-  rejects a mismatch before the external call.
+  authority to choose or replace an attempt identity. The driver preflights
+  the attempt retained by the pending step before asking the runtime to append
+  the dispatch fact, then retains a defensive lineage check before the
+  external call.
 * `EffectDispatcher` returns a boxed `Send` future with a typed
   `EffectDispatchError`. An error means the external result is unknown because
   the durable dispatch boundary has already been crossed; it is never silently

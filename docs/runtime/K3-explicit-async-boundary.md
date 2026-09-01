@@ -60,8 +60,29 @@ The K3 focused suite is `cargo test -p runtime-core --test k3_async
 - prepared-work shutdown classification;
 - lossless lifecycle backpressure pause/resume with durable attempt and event
   lineage preserved; and
-- `FileDurableStore` restart with no duplicate external call after a known
-  outcome.
+- `FileDurableStore` restart with preserved `PendingDispatch`,
+  `PendingUnknown`, `ReconciliationRequired`, and `ObservedFailure`
+  classifications, plus no duplicate external call after a known outcome.
+
+Focused compatibility evidence: the K3 suite has 18 passing tests; the K1
+physical suite has 9; the K2 declarative suite has 14; and
+`cargo test -p workflow-recovery --all-features` has 51. The workspace suite,
+format, clippy, graph-lab, and final diff checks are recorded only after the
+final checkpoint verification below.
+
+## Candidate checkpoint verification
+
+- `cargo fmt --all -- --check`: PASS
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
+  PASS, 0 errors
+- `cargo test --workspace --all-features`: PASS, 245 tests
+- `cargo run -p graph-lab`: PASS
+- `git diff --check 684ae84a3da94472e4b2263a5c3bfd734574c96f...HEAD`: PASS
+
+The physical restart cases include prepared work, idempotent unknown work,
+non-idempotent unknown work, and known failure; the known-success case also
+proves that a reopened `FileDurableStore` does not call the external adapter a
+second time. These are local candidate results, not CI or integration claims.
 
 This document remains a candidate record until the final verification and
 independent review are complete. K3 is not marked integrated by this branch.

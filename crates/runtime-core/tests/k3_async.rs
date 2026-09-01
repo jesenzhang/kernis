@@ -916,6 +916,107 @@ async fn physical_restart_preserves_idempotent_unknown_shutdown_classification()
 }
 
 #[tokio::test]
+async fn physical_restart_preserves_non_idempotent_reconciliation_classification() {
+    let temp = TempStore::new("non-idempotent-unknown-restart");
+    let run_id = RunId::new("physical-non-idempotent-restart").expect("run id is valid");
+    let operation_id = operation("operation");
+    let workflow = workflow_with_task();
+    let config = effect_config(&operation_id, EffectSemantics::NonIdempotent);
+    let runtime = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        [(id("task"), config.clone())],
+        FileDurableStore::open(&temp.path).expect("physical store opens"),
+    )
+    .expect("physical runtime starts");
+    let mut runtime = runtime;
+    assert!(matches!(
+        runtime.step().expect("effect admission succeeds"),
+        StepResult::EffectPending { .. }
+    ));
+    runtime
+        .dispatch_effect(&operation_id)
+        .expect("dispatch fact commits");
+    drop(runtime);
+
+    let restored = Runtime::<FileDurableStore>::restore_run(
+        run_id,
+        workflow,
+        Scope::root(),
+        [(id("task"), config)],
+        FileDurableStore::open(&temp.path).expect("physical store reopens"),
+    )
+    .expect("unknown runtime restores");
+    let dispatcher = ScriptedDispatcher::new([]);
+    let requests = dispatcher.requests.clone();
+    let (handle, join) = start_driver(restored, dispatcher);
+    assert_eq!(
+        handle.shutdown().await.expect("shutdown succeeds"),
+        ShutdownStatus::ReconciliationRequired { operation_id }
+    );
+    assert!(
+        requests
+            .lock()
+            .expect("requests lock is healthy")
+            .is_empty()
+    );
+    let _ = join.await.expect("driver task joins");
+}
+
+#[tokio::test]
+async fn physical_restart_preserves_known_failure_observation() {
+    let temp = TempStore::new("known-failure-restart");
+    let run_id = RunId::new("physical-known-failure-restart").expect("run id is valid");
+    let operation_id = operation("operation");
+    let workflow = workflow_with_task();
+    let config = effect_config(&operation_id, EffectSemantics::Idempotent);
+    let runtime = Runtime::<FileDurableStore>::start_run_with_store(
+        run_id.clone(),
+        workflow.clone(),
+        Scope::root(),
+        [(id("task"), config.clone())],
+        FileDurableStore::open(&temp.path).expect("physical store opens"),
+    )
+    .expect("physical runtime starts");
+    let mut runtime = runtime;
+    let attempt_id = match runtime.step().expect("effect admission succeeds") {
+        StepResult::EffectPending { attempt_id, .. } => attempt_id,
+        other => panic!("expected pending effect, got {other:?}"),
+    };
+    runtime
+        .dispatch_effect(&operation_id)
+        .expect("dispatch fact commits");
+    runtime
+        .record_effect_outcome(&operation_id, attempt_id, KnownEffectOutcome::Failed)
+        .expect("known failure records");
+    drop(runtime);
+
+    let restored = Runtime::<FileDurableStore>::restore_run(
+        run_id,
+        workflow,
+        Scope::root(),
+        [(id("task"), config)],
+        FileDurableStore::open(&temp.path).expect("physical store reopens"),
+    )
+    .expect("known failure runtime restores");
+    let dispatcher = ScriptedDispatcher::new([]);
+    let requests = dispatcher.requests.clone();
+    let (handle, join) = start_driver(restored, dispatcher);
+    assert_eq!(
+        handle.shutdown().await.expect("shutdown succeeds"),
+        ShutdownStatus::ObservedFailure { operation_id }
+    );
+    assert!(
+        requests
+            .lock()
+            .expect("requests lock is healthy")
+            .is_empty()
+    );
+    let _ = join.await.expect("driver task joins");
+}
+
+#[tokio::test]
 async fn physical_restart_does_not_redispatch_a_known_effect() {
     let temp = TempStore::new("restart");
     let run_id = RunId::new("physical-restart").expect("run id is valid");
