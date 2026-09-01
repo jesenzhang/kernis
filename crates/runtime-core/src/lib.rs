@@ -285,6 +285,24 @@ impl fmt::Display for ReconstructionError {
 
 impl std::error::Error for ReconstructionError {}
 
+/// Identifies a legacy live-object mutation API.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegacyMutationOperation {
+    /// The [`Runtime::configure_task`] API.
+    ConfigureTask,
+    /// The [`Runtime::apply_workflow_mutation`] API.
+    ApplyWorkflowMutation,
+}
+
+impl fmt::Display for LegacyMutationOperation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ConfigureTask => f.write_str("configure_task"),
+            Self::ApplyWorkflowMutation => f.write_str("apply_workflow_mutation"),
+        }
+    }
+}
+
 /// Errors returned by the synchronous runtime coordinator.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeError {
@@ -335,6 +353,9 @@ pub enum RuntimeError {
         /// Identity recorded by the durable run, if present.
         actual: Option<WorkflowReplayIdentity>,
     },
+    /// A legacy live-object mutation cannot change a declaratively-created
+    /// runtime into an identity that its definition can no longer rebuild.
+    DeclarativeMutationUnsupported(LegacyMutationOperation),
     /// A run must be started or restored from topology without local
     /// completion facts; completions must come from the durable authority.
     PrecompletedWorkflow(Id),
@@ -452,6 +473,10 @@ impl fmt::Display for RuntimeError {
                 Some(actual) => write!(f, "{actual}"),
                 None => f.write_str("none"),
             }),
+            Self::DeclarativeMutationUnsupported(operation) => write!(
+                f,
+                "legacy mutation {operation} is unsupported for a declarative runtime"
+            ),
             Self::PrecompletedWorkflow(task_id) => write!(
                 f,
                 "workflow supplied with non-durable completion fact for task {task_id}"
@@ -481,6 +506,12 @@ impl fmt::Display for RuntimeError {
 
 impl std::error::Error for RuntimeError {}
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum IdentityProvenance {
+    LegacyLiveObject,
+    DeclarativeDefinition,
+}
+
 /// Deterministic single-process Runtime Core.
 pub struct Runtime<S = InMemoryDurableStore>
 where
@@ -492,6 +523,7 @@ where
     journal: DurableJournal,
     store: S,
     store_revision: StoreRevision,
+    identity_provenance: IdentityProvenance,
     task_configs: BTreeMap<Id, TaskConfig>,
     attempts: Vec<TaskAttempt>,
     pending_started: Option<(TaskAttempt, StreamItem<RuntimeEvent>)>,
@@ -569,6 +601,7 @@ where
             scope,
             task_configs,
             validated.identity,
+            IdentityProvenance::DeclarativeDefinition,
             store,
         )
     }
@@ -589,13 +622,14 @@ where
     {
         ensure_unfinished_workflow(&workflow)?;
         let task_configs = collect_task_configs(&workflow, task_configs)?;
-        let replay_identity = workflow_replay_identity(&workflow, &task_configs)?;
+        let replay_identity = legacy_workflow_replay_identity(&workflow, &task_configs)?;
         Self::start_with_identity(
             run_id,
             workflow,
             scope,
             task_configs,
             replay_identity,
+            IdentityProvenance::LegacyLiveObject,
             store,
         )
     }
@@ -606,6 +640,7 @@ where
         scope: Scope,
         task_configs: BTreeMap<Id, TaskConfig>,
         replay_identity: WorkflowReplayIdentity,
+        identity_provenance: IdentityProvenance,
         mut store: S,
     ) -> Result<Self, RuntimeError> {
         ensure_unfinished_workflow(&workflow)?;
@@ -628,7 +663,7 @@ where
                 DurableMutation::RecordWorkflowReplayIdentity(replay_identity),
             ))?
             .revision;
-        Self::build(
+        let mut runtime = Self::build(
             run_id,
             workflow,
             scope,
@@ -636,7 +671,9 @@ where
             DurableJournal::new(),
             store,
             store_revision,
-        )
+        )?;
+        runtime.identity_provenance = identity_provenance;
+        Ok(runtime)
     }
 
     /// Restores a fresh runtime from a declarative definition, a fresh
@@ -663,7 +700,15 @@ where
         }
         let (workflow, task_configs) = runtime_inputs(&validated)?;
         let scope = reconstruct_scope(&validated, factories)?;
-        Self::restore_loaded(run_id, workflow, scope, task_configs, store, state)
+        Self::restore_loaded(
+            run_id,
+            workflow,
+            scope,
+            task_configs,
+            store,
+            IdentityProvenance::DeclarativeDefinition,
+            state,
+        )
     }
 
     /// Restores a fresh process-local runtime from durable facts and supplied
@@ -685,14 +730,22 @@ where
         ensure_unfinished_workflow(&workflow)?;
         let task_configs = collect_task_configs(&workflow, task_configs)?;
         let state = store.load_run(&run_id)?;
-        let expected_identity = workflow_replay_identity(&workflow, &task_configs)?;
+        let expected_identity = legacy_workflow_replay_identity(&workflow, &task_configs)?;
         if state.workflow_replay_identity() != Some(&expected_identity) {
             return Err(RuntimeError::WorkflowReplayIdentityMismatch {
                 expected: expected_identity,
                 actual: state.workflow_replay_identity().cloned(),
             });
         }
-        Self::restore_loaded(run_id, workflow, scope, task_configs, store, state)
+        Self::restore_loaded(
+            run_id,
+            workflow,
+            scope,
+            task_configs,
+            store,
+            IdentityProvenance::LegacyLiveObject,
+            state,
+        )
     }
 
     fn restore_loaded(
@@ -701,6 +754,7 @@ where
         scope: Scope,
         task_configs: BTreeMap<Id, TaskConfig>,
         store: S,
+        identity_provenance: IdentityProvenance,
         state: DurableRunState,
     ) -> Result<Self, RuntimeError> {
         let workflow = replay_workflow(&workflow, state.completion_history())?;
@@ -713,6 +767,7 @@ where
             store,
             state.revision(),
         )?;
+        runtime.identity_provenance = identity_provenance;
         for cancellation in state.cancellations() {
             runtime.cancelled.insert(cancellation.task_id.clone());
         }
@@ -749,6 +804,7 @@ where
             journal,
             store,
             store_revision,
+            identity_provenance: IdentityProvenance::LegacyLiveObject,
             task_configs,
             attempts: Vec::new(),
             pending_started: None,
@@ -829,14 +885,25 @@ where
         &self.attempts
     }
 
+    fn ensure_legacy_mutation_allowed(
+        &self,
+        operation: LegacyMutationOperation,
+    ) -> Result<(), RuntimeError> {
+        if self.identity_provenance == IdentityProvenance::DeclarativeDefinition {
+            return Err(RuntimeError::DeclarativeMutationUnsupported(operation));
+        }
+        Ok(())
+    }
+
     /// Adds or replaces runtime inputs for an unfinished task.
     pub fn configure_task(&mut self, task_id: Id, config: TaskConfig) -> Result<(), RuntimeError> {
+        self.ensure_legacy_mutation_allowed(LegacyMutationOperation::ConfigureTask)?;
         if self.workflow.task(&task_id).is_none() {
             return Err(RuntimeError::UnknownTask(task_id));
         }
         let mut candidate_configs = self.task_configs.clone();
         candidate_configs.insert(task_id, config);
-        let replay_identity = workflow_replay_identity(&self.workflow, &candidate_configs)?;
+        let replay_identity = legacy_workflow_replay_identity(&self.workflow, &candidate_configs)?;
         self.commit_workflow_identity(replay_identity)?;
         self.task_configs = candidate_configs;
         Ok(())
@@ -851,9 +918,10 @@ where
     where
         B: Into<MutationBatch>,
     {
+        self.ensure_legacy_mutation_allowed(LegacyMutationOperation::ApplyWorkflowMutation)?;
         let mut candidate = self.workflow.clone();
         let record = candidate.apply_batch(expected_revision, batch)?;
-        let replay_identity = workflow_replay_identity(&candidate, &self.task_configs)?;
+        let replay_identity = legacy_workflow_replay_identity(&candidate, &self.task_configs)?;
         self.commit_workflow_identity(replay_identity)?;
         self.workflow = candidate;
         Ok(record)
@@ -1538,24 +1606,21 @@ where
         if workflow.task(&task_id).is_none() {
             return Err(RuntimeError::UnknownTask(task_id));
         }
-        if configs.insert(task_id.clone(), config).is_some() {
-            return Err(RuntimeError::Definition(
-                DefinitionError::DuplicateTaskConfiguration(task_id),
-            ));
-        }
+        configs.insert(task_id, config);
     }
     Ok(configs)
 }
 
-fn workflow_replay_identity(
+fn legacy_workflow_replay_identity(
     workflow: &WorkflowGraph,
     task_configs: &BTreeMap<Id, TaskConfig>,
 ) -> Result<WorkflowReplayIdentity, StoreError> {
-    let mut canonical = String::from(RUN_DEFINITION_FORMAT);
+    let mut canonical = String::from("kernis-workflow-replay-v1");
     append_identity_part(&mut canonical, "tasks");
     for task in workflow.tasks() {
         append_identity_part(&mut canonical, "task");
         append_identity_part(&mut canonical, task.id.as_str());
+        append_identity_part(&mut canonical, &task.label);
         if let Some(config) = task_configs.get(&task.id) {
             append_identity_part(&mut canonical, "config");
             for (capability_id, definition_identity) in &config.required_capabilities {

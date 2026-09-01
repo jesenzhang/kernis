@@ -4,8 +4,8 @@ use capability_graph::{CapabilityValue, Scope};
 use kernis_core::Id;
 use runtime_core::{
     CapabilityDeclaration, CapabilityRequirement, DefinitionError, DefinitionIdentity,
-    FactoryRegistry, FactoryResolutionError, RunDefinition, Runtime, RuntimeError, StepResult,
-    TaskConfig, TaskDefinition,
+    FactoryRegistry, FactoryResolutionError, LegacyMutationOperation, RunDefinition, Runtime,
+    RuntimeError, StepResult, TaskConfig, TaskDefinition,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -14,12 +14,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use workflow_graph::{Task, WorkflowGraph, WorkflowMutation};
 use workflow_recovery::{
-    CommitRequest, DurableMutation, DurableStore, EffectSemantics, FileDurableStore,
-    IdempotencyKey, KnownEffectOutcome, OperationId, StoreError,
+    AttemptAdmission, AttemptId, CommitRequest, CompletionRecord, DurableMutation, DurableStore,
+    EffectSemantics, FileDurableStore, IdempotencyKey, KnownEffectOutcome, OperationId, StoreError,
+    WorkflowReplayIdentity,
 };
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 const CHILD_PATH_ENV: &str = "KERNIS_K2_CHILD_PATH";
+const LEGACY_K1_TASK_IDENTITY: &str =
+    "kernis-workflow-replay-v1:5:tasks:4:task:4:task:4:task:6:config:9:no-effect:5:edges";
 
 struct TempStore {
     directory: PathBuf,
@@ -105,7 +108,7 @@ fn workflow_with_task_label(label: &str) -> WorkflowGraph {
 }
 
 #[test]
-fn live_object_restore_also_treats_task_label_as_display_metadata() {
+fn legacy_live_object_restore_keeps_main_identity_contract() {
     let runtime = Runtime::start_run(
         runtime_id(),
         workflow_with_task(),
@@ -113,21 +116,102 @@ fn live_object_restore_also_treats_task_label_as_display_metadata() {
         std::iter::empty::<(Id, TaskConfig)>(),
     )
     .expect("runtime starts");
-    let restored = Runtime::restore_run(
+    let changed_label = Runtime::restore_run(
         runtime_id(),
         workflow_with_task_label("new display label"),
         Scope::root(),
         std::iter::empty::<(Id, TaskConfig)>(),
         runtime.store().clone(),
+    );
+    assert!(matches!(
+        changed_label,
+        Err(RuntimeError::WorkflowReplayIdentityMismatch { .. })
+    ));
+
+    let restored = Runtime::restore_run(
+        runtime_id(),
+        workflow_with_task(),
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        runtime.store().clone(),
     )
-    .expect("display-only change restores");
+    .expect("unchanged live-object definition restores");
     assert_eq!(
         restored
             .workflow()
             .task(&id("task"))
             .expect("task exists")
             .label,
-        "new display label"
+        "task"
+    );
+}
+
+#[test]
+fn restore_run_accepts_fixed_main_legacy_identity_fixture() {
+    let temp = TempStore::new("legacy-k1-fixture");
+    let run_id = runtime_core::RunId::new("legacy-k1-run").expect("run id is valid");
+    let attempt_id = AttemptId::new("legacy-k1-attempt").expect("attempt id is valid");
+    let identity = WorkflowReplayIdentity::new(LEGACY_K1_TASK_IDENTITY)
+        .expect("fixed legacy identity is valid");
+    let mut store = FileDurableStore::open(&temp.path).expect("physical store opens");
+    let initial_revision = store.create_run(run_id.clone()).expect("run creates");
+    let identity_revision = store
+        .commit(CommitRequest::single(
+            run_id.clone(),
+            initial_revision,
+            IdempotencyKey::new("legacy-k1-identity").expect("idempotency key is valid"),
+            DurableMutation::RecordWorkflowReplayIdentity(identity.clone()),
+        ))
+        .expect("legacy identity commits")
+        .revision;
+    let admission_revision = store
+        .commit(CommitRequest::single(
+            run_id.clone(),
+            identity_revision,
+            IdempotencyKey::new("legacy-k1-attempt").expect("idempotency key is valid"),
+            DurableMutation::AdmitAttempt(AttemptAdmission {
+                run_id: run_id.clone(),
+                task_id: id("task"),
+                attempt_id: attempt_id.clone(),
+                operation_id: None,
+                capabilities: Vec::new(),
+            }),
+        ))
+        .expect("legacy attempt commits")
+        .revision;
+    store
+        .commit(CommitRequest::single(
+            run_id.clone(),
+            admission_revision,
+            IdempotencyKey::new("legacy-k1-completion").expect("idempotency key is valid"),
+            DurableMutation::RecordCompletion(CompletionRecord {
+                task_id: id("task"),
+                attempt_id,
+            }),
+        ))
+        .expect("legacy completion commits");
+    drop(store);
+
+    let mut restored = Runtime::<FileDurableStore>::restore_run(
+        run_id,
+        workflow_with_task(),
+        Scope::root(),
+        std::iter::empty::<(Id, TaskConfig)>(),
+        FileDurableStore::open(&temp.path).expect("physical store reopens"),
+    )
+    .expect("current legacy restore accepts main fixture");
+    assert_eq!(restored.attempts().len(), 1);
+    assert_eq!(restored.workflow().completed_tasks().len(), 1);
+    assert_eq!(
+        restored
+            .durable_state()
+            .expect("legacy state loads")
+            .workflow_replay_identity(),
+        Some(&identity)
+    );
+    assert_eq!(
+        restored.step().expect("completed legacy run is idle"),
+        StepResult::Idle
     );
 }
 
@@ -219,7 +303,7 @@ fn canonical_identity_is_order_independent_and_excludes_display_labels() {
 }
 
 #[test]
-fn duplicate_declarations_configs_and_factory_identities_fail_typed() {
+fn duplicate_declarative_declarations_and_factory_identities_fail_typed() {
     let duplicate_task = RunDefinition::new()
         .with_task(TaskDefinition::new(id("same"), "one"))
         .with_task(TaskDefinition::new(id("same"), "two"));
@@ -248,19 +332,31 @@ fn duplicate_declarations_configs_and_factory_identities_fail_typed() {
         }),
         Err(FactoryResolutionError::DuplicateDefinitionIdentity { .. })
     ));
+}
 
-    let config = TaskConfig::new();
-    let result = Runtime::start_run(
+#[test]
+fn legacy_live_object_duplicate_task_configs_keep_main_behavior() {
+    let mut runtime = Runtime::start_run(
         runtime_id(),
         workflow_with_task(),
         Scope::root(),
-        [(id("task"), config.clone()), (id("task"), config)],
-    );
+        [
+            (
+                id("task"),
+                TaskConfig::new()
+                    .with_effect(operation("legacy-first"), EffectSemantics::Idempotent),
+            ),
+            (
+                id("task"),
+                TaskConfig::new()
+                    .with_effect(operation("legacy-second"), EffectSemantics::Idempotent),
+            ),
+        ],
+    )
+    .expect("legacy task configuration keeps last-write-wins behavior");
     assert!(matches!(
-        result,
-        Err(RuntimeError::Definition(
-            DefinitionError::DuplicateTaskConfiguration(task_id)
-        )) if task_id == id("task")
+        runtime.step().expect("last task config drives the attempt"),
+        StepResult::EffectPending { operation_id, .. } if operation_id == operation("legacy-second")
     ));
 }
 
@@ -359,6 +455,67 @@ fn label_only_change_keeps_identity_but_changes_reconstructed_display_data() {
 }
 
 #[test]
+fn declarative_runtime_rejects_legacy_mutations_without_identity_change() {
+    let definition = effect_definition("provenance-effect");
+    let identity = definition
+        .identity()
+        .expect("definition identity is stable");
+    let factories = provider_registry("provenance-process");
+    let mut runtime = Runtime::start_from_definition(runtime_id(), definition.clone(), &factories)
+        .expect("declarative runtime starts");
+    let before = runtime.durable_state().expect("initial state loads");
+    let workflow_revision = runtime.workflow().revision();
+
+    assert!(matches!(
+        runtime.configure_task(
+            id("task"),
+            TaskConfig::new().with_effect(
+                operation("legacy-reconfiguration"),
+                EffectSemantics::Idempotent,
+            ),
+        ),
+        Err(RuntimeError::DeclarativeMutationUnsupported(
+            LegacyMutationOperation::ConfigureTask
+        ))
+    ));
+
+    let mut restored = Runtime::restore_from_definition(
+        runtime_id(),
+        definition,
+        &factories,
+        runtime.store().clone(),
+    )
+    .expect("declarative runtime restores");
+    let restored_before = restored.durable_state().expect("restored state loads");
+    let restored_workflow_revision = restored.workflow().revision();
+    assert!(matches!(
+        restored.apply_workflow_mutation(
+            restored_workflow_revision,
+            [WorkflowMutation::AddTask {
+                task: Task {
+                    id: id("later"),
+                    label: "later".to_owned(),
+                },
+            }],
+        ),
+        Err(RuntimeError::DeclarativeMutationUnsupported(
+            LegacyMutationOperation::ApplyWorkflowMutation
+        ))
+    ));
+
+    let after = runtime.durable_state().expect("unchanged state loads");
+    assert_eq!(before.revision(), after.revision());
+    assert_eq!(after.workflow_replay_identity(), Some(&identity));
+    assert_eq!(runtime.workflow().revision(), workflow_revision);
+    let restored_after = restored
+        .durable_state()
+        .expect("restored unchanged state loads");
+    assert_eq!(restored_before.revision(), restored_after.revision());
+    assert_eq!(restored_after.workflow_replay_identity(), Some(&identity));
+    assert_eq!(restored.workflow().revision(), restored_workflow_revision);
+}
+
+#[test]
 fn incompatible_definition_fails_closed_before_factory_construction() {
     let definition_a = effect_definition("definition-a-effect");
     let definition_b = effect_definition("definition-b-effect");
@@ -390,7 +547,7 @@ fn incompatible_definition_fails_closed_before_factory_construction() {
 }
 
 #[test]
-fn definition_identity_transition_is_cas_protected_against_stale_writer() {
+fn legacy_live_identity_transition_is_cas_protected_against_stale_writer() {
     let temp = TempStore::new("identity-transition");
     let run_id = runtime_id();
     let operation_a = operation("transition-a");
@@ -413,6 +570,7 @@ fn definition_identity_transition_is_cas_protected_against_stale_writer() {
         .workflow_replay_identity()
         .cloned()
         .expect("identity A is durable");
+    assert!(identity_a.as_str().starts_with("kernis-workflow-replay-v1"));
 
     runtime
         .configure_task(
@@ -457,6 +615,75 @@ fn definition_identity_transition_is_cas_protected_against_stale_writer() {
             .workflow_replay_identity(),
         Some(&identity_a)
     );
+}
+
+#[test]
+fn declarative_identity_transition_is_cas_protected_at_durable_boundary() {
+    let temp = TempStore::new("declarative-identity-transition");
+    let run_id = runtime_core::RunId::new("declarative-transition-run").expect("run id is valid");
+    let identity_a = effect_definition("declarative-transition-a")
+        .identity()
+        .expect("definition A identity is valid");
+    let identity_b = effect_definition("declarative-transition-b")
+        .identity()
+        .expect("definition B identity is valid");
+    assert!(identity_a.as_str().starts_with("kernis-run-definition-v1"));
+    assert_ne!(identity_a, identity_b);
+
+    let mut writer = FileDurableStore::open(&temp.path).expect("physical store opens");
+    let initial_revision = writer.create_run(run_id.clone()).expect("run creates");
+    let revision_a = writer
+        .commit(CommitRequest::single(
+            run_id.clone(),
+            initial_revision,
+            IdempotencyKey::new("declarative-identity-a").expect("idempotency key is valid"),
+            DurableMutation::RecordWorkflowReplayIdentity(identity_a.clone()),
+        ))
+        .expect("identity A commits")
+        .revision;
+    let mut stale_writer = FileDurableStore::open(&temp.path).expect("stale store opens");
+    let stale_revision = stale_writer
+        .load_run(&run_id)
+        .expect("stale state loads")
+        .revision();
+    assert_eq!(stale_revision, revision_a);
+
+    let revision_b = writer
+        .commit(CommitRequest::single(
+            run_id.clone(),
+            revision_a,
+            IdempotencyKey::new("declarative-identity-b").expect("idempotency key is valid"),
+            DurableMutation::RecordWorkflowReplayIdentity(identity_b),
+        ))
+        .expect("identity B commits")
+        .revision;
+    let revision_a_again = writer
+        .commit(CommitRequest::single(
+            run_id.clone(),
+            revision_b,
+            IdempotencyKey::new("declarative-identity-a-again").expect("idempotency key is valid"),
+            DurableMutation::RecordWorkflowReplayIdentity(identity_a.clone()),
+        ))
+        .expect("identity A transition commits")
+        .revision;
+    let stale_result = stale_writer.commit(CommitRequest::single(
+        run_id.clone(),
+        stale_revision,
+        IdempotencyKey::new("declarative-stale-identity-a").expect("idempotency key is valid"),
+        DurableMutation::RecordWorkflowReplayIdentity(identity_a.clone()),
+    ));
+    assert!(matches!(
+        stale_result,
+        Err(StoreError::RevisionConflict { expected, actual })
+            if expected == stale_revision && actual == revision_a_again
+    ));
+
+    let final_state = FileDurableStore::open(&temp.path)
+        .expect("final store opens")
+        .load_run(&run_id)
+        .expect("final state loads");
+    assert_eq!(final_state.workflow_replay_identity(), Some(&identity_a));
+    assert_eq!(final_state.revision(), revision_a_again);
 }
 
 #[test]
