@@ -84,5 +84,10 @@ non-idempotent unknown work, and known failure; the known-success case also
 proves that a reopened `FileDurableStore` does not call the external adapter a
 second time. These are local candidate results, not CI or integration claims.
 
+The public candidate is isolated to `runtime-core`'s async-driver module and a
+single crate-level re-export. No durable schema or existing authority depends
+on it, so API stabilization or removal can remain a later decision without
+pulling lifecycle or composition semantics into K3.
+
 This document remains a candidate record until the final verification and
 independent review are complete. K3 is not marked integrated by this branch.

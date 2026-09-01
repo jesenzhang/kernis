@@ -410,6 +410,43 @@ model. Concurrency and lifecycle changes require independent review.
 - Evidence that synchronous deterministic behavior remains supported.
 - Final integrated commit and independent review result.
 
+### Candidate completion evidence (2026-09-01)
+
+Result: Candidate / implementation PASS; K3 is not integrated.
+
+Integrated K2 base: `684ae84a3da94472e4b2263a5c3bfd734574c96f` on local `main`.
+The implementation/test checkpoint before this documentation closeout is
+`d277b53`; the final local checkpoint is reported separately after the
+documentation and milestone verification are complete.
+
+Implementation blocks / explicit Slices actually used: One continuous K3
+milestone; no explicit Slice or handoff was needed.
+
+Material decisions: Added the executor-neutral single-owner
+`RuntimeDriver<S, D>` and typed `RuntimeHandle`; kept the synchronous Runtime,
+WorkflowGraph, capability runtime, execution streams, and DurableStore as
+their existing authorities; made durable dispatch and exact `AttemptId`
+lineage precede external calls; preserved unknown outcomes and explicit
+idempotent retry/reconciliation semantics; and kept shutdown classification
+and lossless lifecycle backpressure inside the driver. No Tokio type or async
+DurableStore API crosses the public kernel seam.
+
+Focused verification: K3 async suite 18 passed; K1 physical suite 9 passed;
+K2 declarative suite 14 passed; workflow-recovery all-features suite 51
+passed.
+
+Broad verification: format, workspace clippy with `-D warnings`, workspace
+tests (245 passed), graph-lab smoke, and the K2-base diff check passed locally.
+These are candidate results, not CI or integration claims.
+
+Independent review: Deferred until all K3 implementation, documentation,
+milestone verification, and checkpoint work is complete; one final review is
+required over the complete K2-integrated-base to K3-final range.
+
+Remaining risks and non-goals: No distributed scheduling, provider-specific
+retry policy, async DurableStore redesign, general actor framework, plugin
+composition, loader, HMR, or capability lifecycle replacement is claimed.
+
 ## K4 — Runtime and Plugin Composition API
 
 ### Outcome

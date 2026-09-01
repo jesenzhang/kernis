@@ -82,6 +82,13 @@ operation's idempotency semantics when handling an unknown result. Distributed
 leases, remote workers, async store implementations, and provider-specific
 reconciliation remain later milestones or adapter concerns.
 
+The public candidate surface is intentionally isolated for reversibility. K3
+adds one production module and one crate-level re-export; no other crate,
+durable format, or existing authority depends on the driver. If the candidate
+contract is falsified before integration, the module and re-export can be
+removed without a schema migration or a change to the synchronous Runtime.
+Long-term API stabilization remains a later milestone.
+
 ## Rejected alternatives
 
 * `Arc<Mutex<Runtime<S>>>`: makes every caller responsible for serialization,
