@@ -299,6 +299,44 @@ is required for replay identity and public configuration contracts.
 - Public API migration notes.
 - Final integrated commit and independent review result.
 
+### Candidate completion evidence (2026-09-01)
+
+Result: Candidate / implementation PASS; K2 is not integrated.
+
+Base: `1e8cf70` (`main`, K1 integrated).
+
+Final integrated HEAD: N/A while the candidate awaits independent review;
+implementation candidate commit is `017e2af`.
+
+Implementation blocks / explicit Slices actually used: One continuous K2
+milestone; no explicit Slice or handoff was needed.
+
+Material decisions: Added serializable-friendly `RunDefinition`,
+`TaskDefinition`, `CapabilityRequirement`, `DefinitionIdentity`, and a
+process-local `FactoryRegistry`; kept `WorkflowGraph`, capability scope, and
+`DurableStore` as the existing authorities; reused the durable replay-identity
+mutation and revision-CAS protocol; excluded task display labels from the
+versioned `kernis-run-definition-v1` identity.
+
+Focused verification: K2 declarative suite 10 passed; runtime-core K1 physical
+suite 9 passed; workflow-recovery physical suite 9 passed; staged diff check
+passed.
+
+Broad verification: `cargo fmt --all -- --check` passed; workspace clippy with
+`-D warnings` passed with exit code 0; workspace tests 223 passed; graph-lab
+smoke passed; no separate repository architecture verifier exists beyond the
+CI gates inspected in `.github/workflows/ci.yml`.
+
+Independent review: Pending; candidate is ready for independent review of the
+public definition and replay-identity contract.
+
+Remaining risks and non-goals: No loader, plugin discovery/SDK/lifecycle,
+secret management, hot reload, WASM/dynamic library support, distributed
+execution, async executor redesign, DI/service locator, or serialization of
+arbitrary process-local runtime objects is claimed. Existing direct
+construction APIs remain supported; durable schema migration and power-loss
+fsync guarantees remain outside K2.
+
 ## K3 — Explicit Asynchronous Execution Boundary
 
 ### Outcome
