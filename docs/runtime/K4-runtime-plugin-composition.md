@@ -1,8 +1,8 @@
 # K4: Runtime and Plugin Composition API
 
-Status: Integrated on `main`; review CHANGES REQUIRED; cleanup-ownership
-repair on `fix/k4-composition-cleanup-ownership` pending independent
-re-review
+Status: Integrated on `main` through `e03778d`; independent review closed —
+the cleanup-ownership repair was integrated at `e03778d` and the independent
+re-review returned PASS with 0 blockers
 
 Integrated `main` base: `ebfc7d3`. The K4 candidate range
 `4023042..003014d` from `feat/k4-runtime-plugin-composition` is integrated
@@ -19,9 +19,10 @@ blocker: composition-owned plugin registrations were never unregistered
 during rollback/shutdown, and `CompositionHandle` claimed composition
 disposal without holding the Runtime/`CapabilityRegistry` authority that
 cleanup requires. The surgical repair is delivered on
-`fix/k4-composition-cleanup-ownership` (base `2ba3fd4`) and awaits an
-independent re-review; it is not a new milestone. This document describes
-the repaired, review-contract-consistent API.
+`fix/k4-composition-cleanup-ownership` (base `2ba3fd4`), was integrated on
+`main` at `e03778d`, and passed independent re-review with PASS and 0
+blockers; it is not a new milestone. This document describes the repaired,
+review-contract-consistent API.
 
 K4 adds a host-facing composition layer that assembles one runtime from typed
 modules without manual internal-crate wiring. It does not replace the K2
@@ -203,9 +204,10 @@ filtered in this environment, so the pushes went over `ssh.github.com:443`.
 
 ## Review repair verification (2026-09-10)
 
-The cleanup-ownership repair runs on
-`fix/k4-composition-cleanup-ownership` (base `2ba3fd4`) and is a candidate
-awaiting independent re-review, not an integration.
+The cleanup-ownership repair was delivered on
+`fix/k4-composition-cleanup-ownership` (base `2ba3fd4`), integrated on
+`main` at `e03778d`, and passed independent re-review with PASS and 0
+blockers.
 
 - `cargo fmt --all -- --check`: PASS (after applying rustfmt to the new
   `k4_cleanup_ownership` suite)
@@ -231,6 +233,7 @@ marketplace/package management, remote plugin execution, dynamic loading, and
 any K5 loader boundary are explicitly out of scope. Plugin/module hot reload,
 configuration hot updates, and multi-runtime hosting are not claimed.
 
-This document remains a pending-review record until the independent review
-over the complete integrated range is complete. K4 is implemented on
-integrated `main`, but is not marked Integrated by this document.
+K4 is a completed, integrated milestone: integrated `main` carries the full
+composition range plus the re-reviewed cleanup-ownership repair, and the
+independent lifecycle/API review process is closed with a PASS re-review
+(0 blockers).

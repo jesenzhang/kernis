@@ -60,7 +60,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | K1 | Embedded physical durability | M2-B contract closure | Integrated | Independent - APPROVE |
 | K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
 | K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
-| K4 | Runtime and plugin composition API | K2, K3 | Implemented on `main` | Independent - CHANGES REQUIRED, repair pending re-review |
+| K4 | Runtime and plugin composition API | K2, K3 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `e03778d`) |
 | K5 | Minimal loader boundary | K4 | Planned | Independent |
 | K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
 
@@ -609,8 +609,19 @@ structured `CleanupResource::PluginRegistration` failure. K3
 are unchanged. Four focused cleanup-ownership tests
 (`k4_cleanup_ownership`) plus the extended A/I scenarios prove the invariant
 "successful composition cleanup ⇒ no composition-owned plugin registration
-remains in the still-live Runtime" on every release path. The repair awaits
-independent re-review; K4 is not marked Integrated.
+remains in the still-live Runtime" on every release path.
+
+### Independent re-review pass reconciliation (2026-09-10, K5 preflight)
+
+The independent re-review over the cleanup-ownership repair returned PASS
+with 0 blockers. The repair (`e03778d`, "fix: hold registry authority in K4
+composition cleanup") is integrated on `main` and is the `main` HEAD that
+K5 takes as its base. The independent lifecycle/API review process for K4 is
+therefore closed: the CHANGES REQUIRED blocker was repaired in place, not as
+a new milestone, and the re-review returned PASS. K4 is a completed,
+integrated milestone. This reconciliation records the recorded review
+outcome and repository-provable state only; it creates no new milestone
+identity and no new Slice.
 
 ## K5 — Minimal Loader Boundary
 

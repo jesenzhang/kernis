@@ -41,11 +41,11 @@ marked Integrated. K4 is implemented on integrated `main` (fast-forward of
 `feat/k4-runtime-plugin-composition` plus its status reconciliation and
 clippy repair, ending at `003014d`) and passes CI (GitHub Actions run
 34456738676), with acceptance evidence in
-[`runtime/K4-runtime-plugin-composition.md`](runtime/K4-runtime-plugin-composition.md);
-its independent review returned CHANGES REQUIRED (composition cleanup
-ownership), and the surgical repair on
-`fix/k4-composition-cleanup-ownership` awaits independent re-review, so K4
-is likewise not marked Integrated.
+[`runtime/K4-runtime-plugin-composition.md`](runtime/K4-runtime-plugin-composition.md).
+Its independent review returned CHANGES REQUIRED (composition cleanup
+ownership), the surgical repair was integrated on `main` at `e03778d`, and
+the independent re-review returned PASS with 0 blockers, so K4 is a
+completed integrated milestone.
 
 The milestone is the delivery unit. Slice boundaries are introduced only when
 current implementation risk, ownership, verification, or context quality makes

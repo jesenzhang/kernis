@@ -107,10 +107,11 @@ future validated references.
   (run 34446922406). The final independent review over the complete range is
   still pending, so K3 is not marked Integrated.
 - Stage 2 K4: runtime and plugin composition API is integrated on `main`
-  through `2ba3fd4`; its independent review returned CHANGES REQUIRED
-  (composition cleanup ownership), and the repair branch
-  `fix/k4-composition-cleanup-ownership` awaits independent re-review, so
-  K4 is not marked Integrated.
+  through `e03778d` (the cleanup-ownership review repair on top of
+  `2ba3fd4`). The independent lifecycle/API review process is closed: the
+  review returned CHANGES REQUIRED, the repair landed on `main`, and the
+  independent re-review returned PASS with 0 blockers. K4 is a completed
+  integrated milestone.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at
