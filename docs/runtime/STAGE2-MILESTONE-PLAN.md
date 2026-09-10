@@ -536,15 +536,20 @@ required.
 
 ### Candidate delivery evidence (2026-09-10)
 
-The K4 candidate range `4023042..e61cb0b` from
+The K4 candidate range `4023042..003014d` from
 `feat/k4-runtime-plugin-composition` on top of the integrated `main` base
 `ebfc7d3` is integrated on `main` by fast-forward merge on 2026-09-10:
 `4023042` (K2/K3 repository status reconciliation), `3ad46a0` (ADR 0005
 composition architecture decision), `cbb0fc2` (the `runtime-composition`
-crate), `466ed96` (acceptance scenarios A-J), and `e61cb0b` (candidate
-delivery evidence). The independent lifecycle/API review remains pending, so
-K4 is not marked Integrated. This section records repository-provable state
-only; it creates no new milestone identity and no Slice.
+crate), `466ed96` (acceptance scenarios A-J), `e61cb0b` (candidate delivery
+evidence), `bccce29` (integration status reconciliation), and `003014d`
+(repair of the stable-1.98 clippy `result_large_err` CI failure by boxing
+`StartupFailure::cause`). GitHub Actions CI passed on the integrated HEAD
+`003014d` (run 34456738676) after that repair; the preceding HEAD `bccce29`
+failed the new lint (run 34454356269). The independent lifecycle/API review
+remains pending, so K4 is not marked Integrated. This section records
+repository-provable state only; it creates no new milestone identity and no
+Slice.
 
 The composition layer is a policy crate over existing authorities: stable
 serializable `ModuleDefinition` plus process-local `ModuleRegistration`,
@@ -574,8 +579,9 @@ durable suite 18 passed; M2-C1 repair suite 1 passed; M2-C2 integration suite
 4 passed; `cargo test -p workflow-recovery --all-features` 50 passed. Broad
 candidate verification (format, workspace clippy with `-D warnings`, 275
 workspace tests, graph-lab smoke, and the base diff check) is recorded in
-[K4-runtime-plugin-composition.md](K4-runtime-plugin-composition.md). These
-are candidate results, not CI or integration claims.
+[K4-runtime-plugin-composition.md](K4-runtime-plugin-composition.md). GitHub
+Actions CI passed on the integrated HEAD `003014d` (run 34456738676); the
+independent review remains the open item.
 
 ## K5 — Minimal Loader Boundary
 

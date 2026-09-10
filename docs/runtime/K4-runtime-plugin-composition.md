@@ -3,12 +3,15 @@
 Status: Implemented on integrated `main` / independent review pending
 
 Integrated `main` base: `ebfc7d3`. The K4 candidate range
-`4023042..e61cb0b` from `feat/k4-runtime-plugin-composition` is integrated
+`4023042..003014d` from `feat/k4-runtime-plugin-composition` is integrated
 on `main` by fast-forward merge on 2026-09-10: `4023042` (K2/K3 repository
 status reconciliation), `3ad46a0` (ADR 0005 composition architecture
 decision), `cbb0fc2` (the `runtime-composition` crate), `466ed96`
-(acceptance scenarios A-J), and `e61cb0b` (candidate delivery evidence).
-The independent lifecycle/API review is required and remains pending.
+(acceptance scenarios A-J), `e61cb0b` (candidate delivery evidence),
+`bccce29` (integration status reconciliation), and `003014d` (repair of the
+stable-1.98 clippy `result_large_err` CI failure by boxing
+`StartupFailure::cause`). The independent lifecycle/API review is required
+and remains pending.
 
 K4 adds a host-facing composition layer that assembles one runtime from typed
 modules without manual internal-crate wiring. It does not replace the K2
@@ -142,11 +145,16 @@ durable suite 18 passed; M2-C1 repair suite 1 passed; M2-C2 integration suite
 - `cargo test --workspace --all-features`: PASS, 275 tests
 - `cargo run -p graph-lab`: PASS
 - `git diff --check ebfc7d3`: PASS
+- GitHub Actions CI on `main` HEAD `003014d`: PASS, run 34456738676
+  (Format, Clippy, Test, Graph lab).
 
-These are local candidate results recorded before the fast-forward merge;
-GitHub Actions CI on the integrated `main` HEAD is not claimed here because
-this environment could not reach the GitHub API (HTTPS port 443 to
-`github.com` was filtered; the merge was pushed over `ssh.github.com:443`).
+The preceding integrated HEAD `bccce29` failed CI (run 34454356269):
+stable toolchain 1.98 added the `result_large_err` lint, which flagged the
+168-byte `Err` variant of the composition start results. `StartupFailure`
+now boxes its `cause`, the workspace clippy and 275-test suite re-passed
+locally on 1.98.1, and CI passed on the repair `003014d`. The local
+checkpoint results above predate the merge; HTTPS to `github.com` was
+filtered in this environment, so the pushes went over `ssh.github.com:443`.
 
 ## Non-goals
 
