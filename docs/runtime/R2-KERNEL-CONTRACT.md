@@ -48,8 +48,10 @@ sections use this vocabulary.
 Current Stage 2 state: K1, K4, K5 are Integrated and Reviewed (K5 after the
 `a4bc425` repair and re-review PASS). K2 and K3 are Integrated; their
 independent reviews were never separately recorded and are absorbed into
-the K6/R2 combined review. K6 is a **candidate ready for independent
-review**; R2 is not Closed until that review completes.
+the K6/R2 combined review. K6 is Integrated (merged into `main` as
+`c6c3a60`; CI run 34489698724 passed all gates); its independent review
+is still pending, so K6 is not Reviewed and R2 is not Closed until that
+review completes.
 
 ## Crate layering
 

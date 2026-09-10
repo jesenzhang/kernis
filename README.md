@@ -136,16 +136,18 @@ Stage 2 milestones use the status vocabulary defined in the
   integrated head `3ee011b` (GitHub Actions run 34482699653). K5 is a
   completed integrated milestone.
 - Stage 2 K6: the Runtime Kernel API stabilization and R2 closeout
-  candidate is ready for independent review on
-  `feat/k6-runtime-kernel-api-stabilization` (base `3ee011b`). It
-  publishes the supported API inventory, the R2 compatibility policy,
-  the R2 kernel contract entry document, the canonical end-to-end host
-  example (`crates/runtime-loader/examples/r2_host.rs`) and acceptance
-  suite (including genuine cross-process cold restart), the declared
-  MSRV 1.85 verified by a CI `msrv` job, and the full verification
-  record (315 tests green on stable and on 1.85). K6 is a Candidate:
-  not Reviewed, and R2 is not declared Closed until the independent
-  K6/R2 review passes and the branch is integrated. See
+  work is integrated on `main` (merge `c6c3a60` of
+  `feat/k6-runtime-kernel-api-stabilization`, base `3ee011b`; GitHub
+  Actions run 34489698724 passed Format, Clippy, Test, Graph lab, and
+  the new MSRV gates). It publishes the supported API inventory, the
+  R2 compatibility policy, the R2 kernel contract entry document, the
+  canonical end-to-end host example
+  (`crates/runtime-loader/examples/r2_host.rs`) and acceptance suite
+  (including genuine cross-process cold restart), the declared MSRV
+  1.85 verified by a CI `msrv` job, and the full verification record
+  (315 tests green on stable and on 1.85). K6 is Integrated but not
+  Reviewed: the independent K6/R2 review is still pending, and R2 is
+  not declared Closed until it passes. See
   [R2-KERNEL-CONTRACT.md](docs/runtime/R2-KERNEL-CONTRACT.md).
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.

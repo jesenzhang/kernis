@@ -62,7 +62,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | K3 | Explicit asynchronous execution boundary | K2 | Integrated | Independent - pending (absorbed into the K6/R2 review) |
 | K4 | Runtime and plugin composition API | K2, K3 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `e03778d`) |
 | K5 | Minimal loader boundary | K4 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `a4bc425`) |
-| K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Candidate (on `feat/k6-runtime-kernel-api-stabilization`) | Independent - pending (K6/R2 combined review) |
+| K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Integrated | Independent - pending (K6/R2 combined review) |
 
 Status and review columns use the vocabulary defined in
 [R2-KERNEL-CONTRACT.md](R2-KERNEL-CONTRACT.md): Integrated (implementation
@@ -977,6 +977,20 @@ plus integration; nothing in this record declares it.
 Stage 3 abstraction, no renames of the proven public identities
 (`Runtime`, `RuntimeDriver`, `CompositionPlan`, `RuntimeLoader`,
 `ModuleReference`, `DurableStore`).
+
+### Main integration reconciliation (2026-09-10)
+
+The K6 candidate branch `feat/k6-runtime-kernel-api-stabilization`
+(final head `55bb80b`) was merged into `main` as `c6c3a60` (merge
+parents `3ee011b` + `55bb80b`) and pushed to `origin`, at the repository
+owner's request, ahead of the independent review. GitHub Actions CI
+observed the merge head: run 34489698724 completed with conclusion
+success (Format, Clippy, Test, Graph lab, and the new MSRV gates). Per
+the status vocabulary, K6 is therefore Integrated; the candidate-CI risk
+in the record above is retired by this observation. The independent
+K6/R2 review has not been performed, so K6 is not Reviewed and R2 is not
+Closed; closure still requires the review verdict recorded in this plan,
+and this integration does not substitute for it.
 
 ## Stage 3 entry gate
 
