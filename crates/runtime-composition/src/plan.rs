@@ -14,6 +14,7 @@ use runtime_core::{
     RunId, Runtime, RuntimeError,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::sync::Arc;
 use workflow_recovery::{DurableStore, InMemoryDurableStore};
 
@@ -40,6 +41,15 @@ pub struct CapabilitySlot {
 #[derive(Default)]
 pub struct CompositionBuilder {
     modules: BTreeMap<Id, ModuleRegistration>,
+}
+
+impl fmt::Debug for CompositionBuilder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CompositionBuilder")
+            .field("modules", &self.modules.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 impl CompositionBuilder {
@@ -100,6 +110,16 @@ pub struct CompositionPlan {
     definition: RunDefinition,
     factories: FactoryRegistry,
     slots: BTreeMap<Id, CapabilitySlot>,
+}
+
+impl fmt::Debug for CompositionPlan {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CompositionPlan")
+            .field("order", &self.order)
+            .field("slots", &self.slots.keys().collect::<Vec<_>>())
+            .finish_non_exhaustive()
+    }
 }
 
 impl CompositionPlan {

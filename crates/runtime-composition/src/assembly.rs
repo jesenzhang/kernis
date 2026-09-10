@@ -6,6 +6,7 @@ use crate::registration::LifecycleHook;
 use capability_graph::CapabilityFiber;
 use kernis_core::Id;
 use runtime_core::{EffectDispatcher, Runtime, RuntimeDriver, RuntimeHandle};
+use std::fmt;
 use std::sync::Arc;
 use workflow_recovery::{DurableStore, InMemoryDurableStore};
 
@@ -93,6 +94,15 @@ where
     order: Vec<Id>,
     owned: Vec<ActivatedModule>,
     config: HostConfig,
+}
+
+impl<S: DurableStore> fmt::Debug for RuntimeAssembly<S> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RuntimeAssembly")
+            .field("order", &self.order)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<S> RuntimeAssembly<S>

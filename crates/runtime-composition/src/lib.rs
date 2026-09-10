@@ -55,14 +55,16 @@ pub use registration::{
 // Upstream types the host passes through or receives from the composition
 // API, re-exported so a host depends on this crate alone for composition.
 pub use capability_graph::{
-    CapabilityValue, PluginConfig, PluginDefinition, PluginRuntime, ResolvedDependencies,
+    CapabilityDefinition, CapabilityFiber, CapabilityValue, FiberState, PluginConfig,
+    PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime, ResolvedDependencies,
 };
 pub use kernis_core::Id;
 pub use runtime_core::{
-    CapabilityDeclaration, CapabilityRequirement, DefinitionError, DefinitionIdentity, DriveResult,
-    DriverError, DriverExit, DriverFuture, EffectDispatchError, EffectDispatchFuture,
-    EffectDispatchRequest, EffectDispatcher, RunDefinition, RunId, Runtime, RuntimeDriver,
-    RuntimeError, RuntimeHandle, ShutdownStatus, TaskDefinition,
+    CapabilityDeclaration, CapabilityPin, CapabilityRequirement, DefinitionError,
+    DefinitionIdentity, DriveResult, DriverError, DriverExit, DriverFuture, EffectDispatchError,
+    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, RunDefinition, RunId, Runtime,
+    RuntimeDriver, RuntimeError, RuntimeHandle, ShutdownStatus, StepResult, TaskAttempt,
+    TaskDefinition,
 };
 pub use workflow_recovery::{
     DurableStore, EffectSemantics, FileDurableStore, InMemoryDurableStore, KnownEffectOutcome,
