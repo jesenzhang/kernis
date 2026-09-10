@@ -1,0 +1,18 @@
+[package]
+name = "runtime-loader"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kernis-core = { path = "../core" }
+runtime-composition = { path = "../runtime-composition" }
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1.0"
+tokio = { version = "1.45", features = ["macros", "rt", "sync"] }
+
+[lints]
+workspace = true
