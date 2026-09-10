@@ -97,11 +97,17 @@ future validated references.
 - Stage 2 K1: embedded physical `FileDurableStore` implemented with redb,
   versioned typed snapshots, reopen, CAS/idempotency, and crash-window proof.
 - Stage 2 K2: declarative definition, process-local factory separation, cold
-  reconstruction, and K1 legacy-identity compatibility candidate are present
-  on local `main` at `684ae84`; formal K2 closeout still awaits independent
-  review.
-- Stage 2 K3: executor-neutral single-owner async driver candidate is being
-  implemented on `feat/k3-explicit-async-boundary`.
+  reconstruction, and K1 legacy-identity compatibility are implemented on
+  integrated `main` (candidate range through `684ae84`, with the
+  review-feedback compatibility fix `5fe0ea4`). No independent-review APPROVE
+  is recorded, so K2 is not marked Integrated.
+- Stage 2 K3: the executor-neutral single-owner async driver is implemented on
+  integrated `main` through `ebfc7d3` (including the owner-loss review repair
+  with its `k3_review_owner_drop` regression), on which GitHub CI passed
+  (run 34446922406). The final independent review over the complete range is
+  still pending, so K3 is not marked Integrated.
+- Stage 2 K4: runtime and plugin composition API is being implemented on
+  `feat/k4-runtime-plugin-composition`.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at

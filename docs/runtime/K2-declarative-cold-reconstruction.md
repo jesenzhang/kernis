@@ -1,12 +1,14 @@
 # K2: Declarative Configuration and Cold Reconstruction
 
-Status: In Progress / Candidate
+Status: Implemented on integrated `main` / independent review pending
 
 Base: `1e8cf70` (`main`, K1 integrated)
 
-Candidate checkpoint: `684ae84a3da94472e4b2263a5c3bfd734574c96f`, now present on
-local `main` to satisfy the K3 integration precondition. This does not change
-the formal status: K2 still awaits independent review.
+The K2 implementation range (`017e2af`, the review-feedback compatibility fix
+`5fe0ea4`, and the closeout record `684ae84`) is integrated on `main`, and
+`origin/main` matches. GitHub Actions CI passed on the current `main` HEAD
+`ebfc7d3` (run 34446922406). No independent-review APPROVE is recorded for
+K2, so K2 remains unmarked as Integrated.
 
 K2 adds a stable declaration boundary around the existing deterministic
 Runtime Core. The declaration is an input to reconstruction; it is not a new
@@ -131,3 +133,10 @@ declarative provenance rejection for legacy mutators, separate legacy and
 declarative durable-boundary CAS transitions, and a child-process
 physical-store write followed by fresh declarative reconstruction and effect
 recovery.
+
+Repository status reconciliation (2026-09-10, K4 preflight): earlier wording
+described K2 as a candidate awaiting the K3 integration precondition. The
+repository truth is that the K2 range is integrated on `main` with CI green
+on the current `main` HEAD; the review-feedback compatibility fix `5fe0ea4`
+is recorded repository evidence. The formal independent review remains
+pending, and this reconciliation records repository-provable state only.

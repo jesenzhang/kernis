@@ -58,9 +58,9 @@ checks belong at the milestone boundary rather than after every internal edit.
 | Milestone | Outcome | Depends on | Status | Review |
 | --- | --- | --- | --- | --- |
 | K1 | Embedded physical durability | M2-B contract closure | Integrated | Independent - APPROVE |
-| K2 | Declarative configuration and cold reconstruction | K1 | In Progress / Candidate | Independent |
-| K3 | Explicit asynchronous execution boundary | K2 | Planned | Independent |
-| K4 | Runtime and plugin composition API | K2, K3 | Planned | Independent |
+| K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
+| K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
+| K4 | Runtime and plugin composition API | K2, K3 | In Progress | Independent |
 | K5 | Minimal loader boundary | K4 | Planned | Independent |
 | K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
 
@@ -349,6 +349,16 @@ arbitrary process-local runtime objects is claimed. Existing direct
 construction APIs remain supported; durable schema migration and power-loss
 fsync guarantees remain outside K2.
 
+### Repository status reconciliation (2026-09-10, K4 preflight)
+
+The K2 implementation (`017e2af`), the review-feedback compatibility fix
+(`5fe0ea4`), and the closeout record (`684ae84`) are integrated on `main`,
+and `origin/main` matches the local `main`. GitHub Actions CI passed on the
+current `main` HEAD `ebfc7d3` (run 34446922406). No independent-review
+APPROVE is recorded for K2, so K2 is not marked Integrated. This
+reconciliation records repository-provable state only; it creates no new
+milestone identity and no new Slice.
+
 ## K3 — Explicit Asynchronous Execution Boundary
 
 ### Outcome
@@ -450,6 +460,18 @@ required over the complete K2-integrated-base to K3-final range.
 Remaining risks and non-goals: No distributed scheduling, provider-specific
 retry policy, async DurableStore redesign, general actor framework, plugin
 composition, loader, HMR, or capability lifecycle replacement is claimed.
+
+### Repository status reconciliation (2026-09-10, K4 preflight)
+
+The K3 candidate range `d198ac2..715c72a` plus the follow-up repairs
+(`bd785f7`, `795deee`) and the owner-loss review repair (`ebfc7d3`, with the
+`k3_review_owner_drop.rs` regression) are integrated on `main`, and
+`origin/main` matches the local `main`. GitHub Actions CI passed on the exact
+final HEAD `ebfc7d3` (run 34446922406). The final independent review over the
+complete K3 range is still pending and now also covers the post-closeout
+repairs, so K3 is not marked Integrated. This reconciliation records
+repository-provable state only; it creates no new milestone identity and no
+new Slice.
 
 ## K4 — Runtime and Plugin Composition API
 

@@ -1,8 +1,12 @@
 # K3: Explicit Asynchronous Execution Boundary
 
-Status: In Progress / Candidate
+Status: Implemented on integrated `main` / independent review pending
 
-Integrated K2 base: `684ae84a3da94472e4b2263a5c3bfd734574c96f` on `main`
+Integrated K2 base: `684ae84a3da94472e4b2263a5c3bfd734574c96f` on `main`.
+The K3 range `d198ac2..ebfc7d3` is integrated on `main`, including the
+post-closeout repairs `bd785f7`, `795deee`, and the owner-loss review repair
+`ebfc7d3`. GitHub Actions CI passed on the exact final HEAD `ebfc7d3`
+(run 34446922406).
 
 K3 adds an executor-neutral host seam around the existing synchronous
 `Runtime<S>`. It does not replace the deterministic Runtime model, make the
@@ -93,11 +97,14 @@ are recorded only after the final checkpoint verification below.
 - `cargo test --workspace --all-features`: PASS, 250 tests
 - `cargo run -p graph-lab`: PASS
 - `git diff --check 684ae84a3da94472e4b2263a5c3bfd734574c96f...HEAD`: PASS
+- GitHub Actions CI on `main` HEAD `ebfc7d3`: PASS, run 34446922406
+  (Format, Clippy, Test, Graph lab).
 
 The physical restart cases include prepared work, idempotent unknown work,
 non-idempotent unknown work, and known failure; the known-success case also
 proves that a reopened `FileDurableStore` does not call the external adapter a
-second time. These are local candidate results, not CI or integration claims.
+second time. The checkpoint bullets above are local candidate results; the
+CI line records the later integrated-`main` run for the final K3 HEAD.
 
 The K3 driver is an intentional `Send` boundary: its store, dispatcher, and
 effect futures are `Send`, while executor neutrality is provided by standard
@@ -107,5 +114,6 @@ re-export. No durable schema or existing authority depends on it, so API
 stabilization or removal can remain a later decision without pulling lifecycle
 or composition semantics into K3.
 
-This document remains a candidate record until the final verification and
-independent review are complete. K3 is not marked integrated by this branch.
+This document remains a candidate record until the final independent review
+over the complete `d198ac2..ebfc7d3` range is complete. K3 is implemented on
+integrated `main`, but is not marked Integrated by this document.
