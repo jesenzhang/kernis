@@ -1,9 +1,12 @@
 # K5: Minimal Loader Boundary
 
-Status: Candidate — ready for independent review. Not integrated.
+Status: Implemented on integrated `main` — the candidate range
+`dbf80e6..c0ce2a4` from `feat/k5-minimal-loader-boundary` is
+fast-forward merged on `main` (base `e03778d`). The independent review
+remains pending, so K5 is not marked Integrated.
 
 Base: `main` at `e03778d` (K4 integrated, independent re-review PASS).
-Branch: `feat/k5-minimal-loader-boundary`.
+Candidate branch: `feat/k5-minimal-loader-boundary`.
 
 K5 adds one thin, host-facing layer between "the host declares which logical
 modules a run needs" and "K4 receives resolved in-process module

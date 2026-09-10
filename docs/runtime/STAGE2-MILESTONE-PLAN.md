@@ -61,7 +61,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
 | K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
 | K4 | Runtime and plugin composition API | K2, K3 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `e03778d`) |
-| K5 | Minimal loader boundary | K4 | Candidate / Ready for Independent Review | Independent - pending |
+| K5 | Minimal loader boundary | K4 | Implemented on `main` | Independent - pending |
 | K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
 
 The sequence is dependency order, not a promise that current implementation
@@ -737,6 +737,20 @@ awaits the independent review.
 - Final integrated commit and independent review result: pending — K5
   integration happens only after independent review APPROVE, mirroring the
   K4 process.
+
+### Main integration reconciliation (2026-09-10)
+
+By repository-owner instruction the candidate branch was fast-forward
+merged into `main`: the K5 range `dbf80e6..c0ce2a4` from
+`feat/k5-minimal-loader-boundary` is now on integrated `main` on top of
+base `e03778d`, with this reconciliation as the following `main`-status
+documentation commit. This merge records implementation on integrated
+`main`, not review acceptance: no independent-review APPROVE is recorded
+yet, CI on the merged `main` result is to be observed, and K5 is
+therefore not marked Integrated — exactly the K2/K3 convention. The
+pending items remain the independent lifecycle/API review of the loader
+boundary and the recorded final integrated commit; a review-initiated
+repair would land as its own follow-up fix, mirroring the K4 process.
 
 ## K6 — Runtime Kernel API Stabilization and R2 Closeout
 
