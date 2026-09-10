@@ -6,7 +6,9 @@
 //!   already-registered plugins through the live registry instead of hiding
 //!   the missing cleanup behind the runtime drop.
 //! * D — the public driver-path API cannot fake orderly composition cleanup
-//!   while the driver still owns the runtime.
+//!   while the driver still owns the runtime: a premature owner-loss
+//!   release is rejected with a typed error, disposes nothing, and the
+//!   driver keeps serving commands.
 //! * E — after `OwnerDropped` the composition performs best-effort local
 //!   release and reports the lost registry authority instead of claiming
 //!   orderly completion.
@@ -14,6 +16,18 @@
 //! Scenario C (orderly driver shutdown recovering registry authority
 //! through `DriverExit`) is proven in `k4_compat::scenario_i` and
 //! `k4_composition::scenario_a`.
+//!
+//! R2 owner-loss guard regressions (review repair):
+//!
+//! * F — an orderly shutdown is not owner loss: after the `DriverExit`
+//!   exists the release stays rejected, disposes nothing, and the orderly
+//!   dispose still succeeds.
+//! * G — an aborted driver task marks the bound owner truth lost; only
+//!   then does the release run, with the same best-effort semantics.
+//! * H — a second owner-loss release resolves the typed `AlreadyReleased`
+//!   and never fakes an empty success.
+//! * I — another driver's owner loss proves nothing to this composition:
+//!   the owner-state probe is bound to the exact driver at `into_driver`.
 
 mod k4_common;
 
@@ -22,8 +36,9 @@ use k4_common::{
 };
 use runtime_composition::{
     ActivationStage, CleanupResource, CompositionBuilder, CompositionError, DriverError,
-    HostConfig, LifecycleHook, ModuleDefinition, ModuleRegistration, PluginDefinition,
-    PluginRuntime, RollbackFailure, ScopedEffect, lifecycle_hook,
+    DriverOwnerState, HostConfig, LifecycleHook, ModuleDefinition, ModuleRegistration,
+    OwnerLossReleaseError, PluginDefinition, PluginRuntime, RollbackFailure, ScopedEffect,
+    lifecycle_hook,
 };
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -313,10 +328,12 @@ async fn startup_rollback_unregisters_registrations_after_a_fiber_cleanup_failur
 }
 
 /// Scenario D: while the driver owns the runtime, the composition handle
-/// exposes no release path at all. Orderly completion literally requires
+/// has no release that can succeed. Orderly completion literally requires
 /// the `DriverExit`, which only exists after K3 shutdown released the
-/// runtime, so "driver still owns Runtime + composition independently
-/// disposed" is not expressible through the public API.
+/// runtime, and a premature owner-loss release is rejected by the bound
+/// owner-state guard with a typed error and zero disposal — so "driver
+/// still owns Runtime + composition independently disposed" is not
+/// expressible through the public API.
 #[tokio::test(flavor = "current_thread")]
 async fn no_composition_release_is_possible_while_the_driver_owns_the_runtime() {
     let recorder = Recorder::new();
@@ -336,22 +353,33 @@ async fn no_composition_release_is_possible_while_the_driver_owns_the_runtime() 
         .await
         .expect("composition activates");
 
-    let (driver, handle, composition) = assembly.into_driver(SuccessDispatcher::new());
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
     let join = tokio::spawn(driver.run());
 
-    // The driver still owns and services the runtime; the composition only
-    // offers read access at this point and disposed nothing.
+    // The driver still owns and services the runtime; the composition has
+    // no release authority while that is true. A premature owner-loss
+    // release is rejected and disposes nothing.
     handle
         .drive()
         .await
         .expect("the driver still services commands while the composition handle waits");
     assert_eq!(
+        composition.release_after_owner_loss().await.unwrap_err(),
+        OwnerLossReleaseError::OwnerStillRunning,
+        "the bound handle observes its driver still running, so the \
+         owner-loss release is rejected"
+    );
+    assert_eq!(
         composition.module_order(),
         [id("audit-module"), id("plugin-module")],
-        "the only handle capability while the driver runs is read access"
+        "the rejected release consumed nothing and the handle stays usable"
     );
     assert_eq!(recorder.count("dispose:"), 0);
     assert_eq!(event_count(&events, "fiber-effect"), 0);
+    handle
+        .drive()
+        .await
+        .expect("the rejected release left the driver serving commands");
 
     // Orderly shutdown: only the returned DriverExit unlocks composition
     // cleanup, and the registration is verifiably still live until then.
@@ -415,7 +443,7 @@ async fn owner_loss_release_disposes_locally_once_and_reports_lost_authority() {
         .await
         .expect("composition activates");
 
-    let (driver, handle, composition) = assembly.into_driver(SuccessDispatcher::new());
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
     drop(driver);
     assert!(matches!(
         handle.drive().await,
@@ -425,8 +453,17 @@ async fn owner_loss_release_disposes_locally_once_and_reports_lost_authority() {
         handle.shutdown().await,
         Err(DriverError::OwnerDropped)
     ));
+    assert_eq!(
+        handle.owner_state(),
+        DriverOwnerState::OwnerDropped,
+        "the driver-owner guard marked the exact owner truth the bound \
+         handle observes"
+    );
 
-    let report = composition.release_after_owner_loss().await;
+    let report = composition
+        .release_after_owner_loss()
+        .await
+        .expect("the dropped driver proves the owner loss to the bound handle");
     assert!(
         !report.is_success(),
         "the owner-loss path must never claim orderly completion"
@@ -455,4 +492,267 @@ async fn owner_loss_release_disposes_locally_once_and_reports_lost_authority() {
         "the fiber disposed exactly once after the owner loss"
     );
     assert_eq!(plugin.fiber_count(), 0);
+}
+
+/// One solo-module composition for the guard regressions: an armed
+/// `dispose` hook, a registered plugin, and a fiber with one owned
+/// disposal effect, so every guard outcome is directly observable.
+fn guard_plan(
+    marker: &str,
+    recorder: &Recorder,
+    events: &Arc<Mutex<Vec<String>>>,
+) -> (Arc<PluginRuntime>, runtime_composition::CompositionPlan) {
+    let module = id(&format!("guard-module-{marker}"));
+    let capability = id(&format!("reactive-{marker}"));
+    let plugin = tracked_plugin(
+        &format!("guard-plugin-{marker}"),
+        &format!("reactive-{marker}"),
+        "reactive-v1",
+        events,
+        None,
+    );
+    let plan = CompositionBuilder::new()
+        .register(
+            ModuleRegistration::new(ModuleDefinition::new(module).with_reactive_capability(
+                capability,
+                "service",
+                "reactive-v1",
+            ))
+            .plugin(Arc::clone(&plugin))
+            .on_activate(recorder.hook(&format!("activate:{marker}"), None))
+            .on_dispose(recorder.hook(&format!("dispose:{marker}"), None)),
+        )
+        .expect("guard module registers")
+        .build()
+        .expect("guard composition validates");
+    (plugin, plan)
+}
+
+/// Scenario F: an orderly shutdown is not owner loss. After the driver
+/// returned its `DriverExit`, the bound handle observes `Shutdown`, the
+/// owner-loss release is rejected with the orderly-path classification
+/// and disposes nothing, and the orderly dispose still releases
+/// everything exactly once.
+#[tokio::test(flavor = "current_thread")]
+async fn orderly_shutdown_is_not_owner_loss_for_the_bound_handle() {
+    let recorder = Recorder::new();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let (plugin, plan) = guard_plan("f", &recorder, &events);
+    let assembly = plan
+        .start(run_id("k4-guard-f"), &HostConfig::new())
+        .await
+        .expect("composition activates");
+
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
+    let join = tokio::spawn(driver.run());
+    handle.drive().await.expect("the driver serves commands");
+    assert_eq!(
+        handle
+            .shutdown()
+            .await
+            .expect("the driver shuts down cleanly"),
+        runtime_composition::ShutdownStatus::Clean
+    );
+    let exit = join.await.expect("the driver task joins");
+    assert_eq!(handle.owner_state(), DriverOwnerState::Shutdown);
+
+    assert_eq!(
+        composition.release_after_owner_loss().await.unwrap_err(),
+        OwnerLossReleaseError::OrderlyShutdownCompleted,
+        "a completed orderly shutdown keeps its DriverExit and full \
+         registry authority; owner-loss release must not run"
+    );
+    assert_eq!(recorder.count("dispose:f"), 0);
+    assert_eq!(event_count(&events, "fiber-effect"), 0);
+
+    let outcome = composition.dispose_after_driver(exit).await;
+    assert!(outcome.rollback.is_success());
+    assert!(
+        !outcome
+            .runtime
+            .capability_registry()
+            .contains(&id("guard-plugin-f"))
+    );
+    assert_eq!(recorder.count("dispose:f"), 1);
+    assert_eq!(event_count(&events, "fiber-effect"), 1);
+    assert_eq!(plugin.fiber_count(), 0);
+}
+
+/// Scenario G: an aborted driver task marks the owner truth lost.
+/// Commands resolve `OwnerDropped`, the bound handle observes
+/// `OwnerDropped`, and only then does the release run — with the same
+/// best-effort semantics as the dropped-driver path.
+#[tokio::test(flavor = "current_thread")]
+async fn aborted_driver_task_proves_owner_loss_to_the_bound_handle() {
+    let recorder = Recorder::new();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let (plugin, plan) = guard_plan("g", &recorder, &events);
+    let assembly = plan
+        .start(run_id("k4-guard-g"), &HostConfig::new())
+        .await
+        .expect("composition activates");
+
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
+    let join = tokio::spawn(driver.run());
+    handle
+        .drive()
+        .await
+        .expect("the driver serves before the abort");
+    join.abort();
+    let error = join
+        .await
+        .err()
+        .expect("the aborted driver task fails to join");
+    assert!(error.is_cancelled());
+
+    assert!(matches!(
+        handle.drive().await,
+        Err(DriverError::OwnerDropped)
+    ));
+    assert_eq!(handle.owner_state(), DriverOwnerState::OwnerDropped);
+
+    let report = composition
+        .release_after_owner_loss()
+        .await
+        .expect("the aborted driver proves the owner loss");
+    assert!(
+        !report.is_success(),
+        "the owner-loss path must never claim orderly completion"
+    );
+    assert!(report.cleaned.is_empty());
+    assert_eq!(
+        report.failures,
+        vec![RollbackFailure {
+            module_id: id("guard-module-g"),
+            resource: CleanupResource::PluginRegistration {
+                plugin_id: id("guard-plugin-g"),
+            },
+            reason: "the capability registry authority was released with the \
+                     runtime owner, so the registration could not be unregistered"
+                .to_owned(),
+        }],
+        "every outstanding composition-owned registration is reported"
+    );
+    assert_eq!(recorder.count("dispose:g"), 1);
+    assert_eq!(event_count(&events, "fiber-effect"), 1);
+    assert_eq!(plugin.fiber_count(), 0);
+}
+
+/// Scenario H: the owner-loss release is exactly-once. The second call
+/// resolves the typed `AlreadyReleased` — never a fabricated empty-success
+/// report — and disposes nothing further.
+#[tokio::test(flavor = "current_thread")]
+async fn second_owner_loss_release_reports_already_released() {
+    let recorder = Recorder::new();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let (plugin, plan) = guard_plan("h", &recorder, &events);
+    let assembly = plan
+        .start(run_id("k4-guard-h"), &HostConfig::new())
+        .await
+        .expect("composition activates");
+
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
+    drop(driver);
+    assert_eq!(handle.owner_state(), DriverOwnerState::OwnerDropped);
+
+    let first = composition
+        .release_after_owner_loss()
+        .await
+        .expect("the dropped driver proves the owner loss");
+    assert_eq!(recorder.count("dispose:h"), 1);
+    assert_eq!(event_count(&events, "fiber-effect"), 1);
+
+    let second = composition
+        .release_after_owner_loss()
+        .await
+        .expect_err("a second release is a typed rejection, not an empty success");
+    assert_eq!(second, OwnerLossReleaseError::AlreadyReleased);
+    assert_eq!(recorder.count("dispose:h"), 1, "nothing disposed twice");
+    assert_eq!(event_count(&events, "fiber-effect"), 1);
+    assert_eq!(plugin.fiber_count(), 0);
+    assert_eq!(
+        composition.module_order(),
+        [id("guard-module-h")],
+        "the released handle keeps its read surface"
+    );
+    drop(first);
+}
+
+/// Scenario I: owner-loss proof is bound to the exact driver. Composition
+/// A and composition B are separate `into_driver` separations; losing
+/// driver B proves nothing to composition A, whose guarded release stays
+/// rejected and whose orderly path is untouched. Cross-driver forgery is
+/// additionally inexpressible by design: the owner-state probe is a
+/// private field bound at `into_driver`, and no public API accepts an
+/// external owner token or handle.
+#[tokio::test(flavor = "current_thread")]
+async fn another_drivers_owner_loss_cannot_release_this_composition() {
+    let recorder = Recorder::new();
+    let events = Arc::new(Mutex::new(Vec::new()));
+
+    let (_plugin_a, plan_a) = guard_plan("a", &recorder, &events);
+    let assembly_a = plan_a
+        .start(run_id("k4-guard-i-a"), &HostConfig::new())
+        .await
+        .expect("composition a activates");
+    let (driver_a, handle_a, mut composition_a) = assembly_a.into_driver(SuccessDispatcher::new());
+    let join_a = tokio::spawn(driver_a.run());
+    handle_a.drive().await.expect("driver a serves commands");
+    assert_eq!(handle_a.owner_state(), DriverOwnerState::Running);
+
+    let (_plugin_b, plan_b) = guard_plan("b", &recorder, &events);
+    let assembly_b = plan_b
+        .start(run_id("k4-guard-i-b"), &HostConfig::new())
+        .await
+        .expect("composition b activates");
+    let (driver_b, handle_b, mut composition_b) = assembly_b.into_driver(SuccessDispatcher::new());
+    drop(driver_b);
+    assert!(matches!(
+        handle_b.drive().await,
+        Err(DriverError::OwnerDropped)
+    ));
+    assert_eq!(handle_b.owner_state(), DriverOwnerState::OwnerDropped);
+
+    // B's owner loss proves nothing for A: A's own bound probe still
+    // reports its driver Running, so A's release is rejected and A and B
+    // both disposed nothing.
+    assert_eq!(handle_a.owner_state(), DriverOwnerState::Running);
+    assert_eq!(
+        composition_a.release_after_owner_loss().await.unwrap_err(),
+        OwnerLossReleaseError::OwnerStillRunning,
+        "another driver's OwnerDropped state cannot authenticate A's \
+         owner-loss release"
+    );
+    assert_eq!(recorder.count("dispose:"), 0);
+    assert_eq!(event_count(&events, "fiber-effect"), 0);
+
+    // B's own loss lets B release.
+    let report_b = composition_b
+        .release_after_owner_loss()
+        .await
+        .expect("B proves its own owner loss");
+    assert!(report_b.cleaned.is_empty());
+    assert_eq!(recorder.count("dispose:b"), 1);
+
+    // A releases only through its own orderly path.
+    handle_a
+        .drive()
+        .await
+        .expect("driver a still serves after the rejected release");
+    assert_eq!(
+        handle_a
+            .shutdown()
+            .await
+            .expect("driver a shuts down cleanly"),
+        runtime_composition::ShutdownStatus::Clean
+    );
+    let exit_a = join_a.await.expect("driver a joins");
+    let outcome_a = composition_a.dispose_after_driver(exit_a).await;
+    assert!(outcome_a.rollback.is_success());
+    assert_eq!(recorder.count("dispose:a"), 1);
+    assert_eq!(
+        event_count(&events, "fiber-effect"),
+        2,
+        "each composition disposed its own fiber exactly once"
+    );
 }

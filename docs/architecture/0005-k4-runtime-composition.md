@@ -130,9 +130,16 @@ panic, no `DriverExit` exists; `CompositionHandle::release_after_owner_loss`
 then performs best-effort release of the composition's remaining
 process-local handles and reports every outstanding registration as a
 `PluginRegistration` failure naming the registry authority that
-disappeared with the Runtime owner. This mirrors K3's unchanged
-`DriverError::OwnerDropped` semantics and keeps owner loss a distinct path
-instead of one ambiguous `dispose()`.
+disappeared with the Runtime owner. That release is guarded against the
+exact driver: the handle binds a private observation of the same command
+mailbox the K3 driver-owner guard marks, and only
+`DriverOwnerState::OwnerDropped` admits the sweep — `Running` and
+orderly `Shutdown` are rejected with a typed `OwnerLossReleaseError`
+before anything is disposed, so an orderly shutdown can never be
+downgraded into the owner-loss path and a rejected release leaves the
+handle fully usable. This mirrors K3's unchanged `DriverError::OwnerDropped`
+semantics and keeps owner loss a distinct path instead of one ambiguous
+`dispose()`.
 
 ### Lifecycle hooks stay executor-neutral
 

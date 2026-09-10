@@ -213,7 +213,7 @@ async fn scenario_i_owner_loss_resolves_commands_and_keeps_release_independent()
         .start(run_id("k4-i-owner"), &HostConfig::new())
         .await
         .expect("composition activates");
-    let (driver, handle, composition) = assembly.into_driver(SuccessDispatcher::new());
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
     drop(driver);
     assert!(matches!(
         handle.drive().await,
@@ -224,7 +224,10 @@ async fn scenario_i_owner_loss_resolves_commands_and_keeps_release_independent()
         Err(DriverError::OwnerDropped)
     ));
 
-    let report = composition.release_after_owner_loss().await;
+    let report = composition
+        .release_after_owner_loss()
+        .await
+        .expect("the dropped driver proves the owner loss to the bound handle");
     assert_eq!(report.cleaned, vec![id("solo")]);
     assert!(report.is_success());
     assert_eq!(registry.count("dispose:solo"), 1);

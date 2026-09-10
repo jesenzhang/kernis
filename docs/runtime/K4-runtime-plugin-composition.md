@@ -60,10 +60,17 @@ product:
   in `dispose_after_driver`, which re-acquires the Runtime, runs cleanup
   with full registry authority, and returns `CompositionDriverShutdown`
   (`rollback`, the preserved `shutdown_status`, and the released `runtime`
-  for final inspection and release). After owner loss
-  (`DriverError::OwnerDropped`), `release_after_owner_loss` best-effort
-  releases the remaining process-local handles and reports every outstanding
-  registration as a lost-authority failure.
+  for final inspection and release). `release_after_owner_loss` is
+  bound-guarded: the handle carries a private observation of the owner
+  state of the exact driver separated by the same `into_driver` call, and
+  only its own `DriverOwnerState::OwnerDropped` starts the best-effort
+  sweep (hooks and fibers exactly once, every outstanding registration
+  reported as a lost-authority failure). While the driver is
+  `Running` — or completed an orderly `Shutdown`, which keeps its
+  `DriverExit` — the release is rejected with a typed
+  `OwnerLossReleaseError` (`OwnerStillRunning` /
+  `OrderlyShutdownCompleted` / `AlreadyReleased`), disposes nothing, and
+  leaves the handle usable.
 - `CompositionError`: typed variants for every planning, conflict,
   activation, rollback, and construction failure — no generic string
   catch-all, with underlying definition/runtime errors preserved as `source`.
@@ -126,7 +133,13 @@ is lost the registry authority disappeared with the Runtime;
 `release_after_owner_loss` therefore releases only the composition's
 remaining process-local handles (hooks and fibers, exactly once) and records
 every outstanding registration as a `PluginRegistration` failure instead of
-claiming orderly completion.
+claiming orderly completion. The sweep is guarded against the handle's
+bound owner state: only the driver's own `DriverOwnerState::OwnerDropped`
+(marked by the K3 driver-owner guard when the driver is dropped, aborted,
+or unwound) admits it; `Running` and `Shutdown` are rejected with a typed
+`OwnerLossReleaseError` before anything is released, and the handle keeps
+its ledger so the release that is genuinely possible can still run —
+orderly shutdown can never be downgraded into the owner-loss path.
 
 ## Evidence
 
@@ -170,12 +183,29 @@ plus the extended A/I scenarios): driverless `shutdown` unregisters the
 plugin with the strong-count delta observed from inside the sweep before the
 runtime drop; startup rollback after a registered plugin unregisters it even
 when the module's own fiber disposal fails, continuing with the remaining
-modules; while the driver owns the Runtime the composition handle disposed
-nothing and the only orderly release entry point consumes the `DriverExit`,
-after which the registration is verified absent from the returned runtime
-with the `ShutdownStatus` preserved; owner loss releases hooks and fibers
-exactly once and reports the lost registry authority as a structured
-`PluginRegistration` failure without changing `OwnerDropped` classification.
+modules; while the driver owns the Runtime a premature owner-loss release is
+rejected with `OwnerStillRunning` and disposes nothing, the driver keeps
+serving commands, and the only orderly release entry point consumes the
+`DriverExit`, after which the registration is verified absent from the
+returned runtime with the `ShutdownStatus` preserved; owner loss releases
+hooks and fibers exactly once and reports the lost registry authority as a
+structured `PluginRegistration` failure without changing `OwnerDropped`
+classification.
+
+The R2 owner-loss guard regressions (scenario D and the guard scenarios
+F–I of the same suite) pin the guard itself: a running driver rejects with
+`OwnerStillRunning` and zero hook/fiber disposal while its handle, plugin,
+and command service remain intact; an orderly shutdown observes `Shutdown`
+— never `OwnerDropped` — rejects with `OrderlyShutdownCompleted`, and the
+orderly dispose afterwards still succeeds; an aborted driver task proves
+`OwnerDropped` and releases exactly once; a second release is the typed
+`AlreadyReleased`, never a fabricated empty success; and another driver's
+owner loss cannot release this composition — the owner-state probe is
+bound at `into_driver` and no public API accepts an external owner token.
+`k3_owner_state` pins the read-only `RuntimeHandle::owner_state`
+observation across `Running`/`Shutdown`/`OwnerDropped` at the K3 layer,
+and the K6 loader suite's scenario N proves the guarded vocabulary
+end-to-end through the canonical host entry.
 
 Focused compatibility evidence from the same verification run: K3 async suite
 23 passed; K3 owner-loss regression suite 3 passed; K2 declarative suite 14

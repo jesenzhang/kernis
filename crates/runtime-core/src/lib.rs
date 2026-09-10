@@ -30,8 +30,9 @@ use workflow_recovery::{
 };
 
 pub use async_driver::{
-    DriveResult, DriverError, DriverExit, DriverFuture, EffectDispatchError, EffectDispatchFuture,
-    EffectDispatchRequest, EffectDispatcher, RuntimeDriver, RuntimeHandle, ShutdownStatus,
+    DriveResult, DriverError, DriverExit, DriverFuture, DriverOwnerState, EffectDispatchError,
+    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, RuntimeDriver, RuntimeHandle,
+    ShutdownStatus,
 };
 pub use definition::{
     CapabilityDeclaration, CapabilityRequirement, DefinitionError, DefinitionIdentity,
