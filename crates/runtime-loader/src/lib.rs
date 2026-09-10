@@ -80,13 +80,15 @@ pub use runtime_composition::{
 };
 pub use runtime_composition::{
     AttemptId, Cancellation, CapabilityDeclaration, CapabilityHandle, CapabilityPin,
-    CapabilityReplayIdentity, CapabilityRequirement, DefinitionError, DefinitionIdentity,
-    DriveResult, DriverError, DriverExit, DriverFuture, DurableRunState, EffectDispatchError,
-    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, FactoryResolutionError,
-    JournalError, KeyedStreamItem, LegacyMutationOperation, ReconstructionError, RecoveryDecision,
-    RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError, RuntimeEvent, RuntimeHandle,
-    ScopeError, SequenceError, ShutdownStatus, StepResult, StoreError, StreamItem, TaskAttempt,
-    TaskDefinition, WorkflowGraphError, WorkflowReplayIdentity,
+    CapabilityReplayIdentity, CapabilityRequirement, CompletionRecord, DefinitionError,
+    DefinitionIdentity, DispatchRecord, DriveResult, DriverError, DriverExit, DriverFuture,
+    DurableRunState, EffectDispatchError, EffectDispatchFuture, EffectDispatchRequest,
+    EffectDispatcher, FactoryResolutionError, JournalError, KeyedStreamItem,
+    LegacyMutationOperation, OutcomeRecord, ReconstructionError, RecoveredEffectState,
+    RecoveryAction, RecoveryDecision, RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError,
+    RuntimeEvent, RuntimeHandle, ScopeError, SequenceError, ShutdownStatus, StepResult, StoreError,
+    StoreErrorKind, StreamItem, TaskAttempt, TaskDefinition, WorkflowGraphError,
+    WorkflowReplayIdentity,
 };
 pub use runtime_composition::{
     CapabilityDefinition, CapabilityFiber, CapabilityValue, FiberState, PluginConfig,
