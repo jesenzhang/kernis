@@ -61,7 +61,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
 | K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
 | K4 | Runtime and plugin composition API | K2, K3 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `e03778d`) |
-| K5 | Minimal loader boundary | K4 | Implemented on `main` | Independent - pending |
+| K5 | Minimal loader boundary | K4 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `a4bc425`) |
 | K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
 
 The sequence is dependency order, not a promise that current implementation
@@ -769,6 +769,18 @@ K4/K3/K2/K1 focused suites unchanged, `git diff --check` clean. This
 records implementation of the repair on integrated `main`, not review
 acceptance: the independent re-review remains pending and K5 is not
 marked Integrated.
+
+### Independent re-review reconciliation (2026-09-10, K6 preflight)
+
+The K6 milestone brief records the K5 independent re-review returning
+PASS with 0 blockers: the `a4bc425` contract repair closed the single
+review blocker and the loader boundary is accepted as delivered. The
+repair is on integrated `main`, whose head `3ee011b` passed GitHub
+Actions CI (run 34482699653, all four gates: Format, Clippy, Test,
+Graph lab). K5 is therefore a completed, integrated milestone, mirroring
+the K4 close convention. This reconciliation records the recorded review
+outcome and repository-provable state only; it creates no new milestone
+identity and no new Slice.
 
 ## K6 — Runtime Kernel API Stabilization and R2 Closeout
 

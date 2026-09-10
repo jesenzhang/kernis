@@ -1,13 +1,15 @@
 # K5: Minimal Loader Boundary
 
-Status: Implemented on integrated `main` — the candidate range
-`dbf80e6..c0ce2a4` from `feat/k5-minimal-loader-boundary` is merged on
-`main` (base `e03778d`) together with review repair `a4bc425`. The
-independent review of `c0ce2a4` returned CHANGES REQUIRED with one
-blocker (non-bijective `id@version` textual representation), closed by
-this repair: `@` is reserved by the reference grammar in
-`ModuleVersion` (final-`@` separator), with regression tests. The
-independent re-review remains pending, so K5 is not marked Integrated.
+Status: Integrated. The candidate range `dbf80e6..c0ce2a4` from
+`feat/k5-minimal-loader-boundary` is merged on `main` (base `e03778d`)
+together with review repair `a4bc425`. The independent review of
+`c0ce2a4` returned CHANGES REQUIRED with one blocker (non-bijective
+`id@version` textual representation), closed by this repair: `@` is
+reserved by the reference grammar in `ModuleVersion` (final-`@`
+separator), with regression tests. The independent re-review returned
+PASS with 0 blockers, and `main` CI passed on the integrated head
+`3ee011b` (GitHub Actions run 34482699653), so K5 is a completed
+integrated milestone.
 
 Base: `main` at `e03778d` (K4 integrated, independent re-review PASS).
 Candidate branch: `feat/k5-minimal-loader-boundary`.

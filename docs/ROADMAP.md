@@ -53,8 +53,9 @@ for K4, with no dynamic loading of any kind, acceptance scenarios A-P
 and an end-to-end example passing. The independent review of `c0ce2a4`
 returned CHANGES REQUIRED (one blocker: non-bijective `id@version`
 textual representation), closed by the contract repair `a4bc425` now on
-`main`; the independent re-review remains pending, so K5 is not marked
-Integrated. See
+`main`; the independent re-review returned PASS with 0 blockers, so K5
+is a completed integrated milestone, with `main` CI passing on the
+integrated head `3ee011b` (GitHub Actions run 34482699653). See
 [`runtime/K5-minimal-loader-boundary.md`](runtime/K5-minimal-loader-boundary.md)
 and ADR 0006.
 

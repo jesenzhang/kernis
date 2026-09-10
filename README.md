@@ -124,7 +124,9 @@ future validated references.
   independent review of `c0ce2a4` returned CHANGES REQUIRED (one
   blocker: non-bijective `id@version` textual representation), and the
   contract repair `a4bc425` closed it on `main`. The independent
-  re-review remains pending, so K5 is not marked Integrated.
+  re-review returned PASS with 0 blockers, and `main` CI passed on the
+  integrated head `3ee011b` (GitHub Actions run 34482699653). K5 is a
+  completed integrated milestone.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at
@@ -169,6 +171,7 @@ crates/
   workflow-recovery/  Durable facts and recovery classification
   runtime-core/       Deterministic runtime coordination and recovery
   runtime-composition/ Module/plugin composition into one runtime assembly
+  runtime-loader/     Logical module-reference resolution into fresh registrations
   graph-lab/          Small executable for experiments and smoke checks
 
 docs/
