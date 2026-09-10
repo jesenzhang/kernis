@@ -163,6 +163,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "runtime-composition"
+version = "0.1.0"
+dependencies = [
+ "capability-graph",
+ "kernis-core",
+ "runtime-core",
+ "serde",
+ "tokio",
+ "workflow-recovery",
+]
+
+[[package]]
 name = "runtime-core"
 version = "0.1.0"
 dependencies = [

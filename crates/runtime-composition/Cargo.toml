@@ -1,0 +1,19 @@
+[package]
+name = "runtime-composition"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+capability-graph = { path = "../capability-graph" }
+kernis-core = { path = "../core" }
+runtime-core = { path = "../runtime-core" }
+serde = { version = "1.0", features = ["derive"] }
+workflow-recovery = { path = "../workflow-recovery" }
+
+[dev-dependencies]
+tokio = { version = "1.45", features = ["macros", "rt", "sync"] }
+
+[lints]
+workspace = true
