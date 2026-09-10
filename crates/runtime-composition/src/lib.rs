@@ -3,7 +3,7 @@
 //! This crate is a composition layer, not a second runtime. It composes
 //! host-provided [`ModuleRegistration`]s into one deterministic
 //! [`CompositionPlan`], merges the stable [`ModuleDefinition`] contributions
-//! into a single K2 [`RunDefinition`] and [`FactoryRegistry`], activates the
+//! into a single K2 [`RunDefinition`] and [`runtime_core::FactoryRegistry`], activates the
 //! result through the existing K2/K3/M2-C machinery, and owns exactly the
 //! resources activation acquired so rollback and shutdown release them in
 //! reverse order: `dispose` hooks, started fibers, and plugin runtime
