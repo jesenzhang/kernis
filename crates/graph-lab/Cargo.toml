@@ -1,5 +1,8 @@
 [package]
 name = "graph-lab"
+description = "Internal executable laboratory for Kernis cross-structure experiments and smoke checks."
+repository = "https://github.com/jesenzhang/kernis"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

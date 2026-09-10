@@ -539,7 +539,11 @@ impl fmt::Display for StartupFailure {
     }
 }
 
-impl Error for StartupFailure {}
+impl Error for StartupFailure {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&*self.cause)
+    }
+}
 
 /// Failure of an otherwise successful composition shutdown sweep.
 #[derive(Clone, Debug, Eq, PartialEq)]

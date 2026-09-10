@@ -58,11 +58,18 @@ checks belong at the milestone boundary rather than after every internal edit.
 | Milestone | Outcome | Depends on | Status | Review |
 | --- | --- | --- | --- | --- |
 | K1 | Embedded physical durability | M2-B contract closure | Integrated | Independent - APPROVE |
-| K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
-| K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
+| K2 | Declarative configuration and cold reconstruction | K1 | Integrated | Independent - pending (absorbed into the K6/R2 review) |
+| K3 | Explicit asynchronous execution boundary | K2 | Integrated | Independent - pending (absorbed into the K6/R2 review) |
 | K4 | Runtime and plugin composition API | K2, K3 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `e03778d`) |
-| K5 | Minimal loader boundary | K4 | Implemented on `main` | Independent - pending |
-| K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
+| K5 | Minimal loader boundary | K4 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `a4bc425`) |
+| K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Candidate (on `feat/k6-runtime-kernel-api-stabilization`) | Independent - pending (K6/R2 combined review) |
+
+Status and review columns use the vocabulary defined in
+[R2-KERNEL-CONTRACT.md](R2-KERNEL-CONTRACT.md): Integrated (implementation
+on `main`, CI green) and Reviewed (independent-review APPROVE recorded)
+are separate states. Dated reconciliation entries below preserve the
+wording of the day they were written; this table and the current-status
+sections are the authoritative current state.
 
 The sequence is dependency order, not a promise that current implementation
 details will remain optimal. Reordering requires an explicit plan update that
@@ -770,6 +777,18 @@ records implementation of the repair on integrated `main`, not review
 acceptance: the independent re-review remains pending and K5 is not
 marked Integrated.
 
+### Independent re-review reconciliation (2026-09-10, K6 preflight)
+
+The K6 milestone brief records the K5 independent re-review returning
+PASS with 0 blockers: the `a4bc425` contract repair closed the single
+review blocker and the loader boundary is accepted as delivered. The
+repair is on integrated `main`, whose head `3ee011b` passed GitHub
+Actions CI (run 34482699653, all four gates: Format, Clippy, Test,
+Graph lab). K5 is therefore a completed, integrated milestone, mirroring
+the K4 close convention. This reconciliation records the recorded review
+outcome and repository-provable state only; it creates no new milestone
+identity and no new Slice.
+
 ## K6 — Runtime Kernel API Stabilization and R2 Closeout
 
 ### Outcome
@@ -827,6 +846,137 @@ silently implemented as K6 cleanup.
 - Documentation and package consistency audit.
 - Full workspace verification, independent public-contract review, final
   integrated commit, and R2 closeout record.
+
+### Candidate completion evidence (2026-09-10, K6 candidate — ready for independent review)
+
+**Result.** K6 is delivered as a candidate on
+`feat/k6-runtime-kernel-api-stabilization`, ready for independent review.
+This is the worker-stage mark only: R2 is not declared Closed by this
+record; closure requires the independent review verdict and integration.
+
+**Base.** `main` at `3ee011b`, whose GitHub Actions CI passed (run
+34482699653, Format / Clippy / Test / Graph lab).
+
+**Final candidate HEAD.** The closeout documentation commit on this
+branch is the final candidate head; the last code-affecting commit is
+`3f6f73e`. The branch has not been pushed or merged, so no CI observation
+exists for the candidate itself (see Remaining risks).
+
+**Implementation blocks** (all on the candidate branch, in order):
+
+- `4859459` — reconcile the K5 independent re-review (PASS, 0 blockers)
+  into main-facing status; K5 recorded as a completed integrated
+  milestone.
+- `fcb7013` — `K6-supported-api-inventory.md` (four export tiers),
+  `COMPATIBILITY.md` (per-dimension R2 compatibility policy), and
+  ADR 0007 (host entry = `runtime-loader` umbrella).
+- `93851a7` — host-facing export closure wave 1 through
+  `runtime-loader`, error `source()` chains preserved (no
+  `Unknown(String)` collapse), package metadata audit with
+  `publish = false` recorded.
+- `315e997` — export closure wave 2: durable-fact inspection types
+  (`CompletionRecord`, `DispatchRecord`, `OutcomeRecord`,
+  `RecoveredEffectState`, `RecoveryAction`, `StoreErrorKind`, and
+  companions) re-exported so host code names only `runtime_loader`.
+- `5c346eb` — host-controllable panic fix: a corrupted or truncated
+  physical file that panics inside the storage backend during open is
+  now caught at the `FileDurableStore` open path and classified as
+  `StoreError::DataCorruption`.
+- `9613639` — canonical R2 host example
+  `crates/runtime-loader/examples/r2_host.rs` and the acceptance suite
+  `crates/runtime-loader/tests/k6_r2_end_to_end.rs` (scenarios A–P,
+  including genuine cross-process cold restart via the K1/K2
+  `current_exe` child pattern).
+- `c3468cb` — `R2-KERNEL-CONTRACT.md` (Stage 2 final entry document)
+  and a unified status vocabulary applied across README, ROADMAP, the
+  milestone table, and the K2/K3 documents.
+- `ad3897e` — repair the two broken rustdoc intra-doc links surfaced by
+  `cargo doc --workspace --all-features --no-deps`.
+- `3f6f73e` — CI `msrv` job: `cargo check --workspace --all-features`
+  on Rust 1.85 on every push.
+- closeout docs commit — this record, README/plan status updates, and
+  the COMPATIBILITY.md MSRV verification wording.
+
+**Material decisions.**
+
+- Canonical host entry is Option A: the `runtime-loader` umbrella
+  re-exports every type host code must name (closure rule), recorded as
+  ADR 0007. No new facade crate — the umbrella already satisfies the
+  entry requirement, and a second entry would fork the surface.
+- No new identity versions: RunDefinition v1, ModuleReference grammar,
+  K4 ModuleDefinition contribution rules, and the physical store format
+  (`KERNIS-DURABLE-STATE`, version 5) are kept as-is; K6 documents and
+  tests them rather than minting v2 identities.
+- Publication is deferred: all workspace crates record
+  `publish = false` in package metadata, and the audit records that
+  choice instead of running `cargo package` with verification bypasses.
+  No artificial feature flags were added (workspace features: zero).
+- Physical-store compatibility is proven by a deterministic
+  cross-process write→reopen procedure (child process writes with the
+  current format, parent reopens and replays) rather than a committed
+  binary fixture, because redb files are not byte-portable across
+  platforms; the pinned format key/version plus the corruption
+  fail-closed tests (`DataCorruption` on garbage and on truncation)
+  cover the contract.
+- The panic-to-error guard covers the backend open path only (the
+  host-controllable invocation surfaced by the audit); it is documented
+  as such in the R2 contract's known limitations.
+- No graph-lab dependency-direction extension was needed: `cargo`
+  structurally prevents reverse dependency edges (a crate cannot depend
+  on its dependents), so the layering proof is the manifest graph plus
+  the `cargo cycles` check already in CI.
+
+**Focused verification.** `k6_r2_end_to_end` passes 7/7, including
+three genuine cross-process scenarios (mid-run cold restart;
+completed-run-not-redone; unknown-effect survival without
+re-execution) and the typed negative scenarios (wrong RunDefinition →
+`StartupFailure` carrying `RuntimeConstructionFailed { source:
+DefinitionMismatch }`; corrupted/truncated state → `DataCorruption`;
+missing reference → `LoaderError::MissingReference`; duplicate
+capability ownership → `CompositionError`). `cargo run -p
+runtime-loader --example r2_host` exits 0 and prints the full
+two-phase lifecycle. The `runtime-loader` and `workflow-recovery`
+suites pass with the open-path panic guard in place.
+
+**Broad verification** (stable toolchain, on the candidate tree):
+`cargo fmt --all -- --check` clean; `cargo clippy --workspace
+--all-targets --all-features -- -D warnings` zero warnings;
+`cargo check --workspace --all-targets --all-features` clean;
+`cargo test --workspace --all-features` 47 test binaries, 315 passed,
+0 failed; `cargo doc --workspace --all-features --no-deps` clean after
+the two link repairs; `cargo run -p graph-lab` exit 0; `git diff
+--check 3ee011b...HEAD` clean. MSRV: `cargo +1.85 check --workspace
+--all-features` and `cargo +1.85 test --workspace --all-features`
+(315 passed, 0 failed) verify the declared `rust-version = "1.85"`;
+CI now gates the check on every push.
+
+**Independent review.** Pending — this is the most important review of
+Stage 2: it covers the K6 candidate as the R2 closeout review and
+absorbs the K2/K3 review coverage (both are Integrated, not
+separately Reviewed). R2 closure (status Closed) requires this review
+plus integration; nothing in this record declares it.
+
+**Remaining risks.**
+
+- String-bearing payloads (`CapabilityValue` string content, effect
+  payload strings) are documented as not stable text across releases;
+  only identity/structure fields carry compatibility promises.
+- The backend panic guard covers the open path only; other backend
+  invocations could still panic on exotic corruption and are listed as
+  known limitations.
+- The candidate branch has not been pushed, so the CI run observing
+  these exact commits has not been seen; the only CI evidence is base
+  `3ee011b` (run 34482699653). Integration CI must observe the
+  candidate before closure.
+- K2/K3 independent reviews are consolidated into this combined review
+  rather than performed separately.
+- Publication policy (`publish = false`) defers all crates.io concerns
+  to a future release milestone.
+
+**Non-goals.** No new runtime subsystem, no new loader mechanism, no
+Stage 3 abstraction, no renames of the proven public identities
+(`Runtime`, `RuntimeDriver`, `CompositionPlan`, `RuntimeLoader`,
+`ModuleReference`, `DurableStore`).
 
 ## Stage 3 entry gate
 

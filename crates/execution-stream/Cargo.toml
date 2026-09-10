@@ -1,5 +1,8 @@
 [package]
 name = "execution-stream"
+description = "Typed ordered execution-stream primitives for the Kernis runtime kernel."
+repository = "https://github.com/jesenzhang/kernis"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

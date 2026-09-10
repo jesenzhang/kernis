@@ -1,6 +1,8 @@
 # K3: Explicit Asynchronous Execution Boundary
 
-Status: Implemented on integrated `main` / independent review pending
+Status: Integrated (implementation on `main`, CI green) / not yet Reviewed
+— vocabulary in [R2-KERNEL-CONTRACT.md](R2-KERNEL-CONTRACT.md); review
+coverage is absorbed into the K6/R2 combined review
 
 Integrated K2 base: `684ae84a3da94472e4b2263a5c3bfd734574c96f` on `main`.
 The K3 range `d198ac2..ebfc7d3` is integrated on `main`, including the
@@ -114,6 +116,7 @@ re-export. No durable schema or existing authority depends on it, so API
 stabilization or removal can remain a later decision without pulling lifecycle
 or composition semantics into K3.
 
-This document remains a candidate record until the final independent review
-over the complete `d198ac2..ebfc7d3` range is complete. K3 is implemented on
-integrated `main`, but is not marked Integrated by this document.
+The implementation record above is final; the pending item is the final
+independent review over the complete `d198ac2..ebfc7d3` range. K3 is
+Integrated; it is not Reviewed until that review (or the K6/R2 combined
+review covering it) records an APPROVE.

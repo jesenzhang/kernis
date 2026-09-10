@@ -1,5 +1,8 @@
 [package]
 name = "runtime-composition"
+description = "Runtime and plugin composition into one deterministic runtime assembly for the Kernis kernel."
+repository = "https://github.com/jesenzhang/kernis"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

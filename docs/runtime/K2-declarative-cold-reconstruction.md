@@ -1,6 +1,8 @@
 # K2: Declarative Configuration and Cold Reconstruction
 
-Status: Implemented on integrated `main` / independent review pending
+Status: Integrated (implementation on `main`, CI green) / not yet Reviewed
+— vocabulary in [R2-KERNEL-CONTRACT.md](R2-KERNEL-CONTRACT.md); review
+coverage is absorbed into the K6/R2 combined review
 
 Base: `1e8cf70` (`main`, K1 integrated)
 

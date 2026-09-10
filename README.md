@@ -89,23 +89,31 @@ future validated references.
 
 ## Current implementation status
 
+Stage 2 milestones use the status vocabulary defined in the
+[R2 Kernel Contract](docs/runtime/R2-KERNEL-CONTRACT.md):
+**Integrated** (implementation on `main`, CI green) and **Reviewed**
+(independent-review APPROVE recorded) are separate states.
+
 - M1 Runtime Core: implemented and integrated.
 - M2-A Capability Runtime: integrated.
 - M2-B0: complete.
 - M2-B1: in-memory `DurableStore`/restart slice and durable completion/replay
   contract closure implemented.
 - Stage 2 K1: embedded physical `FileDurableStore` implemented with redb,
-  versioned typed snapshots, reopen, CAS/idempotency, and crash-window proof.
+  versioned typed snapshots, reopen, CAS/idempotency, and crash-window
+  proof. K1 is Integrated and Reviewed.
 - Stage 2 K2: declarative definition, process-local factory separation, cold
   reconstruction, and K1 legacy-identity compatibility are implemented on
   integrated `main` (candidate range through `684ae84`, with the
-  review-feedback compatibility fix `5fe0ea4`). No independent-review APPROVE
-  is recorded, so K2 is not marked Integrated.
+  review-feedback compatibility fix `5fe0ea4`). K2 is Integrated; no
+  independent-review APPROVE is separately recorded, so it is not yet
+  Reviewed — its coverage is absorbed into the K6/R2 combined review.
 - Stage 2 K3: the executor-neutral single-owner async driver is implemented on
   integrated `main` through `ebfc7d3` (including the owner-loss review repair
   with its `k3_review_owner_drop` regression), on which GitHub CI passed
-  (run 34446922406). The final independent review over the complete range is
-  still pending, so K3 is not marked Integrated.
+  (run 34446922406). K3 is Integrated; the final independent review over
+  the complete range is still pending, so it is not yet Reviewed — its
+  coverage is absorbed into the K6/R2 combined review.
 - Stage 2 K4: runtime and plugin composition API is integrated on `main`
   through `e03778d` (the cleanup-ownership review repair on top of
   `2ba3fd4`). The independent lifecycle/API review process is closed: the
@@ -124,7 +132,21 @@ future validated references.
   independent review of `c0ce2a4` returned CHANGES REQUIRED (one
   blocker: non-bijective `id@version` textual representation), and the
   contract repair `a4bc425` closed it on `main`. The independent
-  re-review remains pending, so K5 is not marked Integrated.
+  re-review returned PASS with 0 blockers, and `main` CI passed on the
+  integrated head `3ee011b` (GitHub Actions run 34482699653). K5 is a
+  completed integrated milestone.
+- Stage 2 K6: the Runtime Kernel API stabilization and R2 closeout
+  candidate is ready for independent review on
+  `feat/k6-runtime-kernel-api-stabilization` (base `3ee011b`). It
+  publishes the supported API inventory, the R2 compatibility policy,
+  the R2 kernel contract entry document, the canonical end-to-end host
+  example (`crates/runtime-loader/examples/r2_host.rs`) and acceptance
+  suite (including genuine cross-process cold restart), the declared
+  MSRV 1.85 verified by a CI `msrv` job, and the full verification
+  record (315 tests green on stable and on 1.85). K6 is a Candidate:
+  not Reviewed, and R2 is not declared Closed until the independent
+  K6/R2 review passes and the branch is integrated. See
+  [R2-KERNEL-CONTRACT.md](docs/runtime/R2-KERNEL-CONTRACT.md).
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at
@@ -169,6 +191,7 @@ crates/
   workflow-recovery/  Durable facts and recovery classification
   runtime-core/       Deterministic runtime coordination and recovery
   runtime-composition/ Module/plugin composition into one runtime assembly
+  runtime-loader/     Logical module-reference resolution into fresh registrations
   graph-lab/          Small executable for experiments and smoke checks
 
 docs/

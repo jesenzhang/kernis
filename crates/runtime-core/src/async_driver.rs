@@ -196,7 +196,14 @@ impl fmt::Display for DriverError {
     }
 }
 
-impl std::error::Error for DriverError {}
+impl std::error::Error for DriverError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Runtime(error) => Some(error),
+            Self::OwnerDropped | Self::ShuttingDown | Self::AttemptLineageMismatch { .. } => None,
+        }
+    }
+}
 
 /// Runtime and final status returned after a successful driver shutdown.
 pub struct DriverExit<S>

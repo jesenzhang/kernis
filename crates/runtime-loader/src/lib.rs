@@ -1,6 +1,15 @@
-//! K5 minimal loader boundary.
+//! K5 minimal loader boundary — and, as of K6, the supported host entry
+//! for the KERNIS R2 kernel.
 //!
-//! This crate is a thin declarative layer between host configuration and K4
+//! As the host entry (ADR 0007) this crate re-exports the complete
+//! supported host vocabulary: a host can declare, resolve, compose,
+//! activate, drive, recover, restore, and shut down depending on this
+//! crate alone. The tiered surface inventory lives in
+//! `docs/runtime/K6-supported-api-inventory.md`; the canonical full
+//! lifecycle — including a genuine cold restart — is
+//! [`examples/r2_host.rs`](https://github.com/jesenzhang/kernis/blob/main/crates/runtime-loader/examples/r2_host.rs).
+//!
+//! As the loader, this crate is a thin declarative layer between host configuration and K4
 //! composition — not a plugin system. K4 already owns module composition,
 //! activation, and rollback; this crate adds exactly one thing: a host can
 //! declare *which* logical modules it needs and let the loader resolve the
@@ -79,11 +88,16 @@ pub use runtime_composition::{
     ReactiveCapabilityDeclaration, RollbackFailure, RollbackReport, StartupFailure, lifecycle_hook,
 };
 pub use runtime_composition::{
-    CapabilityDeclaration, CapabilityPin, CapabilityRequirement, DefinitionError,
-    DefinitionIdentity, DriveResult, DriverError, DriverExit, DriverFuture, EffectDispatchError,
-    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, RunDefinition, RunId, Runtime,
-    RuntimeDriver, RuntimeError, RuntimeHandle, ShutdownStatus, StepResult, TaskAttempt,
-    TaskDefinition,
+    AttemptId, Cancellation, CapabilityDeclaration, CapabilityHandle, CapabilityPin,
+    CapabilityReplayIdentity, CapabilityRequirement, CompletionRecord, DefinitionError,
+    DefinitionIdentity, DispatchRecord, DriveResult, DriverError, DriverExit, DriverFuture,
+    DurableRunState, EffectDispatchError, EffectDispatchFuture, EffectDispatchRequest,
+    EffectDispatcher, FactoryResolutionError, JournalError, KeyedStreamItem,
+    LegacyMutationOperation, OutcomeRecord, ReconstructionError, RecoveredEffectState,
+    RecoveryAction, RecoveryDecision, RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError,
+    RuntimeEvent, RuntimeHandle, ScopeError, SequenceError, ShutdownStatus, StepResult, StoreError,
+    StoreErrorKind, StreamItem, TaskAttempt, TaskDefinition, WorkflowGraphError,
+    WorkflowReplayIdentity,
 };
 pub use runtime_composition::{
     CapabilityDefinition, CapabilityFiber, CapabilityValue, FiberState, PluginConfig,

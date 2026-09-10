@@ -441,7 +441,7 @@ pub struct ReconcileReport {
     /// boundary: the provider was removed from future resolution, affected
     /// reactive dependents were quiesced, and the retirement guard was released.
     /// This does not mean all external [`CapabilityHandle`] values were dropped
-    /// or that [`CapabilityValue`] cleanup necessarily ran.
+    /// or that [`crate::CapabilityValue`] cleanup necessarily ran.
     pub provider_finalized: bool,
 }
 

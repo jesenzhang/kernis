@@ -3,7 +3,7 @@
 //! This crate is a composition layer, not a second runtime. It composes
 //! host-provided [`ModuleRegistration`]s into one deterministic
 //! [`CompositionPlan`], merges the stable [`ModuleDefinition`] contributions
-//! into a single K2 [`RunDefinition`] and [`FactoryRegistry`], activates the
+//! into a single K2 [`RunDefinition`] and [`runtime_core::FactoryRegistry`], activates the
 //! result through the existing K2/K3/M2-C machinery, and owns exactly the
 //! resources activation acquired so rollback and shutdown release them in
 //! reverse order: `dispose` hooks, started fibers, and plugin runtime
@@ -65,11 +65,16 @@ pub use capability_graph::{
 };
 pub use kernis_core::Id;
 pub use runtime_core::{
-    CapabilityDeclaration, CapabilityPin, CapabilityRequirement, DefinitionError,
-    DefinitionIdentity, DriveResult, DriverError, DriverExit, DriverFuture, EffectDispatchError,
-    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, RunDefinition, RunId, Runtime,
-    RuntimeDriver, RuntimeError, RuntimeHandle, ShutdownStatus, StepResult, TaskAttempt,
-    TaskDefinition,
+    AttemptId, Cancellation, CapabilityDeclaration, CapabilityHandle, CapabilityPin,
+    CapabilityReplayIdentity, CapabilityRequirement, CompletionRecord, DefinitionError,
+    DefinitionIdentity, DispatchRecord, DriveResult, DriverError, DriverExit, DriverFuture,
+    DurableRunState, EffectDispatchError, EffectDispatchFuture, EffectDispatchRequest,
+    EffectDispatcher, FactoryResolutionError, JournalError, KeyedStreamItem,
+    LegacyMutationOperation, OutcomeRecord, ReconstructionError, RecoveredEffectState,
+    RecoveryAction, RecoveryDecision, RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError,
+    RuntimeEvent, RuntimeHandle, ScopeError, SequenceError, ShutdownStatus, StepResult, StoreError,
+    StoreErrorKind, StreamItem, TaskAttempt, TaskDefinition, WorkflowGraphError,
+    WorkflowReplayIdentity,
 };
 pub use workflow_recovery::{
     DurableStore, EffectSemantics, FileDurableStore, InMemoryDurableStore, KnownEffectOutcome,
