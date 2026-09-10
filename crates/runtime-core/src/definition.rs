@@ -389,7 +389,15 @@ impl fmt::Display for DefinitionError {
     }
 }
 
-impl std::error::Error for DefinitionError {}
+impl std::error::Error for DefinitionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Workflow(error) => Some(error),
+            Self::CapabilityGraph(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 /// Typed failure while resolving a process-local capability factory.
 #[derive(Clone, Debug, Eq, PartialEq)]

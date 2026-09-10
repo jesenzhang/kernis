@@ -1,5 +1,8 @@
 [package]
 name = "capability-graph"
+description = "Capability, scope, and reactive plugin lifecycle authority for the Kernis runtime kernel."
+repository = "https://github.com/jesenzhang/kernis"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

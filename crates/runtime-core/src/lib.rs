@@ -13,27 +13,22 @@ mod definition;
 use definition::ValidatedRunDefinition;
 
 use capability_graph::{
-    CapabilityContext, CapabilityHandle, CapabilityRegistry, EntryId, Generation,
-    ReactiveCapabilityRuntime, Scope, ScopeError,
+    CapabilityContext, CapabilityRegistry, EntryId, Generation, ReactiveCapabilityRuntime, Scope,
 };
-use execution_stream::{
-    CoalescingBuffer, KeyedStreamItem, LosslessBuffer, LossyBuffer, PushError, SequenceError,
-    StreamItem, StreamSequencer,
-};
+use execution_stream::{CoalescingBuffer, LosslessBuffer, LossyBuffer, PushError, StreamSequencer};
 use kernis_core::Id;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use workflow_graph::{
-    CompletionRecord as WorkflowCompletionRecord, MutationBatch, WorkflowGraph, WorkflowGraphError,
+    CompletionRecord as WorkflowCompletionRecord, MutationBatch, WorkflowGraph,
     WorkflowMutationRecord,
 };
 use workflow_recovery::{
-    AttemptAdmission, AttemptId, CapabilityReplayIdentity, CommitRequest, CompletionRecord,
-    DispatchRecord, DurableJournal, DurableMutation, DurableRunState, DurableStore, EffectIntent,
-    EffectSemantics, IdempotencyKey, InMemoryDurableStore, KnownEffectOutcome, OperationId,
-    OutcomeRecord, RecoveredEffectState, RecoveryAction, RecoveryDecision, StoreError,
-    StoreInvariant, StoreRevision, WorkflowReplayIdentity, classify_recovery,
+    AttemptAdmission, CommitRequest, CompletionRecord, DispatchRecord, DurableJournal,
+    DurableMutation, DurableStore, EffectIntent, EffectSemantics, IdempotencyKey,
+    InMemoryDurableStore, KnownEffectOutcome, OperationId, OutcomeRecord, RecoveredEffectState,
+    RecoveryAction, StoreInvariant, StoreRevision, classify_recovery,
 };
 
 pub use async_driver::{
@@ -44,7 +39,17 @@ pub use definition::{
     CapabilityDeclaration, CapabilityRequirement, DefinitionError, DefinitionIdentity,
     FactoryRegistry, FactoryResolutionError, RUN_DEFINITION_FORMAT, RunDefinition, TaskDefinition,
 };
-pub use workflow_recovery::RunId;
+
+// R2 surface closure (K6, ADR 0007): every type that appears in this
+// crate's public signatures or in `RuntimeError`/`DriverError` payloads
+// must be nameable through this crate by direct dependents.
+pub use capability_graph::{CapabilityHandle, ScopeError};
+pub use execution_stream::{KeyedStreamItem, SequenceError, StreamItem};
+pub use workflow_graph::WorkflowGraphError;
+pub use workflow_recovery::{
+    AttemptId, CapabilityReplayIdentity, DurableRunState, JournalError, RecoveryDecision, RunId,
+    StoreError, WorkflowReplayIdentity,
+};
 
 /// A capability handle pinned for the complete lifetime of one task attempt.
 #[derive(Clone, Debug)]
@@ -289,7 +294,15 @@ impl fmt::Display for ReconstructionError {
     }
 }
 
-impl std::error::Error for ReconstructionError {}
+impl std::error::Error for ReconstructionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::CapabilityGraph(error) => Some(error),
+            Self::CapabilityPublication { error, .. } => Some(error),
+            Self::ReconstructionInvariantViolation { .. } => None,
+        }
+    }
+}
 
 /// Identifies a legacy live-object mutation API.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -510,7 +523,21 @@ impl fmt::Display for RuntimeError {
     }
 }
 
-impl std::error::Error for RuntimeError {}
+impl std::error::Error for RuntimeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Definition(error) => Some(error),
+            Self::Factory(error) => Some(error),
+            Self::Reconstruction(error) => Some(error),
+            Self::Workflow(error) => Some(error),
+            Self::Capability(error) => Some(error),
+            Self::Journal(error) => Some(error),
+            Self::Store(error) => Some(error),
+            Self::Stream(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum IdentityProvenance {

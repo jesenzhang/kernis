@@ -65,11 +65,14 @@ pub use capability_graph::{
 };
 pub use kernis_core::Id;
 pub use runtime_core::{
-    CapabilityDeclaration, CapabilityPin, CapabilityRequirement, DefinitionError,
-    DefinitionIdentity, DriveResult, DriverError, DriverExit, DriverFuture, EffectDispatchError,
-    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, RunDefinition, RunId, Runtime,
-    RuntimeDriver, RuntimeError, RuntimeHandle, ShutdownStatus, StepResult, TaskAttempt,
-    TaskDefinition,
+    AttemptId, Cancellation, CapabilityDeclaration, CapabilityHandle, CapabilityPin,
+    CapabilityReplayIdentity, CapabilityRequirement, DefinitionError, DefinitionIdentity,
+    DriveResult, DriverError, DriverExit, DriverFuture, DurableRunState, EffectDispatchError,
+    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, FactoryResolutionError,
+    JournalError, KeyedStreamItem, LegacyMutationOperation, ReconstructionError, RecoveryDecision,
+    RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError, RuntimeEvent, RuntimeHandle,
+    ScopeError, SequenceError, ShutdownStatus, StepResult, StoreError, StreamItem, TaskAttempt,
+    TaskDefinition, WorkflowGraphError, WorkflowReplayIdentity,
 };
 pub use workflow_recovery::{
     DurableStore, EffectSemantics, FileDurableStore, InMemoryDurableStore, KnownEffectOutcome,

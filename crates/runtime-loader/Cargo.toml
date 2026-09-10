@@ -1,5 +1,8 @@
 [package]
 name = "runtime-loader"
+description = "Minimal logical module-reference loader and canonical host entry surface for the Kernis kernel."
+repository = "https://github.com/jesenzhang/kernis"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

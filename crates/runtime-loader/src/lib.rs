@@ -79,11 +79,14 @@ pub use runtime_composition::{
     ReactiveCapabilityDeclaration, RollbackFailure, RollbackReport, StartupFailure, lifecycle_hook,
 };
 pub use runtime_composition::{
-    CapabilityDeclaration, CapabilityPin, CapabilityRequirement, DefinitionError,
-    DefinitionIdentity, DriveResult, DriverError, DriverExit, DriverFuture, EffectDispatchError,
-    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, RunDefinition, RunId, Runtime,
-    RuntimeDriver, RuntimeError, RuntimeHandle, ShutdownStatus, StepResult, TaskAttempt,
-    TaskDefinition,
+    AttemptId, Cancellation, CapabilityDeclaration, CapabilityHandle, CapabilityPin,
+    CapabilityReplayIdentity, CapabilityRequirement, DefinitionError, DefinitionIdentity,
+    DriveResult, DriverError, DriverExit, DriverFuture, DurableRunState, EffectDispatchError,
+    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, FactoryResolutionError,
+    JournalError, KeyedStreamItem, LegacyMutationOperation, ReconstructionError, RecoveryDecision,
+    RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError, RuntimeEvent, RuntimeHandle,
+    ScopeError, SequenceError, ShutdownStatus, StepResult, StoreError, StreamItem, TaskAttempt,
+    TaskDefinition, WorkflowGraphError, WorkflowReplayIdentity,
 };
 pub use runtime_composition::{
     CapabilityDefinition, CapabilityFiber, CapabilityValue, FiberState, PluginConfig,

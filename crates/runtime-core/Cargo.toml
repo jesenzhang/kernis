@@ -1,5 +1,8 @@
 [package]
 name = "runtime-core"
+description = "Deterministic runtime coordination, declarative reconstruction, and the explicit async driver for the Kernis kernel."
+repository = "https://github.com/jesenzhang/kernis"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
