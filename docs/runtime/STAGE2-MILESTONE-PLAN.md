@@ -60,7 +60,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | K1 | Embedded physical durability | M2-B contract closure | Integrated | Independent - APPROVE |
 | K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
 | K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
-| K4 | Runtime and plugin composition API | K2, K3 | In Progress | Independent |
+| K4 | Runtime and plugin composition API | K2, K3 | Candidate / Ready for Independent Review | Independent - pending |
 | K5 | Minimal loader boundary | K4 | Planned | Independent |
 | K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
 
@@ -533,6 +533,48 @@ required.
 - Deterministic ordering, conflict, rollback, and replacement proof.
 - Cross-crate authority review.
 - Final integrated commit and independent review result.
+
+### Candidate delivery evidence (2026-09-10)
+
+The K4 candidate lives on `feat/k4-runtime-plugin-composition` on top of the
+integrated `main` base `ebfc7d3`: `4023042` (K2/K3 repository status
+reconciliation), `3ad46a0` (ADR 0005 composition architecture decision),
+`cbb0fc2` (the `runtime-composition` crate), and the acceptance-test plus
+documentation commits closing the branch. The candidate is not integrated on
+`main`; independent lifecycle/API review is pending. This section records
+repository-provable state only; it creates no new milestone identity and no
+Slice.
+
+The composition layer is a policy crate over existing authorities: stable
+serializable `ModuleDefinition` plus process-local `ModuleRegistration`,
+validated by `CompositionBuilder::build()` into a deterministic
+`CompositionPlan`, activated through K2 construction/restore into a
+`RuntimeAssembly` that bridges to the K3 driver or shuts down exactly once.
+One capability slot has one declared typed ownership path (declarative via
+merged `RunDefinition` + `FactoryRegistry`, reactive via the owning plugin
+fiber). Rollback releases only composition-owned resources in reverse
+activation order, continues after individual cleanup failures, and never
+fake-disposes un-acquired resources. No second capability registry, plugin
+runtime, workflow graph, durable store, execution stream, or Runtime exists.
+
+Focused acceptance evidence: 22 K4 tests across `k4_composition` (6),
+`k4_conflicts` (10), `k4_rollback` (1), and `k4_compat` (5) cover all
+mandatory scenarios A-J, including registration-order independence,
+deterministic cycle failure, contribution-conflict rejection before
+activation, partial-startup rollback with continue-after-failure, K2 cold
+reconstruction across simulated processes, K3 drive/dispatch/shutdown and
+`OwnerDropped` behavior, and M2-C exact attempt pinning across reactive
+replacement.
+
+Focused compatibility evidence from the same verification run: K3 async suite
+23 passed; K3 owner-loss regression suite 3 passed; K2 declarative suite 14
+passed; K1 physical suite 9 passed; existing runtime suite 9 passed; M2-B
+durable suite 18 passed; M2-C1 repair suite 1 passed; M2-C2 integration suite
+4 passed; `cargo test -p workflow-recovery --all-features` 50 passed. Broad
+candidate verification (format, workspace clippy with `-D warnings`, 275
+workspace tests, graph-lab smoke, and the base diff check) is recorded in
+[K4-runtime-plugin-composition.md](K4-runtime-plugin-composition.md). These
+are candidate results, not CI or integration claims.
 
 ## K5 — Minimal Loader Boundary
 

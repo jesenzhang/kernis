@@ -151,6 +151,7 @@ crates/
   execution-stream/   Typed ordered runtime stream primitives
   workflow-recovery/  Durable facts and recovery classification
   runtime-core/       Deterministic runtime coordination and recovery
+  runtime-composition/ Module/plugin composition into one runtime assembly
   graph-lab/          Small executable for experiments and smoke checks
 
 docs/
