@@ -195,10 +195,10 @@ impl CompositionPlan {
             for requirement in &registration.definition().config_requirements {
                 if requirement.required && !config.contains(&requirement.key) {
                     return Err(StartupFailure {
-                        cause: CompositionError::MissingConfiguration {
+                        cause: Box::new(CompositionError::MissingConfiguration {
                             module_id: module_id.clone(),
                             key: requirement.key.clone(),
-                        },
+                        }),
                         rollback: RollbackReport::default(),
                     });
                 }
@@ -220,7 +220,7 @@ impl CompositionPlan {
             ),
         }
         .map_err(|source: RuntimeError| StartupFailure {
-            cause: CompositionError::RuntimeConstructionFailed { stage, source },
+            cause: Box::new(CompositionError::RuntimeConstructionFailed { stage, source }),
             rollback: RollbackReport::default(),
         })?;
 
@@ -228,7 +228,10 @@ impl CompositionPlan {
         if let Some(cause) = self.activate_modules(&runtime, &mut activated).await {
             let rollback = rollback_modules(&mut activated).await;
             drop(runtime);
-            return Err(StartupFailure { cause, rollback });
+            return Err(StartupFailure {
+                cause: Box::new(cause),
+                rollback,
+            });
         }
 
         Ok(RuntimeAssembly::new(

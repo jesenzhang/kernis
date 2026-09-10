@@ -76,7 +76,7 @@ async fn scenario_g_partial_startup_rolls_back_in_reverse_order() {
         .expect_err("module C fails activation");
 
     assert_eq!(
-        failure.cause,
+        *failure.cause,
         CompositionError::ActivationFailed {
             module_id: id("module-c"),
             stage: ActivationStage::ActivateHook {

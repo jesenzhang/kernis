@@ -504,7 +504,10 @@ impl Error for CompositionError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StartupFailure {
     /// The activation failure that triggered the rollback.
-    pub cause: CompositionError,
+    ///
+    /// Boxed to keep the composition result's `Err` variant small; the full
+    /// typed cause remains inspectable through this handle.
+    pub cause: Box<CompositionError>,
     /// Result of the reverse-order cleanup sweep.
     pub rollback: RollbackReport,
 }

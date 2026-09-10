@@ -516,7 +516,7 @@ async fn missing_required_configuration_fails_activation_without_side_effects() 
         .await
         .expect_err("required configuration must be host-provided");
     assert_eq!(
-        failure.cause,
+        *failure.cause,
         CompositionError::MissingConfiguration {
             module_id: id("module-a"),
             key: id("endpoint"),
