@@ -80,7 +80,7 @@ impl FileDurableStore {
         let (database, created_by_store) = if existed {
             (open_bootstrap_database(&store.path)?, false)
         } else {
-            match Database::create(&store.path) {
+            match catch_backend_panic(|| Database::create(&store.path))? {
                 Ok(database) => (database, true),
                 // Another opener owns the file and is mid-creation. That is
                 // transient bootstrap contention, not permanent unavailability.
@@ -250,10 +250,26 @@ fn database_has_table(database: &Database) -> Result<bool, StoreError> {
     }
 }
 
+/// Runs a redb open/create operation, converting a panic inside the storage
+/// backend into a typed fail-closed `StoreError`.
+///
+/// Opening a truncated or partially written physical file is host-reachable
+/// untrusted input, and redb 2.6.3 trips an internal `page_manager`
+/// assertion on such files instead of returning a `DatabaseError`. A
+/// corrupted backend must never panic through this crate's public
+/// fail-closed boundary, so the panic is classified as `DataCorruption`.
+fn catch_backend_panic<T>(operation: impl FnOnce() -> T) -> Result<T, StoreError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(operation)).map_err(|_| {
+        StoreError::DataCorruption(
+            "storage backend panicked while opening the physical file".to_owned(),
+        )
+    })
+}
+
 fn open_bootstrap_database(path: &Path) -> Result<Database, StoreError> {
     let deadline = std::time::Instant::now() + BOOTSTRAP_WAIT_DEADLINE;
     loop {
-        match Database::open(path) {
+        match catch_backend_panic(|| Database::open(path))? {
             Ok(database) => return Ok(database),
             // `DatabaseAlreadyOpen` while bootstrapping a fresh store means
             // another opener currently owns the file and is mid
@@ -274,7 +290,7 @@ fn open_bootstrap_database(path: &Path) -> Result<Database, StoreError> {
 
 fn open_existing_database(path: &Path) -> Result<Database, StoreError> {
     for attempt in 0..=DATABASE_OPEN_RETRIES {
-        match Database::open(path) {
+        match catch_backend_panic(|| Database::open(path))? {
             Ok(database) => return Ok(database),
             Err(DatabaseError::DatabaseAlreadyOpen) if attempt < DATABASE_OPEN_RETRIES => {
                 std::thread::sleep(DATABASE_OPEN_RETRY_DELAY);
