@@ -61,7 +61,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
 | K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
 | K4 | Runtime and plugin composition API | K2, K3 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `e03778d`) |
-| K5 | Minimal loader boundary | K4 | Planned | Independent |
+| K5 | Minimal loader boundary | K4 | Candidate / Ready for Independent Review | Independent - pending |
 | K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
 
 The sequence is dependency order, not a promise that current implementation
@@ -679,6 +679,64 @@ boundaries require independent security/architecture review.
 - Determinism, failure isolation, and composition integration proof.
 - Explicit list of unsupported loading mechanisms.
 - Final integrated commit and independent review result.
+
+### Candidate completion evidence (2026-09-10, ready for independent review)
+
+K5 is delivered as a candidate on `feat/k5-minimal-loader-boundary` with
+base `e03778d` (integrated K4 head). It is not integrated; integration
+awaits the independent review.
+
+- Loader authority and trust boundary: ADR 0006
+  (`docs/architecture/0006-k5-minimal-loader-boundary.md`) records the
+  loader/composition separation, the `ModuleReference` logical-request
+  semantics, exact-version fail-closed matching, the reference-to-factory
+  catalog ownership model, fresh construction per resolution, the
+  resolution/activation phase split, the independent `LoaderError` taxonomy,
+  the explicit process-local host-trusted catalog, and the explicit
+  exclusion of filesystem/dylib/WASM/network loading. The API reference is
+  `docs/runtime/K5-minimal-loader-boundary.md`.
+- Crate boundary: new `crates/runtime-loader`
+  (`loader → composition → core`; composition never references loader
+  types). The crate re-exports the host-facing vocabulary so a host depends
+  on `runtime-loader` alone; every K5 acceptance suite imports only that
+  crate. Vocabulary stays clean: `PluginDefinition`/`PluginRuntime` remain
+  capability-graph names and are not reused for loader objects.
+- Determinism, failure isolation, and composition integration proof:
+  acceptance scenarios A-P are implemented as 16 scenario tests plus 6 unit
+  tests in `crates/runtime-loader` (`tests/k5_resolution.rs` A-H,
+  `tests/k5_failures.rs` I/J/K/M, `tests/k5_composition.rs` L/N/O/P). B and
+  C pin insertion/root-order independence of the resolved set, K4 module
+  order, merged K2 canonical identity, and activation events; I pins a
+  cycle path rotated to its smallest member and identical from either root;
+  L proves two resolutions build two independent registration/plugin
+  lifecycles; M proves resolution failures have zero activation effect
+  (graph-level failures invoke no factory at all); N proves a K4 activation
+  failure reached through the loader stays a `StartupFailure`/
+  `CompositionError` with unchanged rollback semantics; O proves two
+  independently constructed catalogs in two "processes" produce the same K2
+  durable identity and cold-reconstruct through `FileDurableStore`; P
+  re-runs the full K3 drive/dispatch/shutdown/`dispose_after_driver`
+  contract on a loader-resolved composition. The end-to-end example
+  (`cargo run -p runtime-loader --example host_end_to_end`) walks
+  catalog → resolve → compose → activate → drive → orderly release with no
+  CLI, config parser, or discovery.
+- Focused verification on the candidate branch: workspace `cargo fmt --all
+  -- --check` clean; `cargo clippy --workspace --all-targets
+  --all-features -- -D warnings` clean on stable 1.98.1; `cargo test
+  --workspace --all-features` 301 passed / 0 failed; `cargo run -p
+  graph-lab` healthy. Focused suites: K5 loader (22), K4
+  composition/conflicts/rollback/compat/cleanup-ownership (26), K3 async +
+  owner-drop regression (26), K2 declarative (13), K1 physical (9), M2-C
+  (m2c1 1 + m2c2 4 + reactive 11), workflow-recovery (unit 6 + durable 12 +
+  physical 8 + recovery 24). `git diff --check` against the base is clean.
+- Explicitly unsupported (and unimplemented): filesystem discovery,
+  directory scanning, dynamic libraries/ABI, WASM/WASI, network/Git/URL
+  loading, package managers, marketplaces, registry servers, HMR/watchers,
+  automatic reload, remote execution, SemVer solving/lockfiles, manifest or
+  config parsing, CLI front-ends, sandboxes, and signing.
+- Final integrated commit and independent review result: pending — K5
+  integration happens only after independent review APPROVE, mirroring the
+  K4 process.
 
 ## K6 — Runtime Kernel API Stabilization and R2 Closeout
 

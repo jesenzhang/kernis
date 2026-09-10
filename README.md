@@ -112,6 +112,15 @@ future validated references.
   review returned CHANGES REQUIRED, the repair landed on `main`, and the
   independent re-review returned PASS with 0 blockers. K4 is a completed
   integrated milestone.
+- Stage 2 K5: the minimal loader boundary is a candidate on
+  `feat/k5-minimal-loader-boundary` (base `e03778d`). The new
+  `runtime-loader` crate resolves host-declared logical `ModuleReference`
+  roots against an explicit process-local `ModuleCatalog` into fresh
+  in-process registrations composed through the unchanged K4/K3 lifecycle,
+  with deterministic closure, typed pre-activation failures, and zero
+  dynamic loading (no filesystem discovery, dylibs, WASM, or network).
+  Acceptance scenarios A-P and the end-to-end example pass; K5 awaits
+  independent review and is not integrated.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at

@@ -45,7 +45,14 @@ clippy repair, ending at `003014d`) and passes CI (GitHub Actions run
 Its independent review returned CHANGES REQUIRED (composition cleanup
 ownership), the surgical repair was integrated on `main` at `e03778d`, and
 the independent re-review returned PASS with 0 blockers, so K4 is a
-completed integrated milestone.
+completed integrated milestone. K5 is delivered as a candidate on
+`feat/k5-minimal-loader-boundary` (base `e03778d`): the new
+`runtime-loader` crate resolves explicit logical module references into
+fresh in-process registrations for K4, with no dynamic loading of any kind,
+acceptance scenarios A-P and an end-to-end example passing; it awaits
+independent review and is not integrated. See
+[`runtime/K5-minimal-loader-boundary.md`](runtime/K5-minimal-loader-boundary.md)
+and ADR 0006.
 
 The milestone is the delivery unit. Slice boundaries are introduced only when
 current implementation risk, ownership, verification, or context quality makes
