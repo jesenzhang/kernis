@@ -37,8 +37,9 @@ K2 and K3 are implemented on integrated `main` and pass CI
 (GitHub Actions run 34446922406 on `ebfc7d3`), with focused completion
 evidence recorded in the Stage 2 plan. Their independent reviews remain
 pending — only targeted review-feedback fixes are recorded — so neither is
-marked Integrated. K4 is delivered as a candidate on
-`feat/k4-runtime-plugin-composition` with acceptance evidence in
+marked Integrated. K4 is implemented on integrated `main` (fast-forward of
+`feat/k4-runtime-plugin-composition` ending at `e61cb0b` plus its status
+reconciliation) with acceptance evidence in
 [`runtime/K4-runtime-plugin-composition.md`](runtime/K4-runtime-plugin-composition.md);
 its independent review is pending, so it is likewise not marked Integrated.
 

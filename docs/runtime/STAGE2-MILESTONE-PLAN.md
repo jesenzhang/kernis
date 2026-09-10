@@ -60,7 +60,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | K1 | Embedded physical durability | M2-B contract closure | Integrated | Independent - APPROVE |
 | K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
 | K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
-| K4 | Runtime and plugin composition API | K2, K3 | Candidate / Ready for Independent Review | Independent - pending |
+| K4 | Runtime and plugin composition API | K2, K3 | Implemented on `main` | Independent - pending |
 | K5 | Minimal loader boundary | K4 | Planned | Independent |
 | K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
 
@@ -536,14 +536,15 @@ required.
 
 ### Candidate delivery evidence (2026-09-10)
 
-The K4 candidate lives on `feat/k4-runtime-plugin-composition` on top of the
-integrated `main` base `ebfc7d3`: `4023042` (K2/K3 repository status
-reconciliation), `3ad46a0` (ADR 0005 composition architecture decision),
-`cbb0fc2` (the `runtime-composition` crate), and the acceptance-test plus
-documentation commits closing the branch. The candidate is not integrated on
-`main`; independent lifecycle/API review is pending. This section records
-repository-provable state only; it creates no new milestone identity and no
-Slice.
+The K4 candidate range `4023042..e61cb0b` from
+`feat/k4-runtime-plugin-composition` on top of the integrated `main` base
+`ebfc7d3` is integrated on `main` by fast-forward merge on 2026-09-10:
+`4023042` (K2/K3 repository status reconciliation), `3ad46a0` (ADR 0005
+composition architecture decision), `cbb0fc2` (the `runtime-composition`
+crate), `466ed96` (acceptance scenarios A-J), and `e61cb0b` (candidate
+delivery evidence). The independent lifecycle/API review remains pending, so
+K4 is not marked Integrated. This section records repository-provable state
+only; it creates no new milestone identity and no Slice.
 
 The composition layer is a policy crate over existing authorities: stable
 serializable `ModuleDefinition` plus process-local `ModuleRegistration`,
