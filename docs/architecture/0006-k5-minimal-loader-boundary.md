@@ -46,6 +46,20 @@ package coordinate. It is not the K2 durable identity and does not enter
 metadata used only to select catalog entries. Resolution is an exact match
 on the pair: `app@1.2.0` never matches an `app@1.1.0` entry.
 
+The display/serde textual form is the exact grammar `id@version` where the
+*final* `@` is the delimiter: an `Id` may contain `@`, and a
+`ModuleVersion` may not, because the reserved delimiter belongs to the
+K5 reference grammar, not to `kernis_core::Id`'s general identity semantics.
+`org@app@1` therefore always parses to id `org@app`, version `1`, which
+makes the textual representation bijective
+(`deserialize(serialize(reference)) == reference` for every reference). A
+version containing `@` fails at typed construction with
+`InvalidReferenceReason::ReservedVersionDelimiter` instead of producing a
+silently ambiguous label, and the grammar is never "fixed up" heuristically:
+the final `@` is the only separator, so an external `"app@v@1"` is id
+`app@v` at version `1`, and `"app@"`, `"@1"`, and a delimiter-free string
+are all rejected.
+
 ### Exact version matching, not a version solver
 
 The catalog contains what the host explicitly registered, so there is no

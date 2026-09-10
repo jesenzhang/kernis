@@ -48,6 +48,10 @@ pub enum InvalidReferenceReason {
     BlankModuleId,
     /// The module version was empty or whitespace.
     BlankVersion,
+    /// The module version contained `@`, which the textual reference
+    /// grammar reserves as the final-delimiter between the module id and
+    /// the version.
+    ReservedVersionDelimiter,
 }
 
 impl fmt::Display for InvalidReferenceReason {
@@ -55,6 +59,12 @@ impl fmt::Display for InvalidReferenceReason {
         match self {
             Self::BlankModuleId => write!(f, "module id must not be empty"),
             Self::BlankVersion => write!(f, "module version must not be empty"),
+            Self::ReservedVersionDelimiter => {
+                write!(
+                    f,
+                    "'@' is reserved as the ModuleReference version delimiter"
+                )
+            }
         }
     }
 }
