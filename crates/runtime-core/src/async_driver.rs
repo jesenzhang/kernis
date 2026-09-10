@@ -154,6 +154,8 @@ pub enum ShutdownStatus {
 /// Error returned by a driver command.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DriverError {
+    /// The driver owner was dropped before orderly shutdown completed.
+    OwnerDropped,
     /// The driver has completed or is completing a successful shutdown.
     ShuttingDown,
     /// The owned synchronous runtime rejected the command.
@@ -173,6 +175,7 @@ pub enum DriverError {
 impl fmt::Display for DriverError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::OwnerDropped => f.write_str("runtime driver owner was dropped"),
             Self::ShuttingDown => f.write_str("runtime driver is shutting down"),
             Self::Runtime(error) => write!(f, "runtime driver command failed: {error}"),
             Self::AttemptLineageMismatch {
@@ -286,6 +289,41 @@ impl<T> ResponseSender<T> {
     }
 }
 
+impl<T> Drop for ResponseSender<T> {
+    fn drop(&mut self) {
+        let waker = {
+            let mut state = lock(&self.state);
+            if state.result.is_none() {
+                state.result = Some(Err(DriverError::OwnerDropped));
+            }
+            state.waker.take()
+        };
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+    }
+}
+
+struct DriverOwnerGuard(CommandMailbox);
+
+impl Drop for DriverOwnerGuard {
+    fn drop(&mut self) {
+        let pending = {
+            let mut state = lock(&self.0.state);
+            if state.closed {
+                return;
+            }
+            state.closed = true;
+            state.owner_dropped = true;
+            state.waker = None;
+            state.commands.drain(..).collect::<Vec<_>>()
+        };
+        for command in pending {
+            command.reject(DriverError::OwnerDropped);
+        }
+    }
+}
+
 #[derive(Clone)]
 struct CommandMailbox {
     state: Arc<Mutex<MailboxState>>,
@@ -294,6 +332,7 @@ struct CommandMailbox {
 struct MailboxState {
     commands: VecDeque<DriverCommand>,
     closed: bool,
+    owner_dropped: bool,
     waker: Option<Waker>,
     shutdown_execution_events: Vec<StreamItem<RuntimeEvent>>,
     shutdown_progress_events: Vec<KeyedStreamItem<Id, RuntimeEvent>>,
@@ -306,6 +345,7 @@ impl CommandMailbox {
             state: Arc::new(Mutex::new(MailboxState {
                 commands: VecDeque::new(),
                 closed: false,
+                owner_dropped: false,
                 waker: None,
                 shutdown_execution_events: Vec::new(),
                 shutdown_progress_events: Vec::new(),
@@ -383,6 +423,10 @@ impl CommandMailbox {
     }
 
     fn complete_after_close(&self, command: DriverCommand) {
+        if lock(&self.state).owner_dropped {
+            command.reject(DriverError::OwnerDropped);
+            return;
+        }
         match command {
             DriverCommand::DrainExecutionEvents { reply } => {
                 match self.take_shutdown_execution_events() {
@@ -576,6 +620,7 @@ where
     dispatcher: D,
     mailbox: CommandMailbox,
     pending_lifecycle: Option<StreamItem<RuntimeEvent>>,
+    _owner_guard: DriverOwnerGuard,
 }
 
 impl<S, D> RuntimeDriver<S, D>
@@ -592,6 +637,7 @@ where
                 dispatcher,
                 mailbox: mailbox.clone(),
                 pending_lifecycle: None,
+                _owner_guard: DriverOwnerGuard(mailbox.clone()),
             },
             RuntimeHandle { mailbox },
         )

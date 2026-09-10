@@ -50,6 +50,14 @@ drain/retry.
 
 ## Evidence
 
+Owner-loss review repair: dropping the driver, cancelling its running future,
+or unwinding a dispatcher panic now closes command admission and resolves
+active, queued, and later commands with `DriverError::OwnerDropped`. This is
+an owner-lifetime error, not a known external effect outcome; durable dispatch
+facts retain their existing recovery semantics. Normal shutdown still preserves
+its final observation drain path. Regression coverage is in
+`crates/runtime-core/tests/k3_review_owner_drop.rs`.
+
 The K3 focused suite is `cargo test -p runtime-core --test k3_async
 --all-features`. It proves:
 
