@@ -148,8 +148,10 @@ umbrella and its mirrored `runtime-composition` vocabulary):
 
 - The workspace declares `rust-version = "1.85"` (edition 2024). K6
   verifies this is a real contract, not unverified metadata: the
-  declared MSRV is checked with `cargo +<msrv> check --workspace
-  --all-features` locally and (once stable) in a dedicated CI gate.
+  declared MSRV is checked with `cargo +1.85 check --workspace
+  --all-features` (and `cargo +1.85 test --workspace --all-features`
+  at K6 closeout), and CI runs `cargo check --workspace --all-features`
+  on 1.85 in a dedicated `msrv` job on every push.
 - Raising the MSRV is a public API-tier change under §1 (a
   dependency-level MSRV bump forces it too); it requires the verification
   above plus a closeout note. Lowering it requires the same proof at the
