@@ -1,9 +1,13 @@
 # K5: Minimal Loader Boundary
 
 Status: Implemented on integrated `main` — the candidate range
-`dbf80e6..c0ce2a4` from `feat/k5-minimal-loader-boundary` is
-fast-forward merged on `main` (base `e03778d`). The independent review
-remains pending, so K5 is not marked Integrated.
+`dbf80e6..c0ce2a4` from `feat/k5-minimal-loader-boundary` is merged on
+`main` (base `e03778d`) together with review repair `a4bc425`. The
+independent review of `c0ce2a4` returned CHANGES REQUIRED with one
+blocker (non-bijective `id@version` textual representation), closed by
+this repair: `@` is reserved by the reference grammar in
+`ModuleVersion` (final-`@` separator), with regression tests. The
+independent re-review remains pending, so K5 is not marked Integrated.
 
 Base: `main` at `e03778d` (K4 integrated, independent re-review PASS).
 Candidate branch: `feat/k5-minimal-loader-boundary`.
@@ -48,8 +52,13 @@ capability, runtime, and durable vocabulary.
   an artifact handle: no path, URL, digest, or package coordinate. Exact
   matching only — `app@2` never resolves an `app@1` entry. Loader metadata
   only: versions never enter `RunDefinition`, `DurableStore`, or replay
-  identity.
-- `ModuleVersion` — exact opaque label; blank rejected.
+  identity. Display/serde grammar: the final `@` is the separator — an `Id`
+  may contain `@` and a `ModuleVersion` may not, so the textual form is
+  unambiguous and bijective (`org@app@1` is id `org@app`, version `1`;
+  `deserialize(serialize(reference)) == reference` for every reference).
+- `ModuleVersion` — exact opaque label; blank rejected; `@` rejected as the
+  reserved `ModuleReference` version delimiter
+  (`InvalidReferenceReason::ReservedVersionDelimiter`).
 - `CatalogEntry` — one exact reference, its declared dependency references,
   and a `ModuleRegistrationFactory` (`Arc<dyn Fn() ->
   Result<ModuleRegistration, ModuleFactoryError> + Send + Sync>`).
@@ -137,10 +146,17 @@ acceptance story (a single-crate host). Scenario coverage:
 | P K3 driver contract kept | `k5_composition.rs::scenario_p_driver_contract_is_kept_for_loader_resolved_compositions` |
 | End-to-end example | `cargo run -p runtime-loader --example host_end_to_end` |
 
+Reference-grammar regression (review repair) lives in `src/reference.rs`:
+reserved-delimiter rejection for `ModuleVersion`/`ModuleReference`, ids
+containing `@` resolving through the final-`@` delimiter, table-driven
+`deserialize(serialize(reference)) == reference` round-trips, and
+fail-closed invalid external values (`"app@"`, `"@1"`, delimiter-free
+strings; `"app@v@1"` is id `app@v` version `1`, round-tripping to itself).
+
 Verification on the candidate branch: `cargo fmt --all -- --check` clean;
 `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-clean (stable 1.98.1); `cargo test --workspace --all-features` 301 passed /
-0 failed (loader crate: 22 = 6 unit + 16 scenario tests); `cargo run -p
+clean (stable 1.98.1); `cargo test --workspace --all-features` all passed
+(loader crate: 26 = 10 unit/grammar + 16 scenario tests); `cargo run -p
 graph-lab` healthy; `git diff --check` against base `e03778d` clean.
 
 ## Non-goals

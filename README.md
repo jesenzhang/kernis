@@ -113,15 +113,18 @@ future validated references.
   independent re-review returned PASS with 0 blockers. K4 is a completed
   integrated milestone.
 - Stage 2 K5: the minimal loader boundary is implemented on integrated
-  `main` (fast-forward of `feat/k5-minimal-loader-boundary` through
-  `c0ce2a4`, base `e03778d`). The new `runtime-loader` crate resolves
-  host-declared logical `ModuleReference` roots against an explicit
-  process-local `ModuleCatalog` into fresh in-process registrations
-  composed through the unchanged K4/K3 lifecycle, with deterministic
-  closure, typed pre-activation failures, and zero dynamic loading (no
-  filesystem discovery, dylibs, WASM, or network). Acceptance scenarios
-  A-P and the end-to-end example pass. No independent-review APPROVE is
-  recorded, so K5 is not marked Integrated.
+  `main` (merge of `feat/k5-minimal-loader-boundary` through review
+  repair `a4bc425`, base `e03778d`). The new `runtime-loader` crate
+  resolves host-declared logical `ModuleReference` roots against an
+  explicit process-local `ModuleCatalog` into fresh in-process
+  registrations composed through the unchanged K4/K3 lifecycle, with
+  deterministic closure, typed pre-activation failures, and zero dynamic
+  loading (no filesystem discovery, dylibs, WASM, or network).
+  Acceptance scenarios A-P and the end-to-end example pass. The
+  independent review of `c0ce2a4` returned CHANGES REQUIRED (one
+  blocker: non-bijective `id@version` textual representation), and the
+  contract repair `a4bc425` closed it on `main`. The independent
+  re-review remains pending, so K5 is not marked Integrated.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at

@@ -46,12 +46,15 @@ Its independent review returned CHANGES REQUIRED (composition cleanup
 ownership), the surgical repair was integrated on `main` at `e03778d`, and
 the independent re-review returned PASS with 0 blockers, so K4 is a
 completed integrated milestone. K5 is implemented on integrated `main`
-(fast-forward of `feat/k5-minimal-loader-boundary` through `c0ce2a4`,
-base `e03778d`): the new `runtime-loader` crate resolves explicit logical
-module references into fresh in-process registrations for K4, with no
-dynamic loading of any kind, acceptance scenarios A-P and an end-to-end
-example passing. Its independent review remains pending, so K5 is not
-marked Integrated. See
+(merge of `feat/k5-minimal-loader-boundary` through review repair
+`a4bc425`, base `e03778d`): the new `runtime-loader` crate resolves
+explicit logical module references into fresh in-process registrations
+for K4, with no dynamic loading of any kind, acceptance scenarios A-P
+and an end-to-end example passing. The independent review of `c0ce2a4`
+returned CHANGES REQUIRED (one blocker: non-bijective `id@version`
+textual representation), closed by the contract repair `a4bc425` now on
+`main`; the independent re-review remains pending, so K5 is not marked
+Integrated. See
 [`runtime/K5-minimal-loader-boundary.md`](runtime/K5-minimal-loader-boundary.md)
 and ADR 0006.
 

@@ -752,6 +752,24 @@ pending items remain the independent lifecycle/API review of the loader
 boundary and the recorded final integrated commit; a review-initiated
 repair would land as its own follow-up fix, mirroring the K4 process.
 
+### Review repair reconciliation (2026-09-10)
+
+The independent review of candidate `c0ce2a4` returned CHANGES REQUIRED
+with one blocker: the `ModuleReference` `id@version` textual serde form
+was not bijective when a `ModuleVersion` contained `@`. The contract
+repair — `@` reserved as the version delimiter inside `ModuleVersion`
+only (final-`@` separator grammar, typed
+`InvalidReferenceReason::ReservedVersionDelimiter`, ids may contain
+`@`, fail-closed on invalid external text, round-trip regression tests,
+loader semantics and the K4 boundary unchanged) — landed as follow-up
+fix `a4bc425` on the candidate branch and is now merged into `main`.
+Verification on the repair: workspace 305 passed / 0 failed, loader
+crate 26 tests (10 unit + 16 scenario, A-P unchanged), fmt/clippy clean,
+K4/K3/K2/K1 focused suites unchanged, `git diff --check` clean. This
+records implementation of the repair on integrated `main`, not review
+acceptance: the independent re-review remains pending and K5 is not
+marked Integrated.
+
 ## K6 — Runtime Kernel API Stabilization and R2 Closeout
 
 ### Outcome
