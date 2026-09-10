@@ -62,6 +62,14 @@ removals, no renames):
   the same chain. The single `runtime_loader` import block of
   `crates/runtime-loader/tests/k6_r2_end_to_end.rs` is the standing
   closure proof.
+- The R2 owner-loss guard repair is the third wave: `DriverOwnerState`
+  (the read-only owner-lifecycle observation behind
+  `RuntimeHandle::owner_state`, K3) and `OwnerLossReleaseError` (the
+  typed rejection of the guarded
+  `CompositionHandle::release_after_owner_loss`, K4) join the vocabulary
+  as additive re-exports along the same chain (core → composition →
+  loader). Scenario N of `k6_r2_end_to_end.rs` keeps the standing import
+  block covering them.
 
 ## runtime-loader — canonical host entry (K5)
 
@@ -92,8 +100,8 @@ Host-facing supported (all also re-exported by the loader):
 | Stable declarations | `ModuleDefinition` (builder: `new`, `depends_on`, `with_task`, `with_declarative_capability`, `with_reactive_capability`, `with_capability`, `requiring_config`, `with_optional_config`), `CapabilityContribution`, `CapabilityOwnership`, `ReactiveCapabilityDeclaration`, `ConfigRequirement` |
 | Process-local registration | `ModuleRegistration` (`factory`, `plugin`, `plugin_with_config`, `on_activate`, `on_dispose`), `LifecycleHook`, `HookFuture`, `CapabilityFactoryFn`, `lifecycle_hook` |
 | Planning | `CompositionBuilder` (`register`, `build`), `CompositionPlan` (`definition`, `module_order`, `slots`, async `start`, `start_with_store`, `restore`), `CapabilitySlot`, `HostConfig` |
-| Activation / shutdown | `RuntimeAssembly` (`runtime`, `runtime_mut`, `module_order`, `host_config`, async `shutdown`, `into_driver`), `CompositionHandle` (`module_order`, `dispose_after_driver`, `release_after_owner_loss`), `CompositionDriverShutdown` |
-| Errors | `CompositionError` + `ActivationStage`, `ConstructionStage`, `CapabilityConflictReason`, `FactoryConflictReason`, `PluginConflictReason`, `CleanupResource`, `RollbackFailure`, `RollbackReport`; `StartupFailure`; `CompositionShutdownFailure` |
+| Activation / shutdown | `RuntimeAssembly` (`runtime`, `runtime_mut`, `module_order`, `host_config`, async `shutdown`, `into_driver`), `CompositionHandle` (`module_order`, `dispose_after_driver`, async `release_after_owner_loss` — bound-guarded, `&mut self`, proves the bound driver's `DriverOwnerState::OwnerDropped` before any cleanup), `CompositionDriverShutdown` |
+| Errors | `CompositionError` + `ActivationStage`, `ConstructionStage`, `CapabilityConflictReason`, `FactoryConflictReason`, `PluginConflictReason`, `CleanupResource`, `RollbackFailure`, `RollbackReport`; `StartupFailure`; `CompositionShutdownFailure`; `OwnerLossReleaseError` |
 
 Internal: `ActivatedModule` and the rollback execution internals are
 crate-private. Composition coordinates existing authorities; it creates
@@ -114,10 +122,10 @@ Host-facing supported:
   `restore_from_definition`.
 - K3 driver: `RuntimeDriver::new` → `(driver, handle)` +
   `RuntimeHandle` (`drive`, `wake`, `dispatch_effect`, `recover`,
-  `cancel_task`, drain methods, `shutdown`), `DriverFuture`,
-  `DriveResult`, `ShutdownStatus`, `DriverExit`, `DriverError`,
-  `EffectDispatcher`, `EffectDispatchRequest`, `EffectDispatchFuture`,
-  `EffectDispatchError`.
+  `cancel_task`, drain methods, `shutdown`, and the synchronous read-only
+  `owner_state`), `DriverFuture`, `DriveResult`, `ShutdownStatus`,
+  `DriverOwnerState`, `DriverExit`, `DriverError`, `EffectDispatcher`,
+  `EffectDispatchRequest`, `EffectDispatchFuture`, `EffectDispatchError`.
 - Coordination results: `StepResult`, `RuntimeEvent`, `Cancellation`,
   `TaskAttempt`, `CapabilityPin`, `RecoveryDecision`, `DurableRunState`.
 - Errors: `RuntimeError`, `ReconstructionError`,

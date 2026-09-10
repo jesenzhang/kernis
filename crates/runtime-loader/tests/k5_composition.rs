@@ -14,7 +14,7 @@ use k5_common::{
 use runtime_loader::{
     ActivationStage, CapabilityDeclaration, CapabilityRequirement, CatalogEntry, CompositionError,
     DriveResult, EffectSemantics, FileDurableStore, HostConfig, KnownEffectOutcome, ModuleCatalog,
-    ModuleDefinition, ModuleRegistration, RuntimeLoader, ShutdownStatus, StepResult,
+    ModuleDefinition, ModuleRegistration, PluginRuntime, RuntimeLoader, ShutdownStatus, StepResult,
     TaskDefinition,
 };
 use std::sync::Arc;
@@ -69,16 +69,26 @@ async fn scenario_l_every_resolution_constructs_fresh_registrations() {
     let registry = Recorder::new();
     let constructions = Arc::new(AtomicUsize::new(0));
     let plugin_ptrs = Arc::new(Mutex::new(Vec::new()));
+    // Keep every constructed instance alive alongside its logged address:
+    // a pointer only proves "not the same instance" while both allocations
+    // are simultaneously live, because a fully dropped block may be handed
+    // straight back by the allocator on the next construction.
+    let keepalive: Arc<Mutex<Vec<Arc<PluginRuntime>>>> = Arc::new(Mutex::new(Vec::new()));
 
     let recorder = registry.clone();
     let counter = Arc::clone(&constructions);
     let ptrs = Arc::clone(&plugin_ptrs);
+    let alive = Arc::clone(&keepalive);
     let reactive = CatalogEntry::new(reference("module-b", "1"), move || {
         let number = counter.fetch_add(1, Ordering::SeqCst) + 1;
         let plugin = ok_plugin("b-plugin", "reactive", "reactive-v1", "published");
         ptrs.lock()
             .expect("pointer log lock is healthy")
             .push(Arc::as_ptr(&plugin) as usize);
+        alive
+            .lock()
+            .expect("keepalive lock is healthy")
+            .push(Arc::clone(&plugin));
         let activation = recorder.hook(&format!("activate:module-b#{number}"), None);
         let disposal = recorder.hook(&format!("dispose:module-b#{number}"), None);
         Ok(ModuleRegistration::new(
@@ -129,6 +139,11 @@ async fn scenario_l_every_resolution_constructs_fresh_registrations() {
         .expect("pointer log lock is healthy")
         .clone();
     assert_eq!(logged.len(), 2);
+    assert_eq!(
+        keepalive.lock().expect("keepalive lock is healthy").len(),
+        2,
+        "both instances are alive, so the logged addresses are live allocations"
+    );
     assert_ne!(
         logged[0], logged[1],
         "two resolutions must not share a plugin instance"

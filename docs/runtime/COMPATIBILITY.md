@@ -88,11 +88,17 @@ umbrella and its mirrored `runtime-composition` vocabulary):
 ## 5. ModuleVersion exact semantics
 
 - `ModuleVersion` is an **exact opaque label**: matching is exact;
-  `app@2` never resolves `app@1`. There is no ordering, no semver
-  solving, no ranges, and no lockfiles — and the R2 contract promises
-  none. Loader metadata (versions) never enters `RunDefinition`,
-  `DurableStore`, or replay identity, so version-string handling cannot
-  affect durable behavior.
+  `app@2` never resolves `app@1`.
+- The type carries an **opaque lexical/structural total order**
+  (`Ord`/`PartialOrd`), required by the loader's reference graph for
+  deterministic data-structure ordering. That order exists **only** for
+  deterministic ordering. It does **not** mean semantic version
+  precedence, compatibility, range selection, upgrade preference, or any
+  SemVer behavior.
+- There is no semver solving, no ranges, and no lockfiles — and the R2
+  contract promises none. Loader metadata (versions) never enters
+  `RunDefinition`, `DurableStore`, or replay identity, so version-string
+  handling cannot affect durable behavior.
 
 ## 6. K4 ModuleDefinition compatibility
 

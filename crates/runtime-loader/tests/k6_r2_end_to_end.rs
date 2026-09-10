@@ -1,4 +1,4 @@
-//! K6 R2 end-to-end acceptance suite (scenarios D–M of the K6 contract).
+//! K6 R2 end-to-end acceptance suite (scenarios D–N of the K6 contract).
 //!
 //! Every import below comes from `runtime_loader` alone: this file is also
 //! the closure proof for the supported host entry (ADR 0007) — a host can
@@ -12,10 +12,11 @@
 
 use runtime_loader::{
     CapabilityDeclaration, CapabilityDefinition, CapabilityRequirement, CapabilityValue,
-    CatalogEntry, CompositionDriverShutdown, CompositionError, CompositionHandle, DriveResult,
-    DriverExit, DurableRunState, EffectDispatchError, EffectDispatchFuture, EffectDispatchRequest,
-    EffectDispatcher, EffectSemantics, FileDurableStore, HostConfig, Id, KnownEffectOutcome,
-    LoaderError, ModuleCatalog, ModuleDefinition, ModuleReference, ModuleRegistration, OperationId,
+    CatalogEntry, CleanupResource, CompositionDriverShutdown, CompositionError, CompositionHandle,
+    DriveResult, DriverError, DriverExit, DriverOwnerState, DurableRunState, EffectDispatchError,
+    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, EffectSemantics,
+    FileDurableStore, HostConfig, Id, KnownEffectOutcome, LoaderError, ModuleCatalog,
+    ModuleDefinition, ModuleReference, ModuleRegistration, OperationId, OwnerLossReleaseError,
     PluginDefinition, PluginFactory, PluginRuntime, RecoveredEffectState, RecoveryAction, RunId,
     RuntimeError, RuntimeHandle, RuntimeLoader, ShutdownStatus, StartupFailure, StepResult,
     StoreErrorKind, TaskDefinition,
@@ -639,4 +640,71 @@ fn duplicate_capability_ownership_stays_composition_error() {
         ),
         "a typed composition conflict expected, got {error:?}"
     );
+}
+
+// ---- N: the guarded owner-loss release through the host entry. ----
+
+/// The K6-R2 review repair closed the owner-loss guard: `owner_state`,
+/// `DriverOwnerState`, and `OwnerLossReleaseError` are host-nameable
+/// through the loader alone, and the guard decides composition release
+/// against the bound driver's real owner lifecycle — never early.
+#[test]
+fn owner_lifecycle_guard_is_proven_through_the_host_entry() {
+    let temp = TempStore::new("owner-guard");
+    block_on(async {
+        let store = FileDurableStore::open(&temp.path).expect("the store opens");
+        let session = start_session(store, EffectSemantics::Idempotent).await;
+        let (handle, join, mut composition, _calls) = session;
+
+        // The driver is alive and serving: a premature owner-loss release
+        // is rejected and consumes nothing.
+        assert_eq!(handle.owner_state(), DriverOwnerState::Running);
+        let prepared = handle.drive().await.expect("driving succeeds");
+        assert!(matches!(
+            prepared,
+            DriveResult::Step(StepResult::Completed { .. })
+        ));
+        assert_eq!(
+            composition.release_after_owner_loss().await.unwrap_err(),
+            OwnerLossReleaseError::OwnerStillRunning,
+            "the host entry exposes the guard, not a bypass"
+        );
+        handle
+            .drive()
+            .await
+            .expect("the rejected release left the driver serving");
+
+        // Losing the driver task is a real owner loss: commands resolve
+        // `OwnerDropped`, the bound observation flips, and only now does
+        // the release run — best-effort, with the lost registry authority
+        // reported instead of a fake orderly success.
+        join.abort();
+        let error = join
+            .await
+            .err()
+            .expect("the aborted driver task fails to join");
+        assert!(error.is_cancelled());
+        assert!(matches!(
+            handle.drive().await,
+            Err(DriverError::OwnerDropped)
+        ));
+        assert_eq!(handle.owner_state(), DriverOwnerState::OwnerDropped);
+        let report = composition
+            .release_after_owner_loss()
+            .await
+            .expect("the aborted driver proves the owner loss");
+        assert!(
+            matches!(&report.failures[..], [failure]
+                if matches!(failure.resource, CleanupResource::PluginRegistration { .. })),
+            "the lost registry authority is reported, got {:?}",
+            report.failures
+        );
+
+        // Exactly-once: the second release is the typed rejection, never
+        // an empty fabricated success.
+        assert_eq!(
+            composition.release_after_owner_loss().await.unwrap_err(),
+            OwnerLossReleaseError::AlreadyReleased
+        );
+    });
 }

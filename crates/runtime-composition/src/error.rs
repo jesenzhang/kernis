@@ -563,3 +563,46 @@ impl fmt::Display for CompositionShutdownFailure {
 }
 
 impl Error for CompositionShutdownFailure {}
+
+/// Rejection of `CompositionHandle::release_after_owner_loss`.
+///
+/// The owner-loss release only runs after the handle's bound driver has
+/// actually lost its owner. Each variant names the actionable next step:
+/// a still-active driver keeps its orderly shutdown path, a completed
+/// orderly shutdown has a `DriverExit` to release through, and an
+/// already-released handle has nothing left to do.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OwnerLossReleaseError {
+    /// The bound driver is still running and serving commands; nothing was
+    /// disposed and the handle stays usable. Shut the driver down and
+    /// release through `CompositionHandle::dispose_after_driver`.
+    OwnerStillRunning,
+    /// The bound driver completed an orderly shutdown, so a `DriverExit`
+    /// exists and the registry authority was preserved; release through
+    /// `CompositionHandle::dispose_after_driver` with that exit instead.
+    OrderlyShutdownCompleted,
+    /// The owner-loss release already ran once and disposed everything it
+    /// owned; a repeated call performs nothing.
+    AlreadyReleased,
+}
+
+impl fmt::Display for OwnerLossReleaseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OwnerStillRunning => f.write_str(
+                "the composition's driver still owns and serves the runtime; \
+                 owner-loss release disposed nothing",
+            ),
+            Self::OrderlyShutdownCompleted => f.write_str(
+                "the composition's driver completed an orderly shutdown; \
+                 release through dispose_after_driver with the returned DriverExit",
+            ),
+            Self::AlreadyReleased => f.write_str(
+                "the composition's owner-loss release already ran exactly once; \
+                 nothing remains to release",
+            ),
+        }
+    }
+}
+
+impl Error for OwnerLossReleaseError {}

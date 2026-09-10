@@ -48,8 +48,8 @@ pub use definition::{
 };
 pub use error::{
     ActivationStage, CapabilityConflictReason, CleanupResource, CompositionError,
-    CompositionShutdownFailure, ConstructionStage, FactoryConflictReason, PluginConflictReason,
-    RollbackFailure, RollbackReport, StartupFailure,
+    CompositionShutdownFailure, ConstructionStage, FactoryConflictReason, OwnerLossReleaseError,
+    PluginConflictReason, RollbackFailure, RollbackReport, StartupFailure,
 };
 pub use plan::{CapabilitySlot, CompositionBuilder, CompositionPlan};
 pub use registration::{
@@ -68,8 +68,8 @@ pub use runtime_core::{
     AttemptId, Cancellation, CapabilityDeclaration, CapabilityHandle, CapabilityPin,
     CapabilityReplayIdentity, CapabilityRequirement, CompletionRecord, DefinitionError,
     DefinitionIdentity, DispatchRecord, DriveResult, DriverError, DriverExit, DriverFuture,
-    DurableRunState, EffectDispatchError, EffectDispatchFuture, EffectDispatchRequest,
-    EffectDispatcher, FactoryResolutionError, JournalError, KeyedStreamItem,
+    DriverOwnerState, DurableRunState, EffectDispatchError, EffectDispatchFuture,
+    EffectDispatchRequest, EffectDispatcher, FactoryResolutionError, JournalError, KeyedStreamItem,
     LegacyMutationOperation, OutcomeRecord, ReconstructionError, RecoveredEffectState,
     RecoveryAction, RecoveryDecision, RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError,
     RuntimeEvent, RuntimeHandle, ScopeError, SequenceError, ShutdownStatus, StepResult, StoreError,

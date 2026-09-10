@@ -237,6 +237,25 @@ where
     }
 }
 
+/// Synchronous, read-only classification of one driver's owner lifecycle.
+///
+/// The classification is derived solely from the existing command-mailbox
+/// state — the single driver-owner truth also used for `DriverError`
+/// rejection. It never submits a command, never closes the driver, and never
+/// acquires the [`Runtime`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DriverOwnerState {
+    /// The driver owner is alive and the mailbox still accepts commands.
+    Running,
+    /// The driver completed an orderly shutdown: the mailbox is closed
+    /// without owner loss, and `RuntimeDriver::run` returned its
+    /// [`DriverExit`]. This is not owner loss.
+    Shutdown,
+    /// The driver owner was dropped, aborted, or unwound by a panic before
+    /// an orderly shutdown completed; no [`DriverExit`] exists.
+    OwnerDropped,
+}
+
 /// Awaitable response to one typed [`RuntimeHandle`] command.
 #[must_use = "a driver command is observed by awaiting its response future"]
 pub struct DriverFuture<T> {
@@ -379,6 +398,17 @@ impl CommandMailbox {
     fn next(&self) -> NextCommand {
         NextCommand {
             mailbox: self.clone(),
+        }
+    }
+
+    fn owner_state(&self) -> DriverOwnerState {
+        let state = lock(&self.state);
+        if state.owner_dropped {
+            DriverOwnerState::OwnerDropped
+        } else if state.closed {
+            DriverOwnerState::Shutdown
+        } else {
+            DriverOwnerState::Running
         }
     }
 
@@ -607,6 +637,20 @@ impl RuntimeHandle {
     pub fn shutdown(&self) -> DriverFuture<ShutdownStatus> {
         let (reply, future) = response_channel();
         self.submit(DriverCommand::Shutdown { reply }, future)
+    }
+
+    /// Observes the driver owner's lifecycle state without submitting a
+    /// command.
+    ///
+    /// The observation is synchronous, read-only, and executor-neutral: it
+    /// reads the same mailbox state that drives command rejection
+    /// ([`DriverError::OwnerDropped`] / [`DriverError::ShuttingDown`]). It
+    /// triggers no command, closes nothing, and acquires no [`Runtime`]
+    /// authority. Cloning this handle and observing through the clone
+    /// observes the same driver owner.
+    #[must_use]
+    pub fn owner_state(&self) -> DriverOwnerState {
+        self.mailbox.owner_state()
     }
 
     fn submit<T>(&self, command: DriverCommand, future: DriverFuture<T>) -> DriverFuture<T> {

@@ -138,9 +138,13 @@ a `RuntimeAssembly`; `into_driver(dispatcher)` yields the supported triple
 `(RuntimeDriver, RuntimeHandle, CompositionHandle)`. The host spawns
 `driver.run()` and issues typed commands through the handle: `drive`,
 `dispatch_effect`, `recover`, `cancel_task`, `drain_*_events`, `shutdown`.
-Effects carry `EffectSemantics` (`Idempotent` / `NonIdempotent`); dispatch
-outcomes are `Succeeded` / `Failed` / unknown, and unknown outcomes restore
-to recovery classification, never silent re-execution.
+`RuntimeHandle::owner_state` is additionally a synchronous, read-only
+observation of the driver's owner lifecycle (`DriverOwnerState::Running` /
+`Shutdown` / `OwnerDropped`): it submits no command, closes nothing, and
+acquires no Runtime authority. Effects carry `EffectSemantics`
+(`Idempotent` / `NonIdempotent`); dispatch outcomes are `Succeeded` /
+`Failed` / unknown, and unknown outcomes restore to recovery
+classification, never silent re-execution.
 See `docs/runtime/K3-explicit-async-boundary.md` and ADR 0004.
 
 ### Durability and recovery
@@ -168,12 +172,22 @@ RuntimeAssembly::into_driver
 → final Runtime release         (drop of the returned shutdown outcome)
 ```
 
-Abnormal owner loss: a dropped handle makes the driver exit with
-`DriverExit::owner_dropped()`; the host then calls
-`CompositionHandle::release_after_owner_loss`, which performs best-effort
-cleanup and returns a structured report of any incomplete registration
-cleanup. Examples and docs must not use the pre-K4 incomplete shutdown
-order.
+Abnormal owner loss: when the driver future is dropped, aborted, or
+unwound by a panic, **no `DriverExit` exists**. The K3 driver-owner guard
+marks the command mailbox owner-dropped — the single driver-owner truth
+— after which `RuntimeHandle` commands resolve `DriverError::OwnerDropped`
+and `RuntimeHandle::owner_state` reports `DriverOwnerState::OwnerDropped`.
+`CompositionHandle` is bound to the exact driver separated by the same
+`into_driver` call, and `CompositionHandle::release_after_owner_loss`
+performs its best-effort cleanup only after observing `OwnerDropped`
+through that bound observation; it returns a structured report of any
+incomplete registration cleanup. While the driver is still `Running` — or
+completed an orderly `Shutdown` — the release is rejected with a typed
+`OwnerLossReleaseError`, disposes nothing, and leaves the handle usable.
+An orderly shutdown is therefore never downgradeable to owner loss: it
+produces a `DriverExit` and must release through
+`CompositionHandle::dispose_after_driver`. Examples and docs must not use
+the pre-K4 incomplete shutdown order.
 
 ## Public error domains
 
