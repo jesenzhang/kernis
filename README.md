@@ -89,23 +89,31 @@ future validated references.
 
 ## Current implementation status
 
+Stage 2 milestones use the status vocabulary defined in the
+[R2 Kernel Contract](docs/runtime/R2-KERNEL-CONTRACT.md):
+**Integrated** (implementation on `main`, CI green) and **Reviewed**
+(independent-review APPROVE recorded) are separate states.
+
 - M1 Runtime Core: implemented and integrated.
 - M2-A Capability Runtime: integrated.
 - M2-B0: complete.
 - M2-B1: in-memory `DurableStore`/restart slice and durable completion/replay
   contract closure implemented.
 - Stage 2 K1: embedded physical `FileDurableStore` implemented with redb,
-  versioned typed snapshots, reopen, CAS/idempotency, and crash-window proof.
+  versioned typed snapshots, reopen, CAS/idempotency, and crash-window
+  proof. K1 is Integrated and Reviewed.
 - Stage 2 K2: declarative definition, process-local factory separation, cold
   reconstruction, and K1 legacy-identity compatibility are implemented on
   integrated `main` (candidate range through `684ae84`, with the
-  review-feedback compatibility fix `5fe0ea4`). No independent-review APPROVE
-  is recorded, so K2 is not marked Integrated.
+  review-feedback compatibility fix `5fe0ea4`). K2 is Integrated; no
+  independent-review APPROVE is separately recorded, so it is not yet
+  Reviewed — its coverage is absorbed into the K6/R2 combined review.
 - Stage 2 K3: the executor-neutral single-owner async driver is implemented on
   integrated `main` through `ebfc7d3` (including the owner-loss review repair
   with its `k3_review_owner_drop` regression), on which GitHub CI passed
-  (run 34446922406). The final independent review over the complete range is
-  still pending, so K3 is not marked Integrated.
+  (run 34446922406). K3 is Integrated; the final independent review over
+  the complete range is still pending, so it is not yet Reviewed — its
+  coverage is absorbed into the K6/R2 combined review.
 - Stage 2 K4: runtime and plugin composition API is integrated on `main`
   through `e03778d` (the cleanup-ownership review repair on top of
   `2ba3fd4`). The independent lifecycle/API review process is closed: the

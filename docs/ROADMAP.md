@@ -33,11 +33,13 @@ implementation plan is maintained in
 5. K5 Minimal Loader Boundary;
 6. K6 Runtime Kernel API Stabilization and R2 Closeout.
 
-K2 and K3 are implemented on integrated `main` and pass CI
+K2 and K3 are Integrated on `main` and pass CI
 (GitHub Actions run 34446922406 on `ebfc7d3`), with focused completion
 evidence recorded in the Stage 2 plan. Their independent reviews remain
 pending — only targeted review-feedback fixes are recorded — so neither is
-marked Integrated. K4 is implemented on integrated `main` (fast-forward of
+Reviewed; their review coverage is absorbed into the K6/R2 combined review
+(status vocabulary: [`runtime/R2-KERNEL-CONTRACT.md`](runtime/R2-KERNEL-CONTRACT.md)).
+K4 is implemented on integrated `main` (fast-forward of
 `feat/k4-runtime-plugin-composition` plus its status reconciliation and
 clippy repair, ending at `003014d`) and passes CI (GitHub Actions run
 34456738676), with acceptance evidence in

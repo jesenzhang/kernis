@@ -58,11 +58,18 @@ checks belong at the milestone boundary rather than after every internal edit.
 | Milestone | Outcome | Depends on | Status | Review |
 | --- | --- | --- | --- | --- |
 | K1 | Embedded physical durability | M2-B contract closure | Integrated | Independent - APPROVE |
-| K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
-| K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
+| K2 | Declarative configuration and cold reconstruction | K1 | Integrated | Independent - pending (absorbed into the K6/R2 review) |
+| K3 | Explicit asynchronous execution boundary | K2 | Integrated | Independent - pending (absorbed into the K6/R2 review) |
 | K4 | Runtime and plugin composition API | K2, K3 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `e03778d`) |
 | K5 | Minimal loader boundary | K4 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `a4bc425`) |
 | K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
+
+Status and review columns use the vocabulary defined in
+[R2-KERNEL-CONTRACT.md](R2-KERNEL-CONTRACT.md): Integrated (implementation
+on `main`, CI green) and Reviewed (independent-review APPROVE recorded)
+are separate states. Dated reconciliation entries below preserve the
+wording of the day they were written; this table and the current-status
+sections are the authoritative current state.
 
 The sequence is dependency order, not a promise that current implementation
 details will remain optimal. Reordering requires an explicit plan update that

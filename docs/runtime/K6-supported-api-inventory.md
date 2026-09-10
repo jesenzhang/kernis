@@ -50,6 +50,18 @@ removals, no renames):
 - `runtime-composition` and `runtime-loader` mirror the same vocabulary
   plus `RuntimeEvent`, `Cancellation`, `ReconstructionError`,
   `FactoryResolutionError`, and `LegacyMutationOperation`.
+- The R2 acceptance suite proved a second closure wave: a host that reads
+  durable facts through `Runtime::durable_state` must also name
+  `StoreErrorKind` (corruption classification), `RecoveryAction` (recovery
+  decisions), `RecoveredEffectState` (effect state), and the record types
+  `CompletionRecord` / `DispatchRecord` / `OutcomeRecord`; the direct
+  `runtime-core` path additionally needed `OperationId`, `EffectSemantics`,
+  and `KnownEffectOutcome` nameable on `runtime-core` itself (it already
+  exported them nowhere; composition/loader had the latter via their
+  `workflow_recovery` block). All additions are additive re-exports along
+  the same chain. The single `runtime_loader` import block of
+  `crates/runtime-loader/tests/k6_r2_end_to_end.rs` is the standing
+  closure proof.
 
 ## runtime-loader — canonical host entry (K5)
 

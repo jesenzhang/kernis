@@ -1,6 +1,15 @@
-//! K5 minimal loader boundary.
+//! K5 minimal loader boundary — and, as of K6, the supported host entry
+//! for the KERNIS R2 kernel.
 //!
-//! This crate is a thin declarative layer between host configuration and K4
+//! As the host entry (ADR 0007) this crate re-exports the complete
+//! supported host vocabulary: a host can declare, resolve, compose,
+//! activate, drive, recover, restore, and shut down depending on this
+//! crate alone. The tiered surface inventory lives in
+//! `docs/runtime/K6-supported-api-inventory.md`; the canonical full
+//! lifecycle — including a genuine cold restart — is
+//! [`examples/r2_host.rs`](https://github.com/jesenzhang/kernis/blob/main/crates/runtime-loader/examples/r2_host.rs).
+//!
+//! As the loader, this crate is a thin declarative layer between host configuration and K4
 //! composition — not a plugin system. K4 already owns module composition,
 //! activation, and rollback; this crate adds exactly one thing: a host can
 //! declare *which* logical modules it needs and let the loader resolve the
