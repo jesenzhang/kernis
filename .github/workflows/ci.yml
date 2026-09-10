@@ -20,3 +20,13 @@ jobs:
         run: cargo test --workspace --all-features
       - name: Graph lab
         run: cargo run -p graph-lab
+
+  # The declared MSRV (workspace rust-version) is a real contract.
+  # Check-only and cheap: compilation, not the full test suite.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85
+      - name: MSRV check
+        run: cargo check --workspace --all-features
