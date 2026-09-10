@@ -60,7 +60,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | K1 | Embedded physical durability | M2-B contract closure | Integrated | Independent - APPROVE |
 | K2 | Declarative configuration and cold reconstruction | K1 | Implemented on `main` | Independent - pending |
 | K3 | Explicit asynchronous execution boundary | K2 | Implemented on `main` | Independent - pending |
-| K4 | Runtime and plugin composition API | K2, K3 | Implemented on `main` | Independent - pending |
+| K4 | Runtime and plugin composition API | K2, K3 | Implemented on `main` | Independent - CHANGES REQUIRED, repair pending re-review |
 | K5 | Minimal loader boundary | K4 | Planned | Independent |
 | K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Planned | Independent |
 
@@ -582,6 +582,35 @@ workspace tests, graph-lab smoke, and the base diff check) is recorded in
 [K4-runtime-plugin-composition.md](K4-runtime-plugin-composition.md). GitHub
 Actions CI passed on the integrated HEAD `003014d` (run 34456738676); the
 independent review remains the open item.
+
+### Independent review result and cleanup-ownership repair (2026-09-10)
+
+The independent lifecycle/API review returned CHANGES REQUIRED on integrated
+`main` `2ba3fd4`. One blocker: the K4 ownership contract did not close.
+`rollback_modules` released dispose hooks and fibers but never unregistered
+composition-owned `PluginRuntime` registrations through
+`CapabilityRegistry::remove`, and `RuntimeAssembly::into_driver` returned a
+`CompositionHandle` that claimed composition disposal without ever holding
+the Runtime/`CapabilityRegistry` authority the cleanup required.
+
+The repair is delivered on `fix/k4-composition-cleanup-ownership` (base
+`2ba3fd4`), not as a new milestone or Slice. One authority-correct internal
+cleanup primitive (`hook → fibers → plugin unregistration`, reverse
+activation order, continue-after-failure) now serves startup rollback,
+driverless `shutdown`, and the driver path. `CompositionHandle` loses its
+unconditional `dispose`: orderly completion passes the K3 `DriverExit` to
+`dispose_after_driver`, which re-acquires the Runtime, unregisters the
+composition-owned plugins, and returns the released runtime with the
+preserved `ShutdownStatus`; owner loss uses the explicit
+`release_after_owner_loss`, which best-effort releases the remaining
+process-local handles and reports every outstanding registration as a
+structured `CleanupResource::PluginRegistration` failure. K3
+`DriverError::OwnerDropped` semantics and the capability-graph upstream APIs
+are unchanged. Four focused cleanup-ownership tests
+(`k4_cleanup_ownership`) plus the extended A/I scenarios prove the invariant
+"successful composition cleanup ⇒ no composition-owned plugin registration
+remains in the still-live Runtime" on every release path. The repair awaits
+independent re-review; K4 is not marked Integrated.
 
 ## K5 — Minimal Loader Boundary
 

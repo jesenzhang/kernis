@@ -26,6 +26,12 @@ pub enum CleanupResource {
         /// Logical plugin identity of the failed fiber.
         plugin_id: Id,
     },
+    /// One composition-owned plugin runtime registration that failed to
+    /// unregister through the capability registry.
+    PluginRegistration {
+        /// Logical plugin identity of the failed registration.
+        plugin_id: Id,
+    },
 }
 
 /// Structured result of a reverse-order rollback or shutdown sweep.
@@ -485,6 +491,11 @@ impl fmt::Display for RollbackFailure {
             CleanupResource::Fiber { plugin_id } => {
                 write!(f, "fiber {plugin_id} disposal failed: {}", self.reason)
             }
+            CleanupResource::PluginRegistration { plugin_id } => write!(
+                f,
+                "plugin {plugin_id} registration unregistration failed: {}",
+                self.reason
+            ),
         }
     }
 }

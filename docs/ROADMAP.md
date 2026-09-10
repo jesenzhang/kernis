@@ -42,7 +42,10 @@ marked Integrated. K4 is implemented on integrated `main` (fast-forward of
 clippy repair, ending at `003014d`) and passes CI (GitHub Actions run
 34456738676), with acceptance evidence in
 [`runtime/K4-runtime-plugin-composition.md`](runtime/K4-runtime-plugin-composition.md);
-its independent review is pending, so it is likewise not marked Integrated.
+its independent review returned CHANGES REQUIRED (composition cleanup
+ownership), and the surgical repair on
+`fix/k4-composition-cleanup-ownership` awaits independent re-review, so K4
+is likewise not marked Integrated.
 
 The milestone is the delivery unit. Slice boundaries are introduced only when
 current implementation risk, ownership, verification, or context quality makes

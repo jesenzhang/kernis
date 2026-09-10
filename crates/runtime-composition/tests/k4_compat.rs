@@ -123,6 +123,8 @@ async fn scenario_i_driver_drive_dispatch_shutdown_keeps_the_k3_contract() {
     let plan = CompositionBuilder::new()
         .register(provider_registration(&registry))
         .expect("provider module registers")
+        .register(reactive_registration(&registry))
+        .expect("reactive module registers")
         .register(ModuleRegistration::new(
             ModuleDefinition::new(id("module-task"))
                 .depends_on(id("module-a"))
@@ -158,14 +160,41 @@ async fn scenario_i_driver_drive_dispatch_shutdown_keeps_the_k3_contract() {
     );
     let exit = join.await.expect("driver task joins");
     assert_eq!(exit.runtime().attempts().len(), 1);
+    assert!(
+        exit.runtime()
+            .capability_registry()
+            .contains(&id("b-plugin")),
+        "the composition-owned plugin registration is still live while the \
+         driver path owns the runtime"
+    );
+    assert_eq!(
+        registry.count("dispose:"),
+        0,
+        "the waiting composition handle disposed nothing early; orderly \
+         cleanup is only available through the driver exit"
+    );
 
-    let report = composition
-        .dispose()
-        .await
-        .expect("composition handle releases its resources");
-    drop(exit);
-    assert_eq!(report.cleaned, vec![id("module-task"), id("module-a")]);
+    let outcome = composition.dispose_after_driver(exit).await;
+    assert_eq!(
+        outcome.shutdown_status,
+        runtime_composition::ShutdownStatus::Clean,
+        "the K3 final shutdown classification is preserved"
+    );
+    let report = outcome.rollback;
+    assert_eq!(
+        report.cleaned,
+        vec![id("module-task"), id("module-b"), id("module-a")]
+    );
+    assert!(report.is_success());
     assert_eq!(registry.count("dispose:module-a"), 1);
+    assert_eq!(registry.count("dispose:module-b"), 1);
+    assert!(
+        !outcome
+            .runtime
+            .capability_registry()
+            .contains(&id("b-plugin")),
+        "orderly composition cleanup unregisters the composition-owned plugin"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -195,11 +224,9 @@ async fn scenario_i_owner_loss_resolves_commands_and_keeps_release_independent()
         Err(DriverError::OwnerDropped)
     ));
 
-    let report = composition
-        .dispose()
-        .await
-        .expect("composition-owned hooks release after owner loss");
+    let report = composition.release_after_owner_loss().await;
     assert_eq!(report.cleaned, vec![id("solo")]);
+    assert!(report.is_success());
     assert_eq!(registry.count("dispose:solo"), 1);
 }
 

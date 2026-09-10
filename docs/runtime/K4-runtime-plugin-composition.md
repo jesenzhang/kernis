@@ -1,6 +1,8 @@
 # K4: Runtime and Plugin Composition API
 
-Status: Implemented on integrated `main` / independent review pending
+Status: Integrated on `main`; review CHANGES REQUIRED; cleanup-ownership
+repair on `fix/k4-composition-cleanup-ownership` pending independent
+re-review
 
 Integrated `main` base: `ebfc7d3`. The K4 candidate range
 `4023042..003014d` from `feat/k4-runtime-plugin-composition` is integrated
@@ -10,8 +12,16 @@ decision), `cbb0fc2` (the `runtime-composition` crate), `466ed96`
 (acceptance scenarios A-J), `e61cb0b` (candidate delivery evidence),
 `bccce29` (integration status reconciliation), and `003014d` (repair of the
 stable-1.98 clippy `result_large_err` CI failure by boxing
-`StartupFailure::cause`). The independent lifecycle/API review is required
-and remains pending.
+`StartupFailure::cause`), with the `main` status head at `2ba3fd4`.
+
+The independent lifecycle/API review returned CHANGES REQUIRED with one
+blocker: composition-owned plugin registrations were never unregistered
+during rollback/shutdown, and `CompositionHandle` claimed composition
+disposal without holding the Runtime/`CapabilityRegistry` authority that
+cleanup requires. The surgical repair is delivered on
+`fix/k4-composition-cleanup-ownership` (base `2ba3fd4`) and awaits an
+independent re-review; it is not a new milestone. This document describes
+the repaired, review-contract-consistent API.
 
 K4 adds a host-facing composition layer that assembles one runtime from typed
 modules without manual internal-crate wiring. It does not replace the K2
@@ -41,9 +51,18 @@ product:
   `FactoryRegistry` — with `start`, `start_with_store`, and `restore`
   activation through K2.
 - `RuntimeAssembly<S>`: the activated composition with `runtime()`,
-  `runtime_mut()`, `module_order()`, `host_config()`, `into_driver(dispatcher)`
-  returning the K3 `RuntimeDriver`/`RuntimeHandle` pair plus a
-  `CompositionHandle`, and exactly-once `shutdown()`.
+  `runtime_mut()`, `module_order()`, `host_config()`, the async exactly-once
+  `shutdown()` driverless path, and `into_driver(dispatcher)` returning the
+  K3 `RuntimeDriver`/`RuntimeHandle` pair plus a `CompositionHandle`.
+- `CompositionHandle`: composition-owned activation resources with no
+  unconditional `dispose`. Orderly completion consumes the K3 `DriverExit`
+  in `dispose_after_driver`, which re-acquires the Runtime, runs cleanup
+  with full registry authority, and returns `CompositionDriverShutdown`
+  (`rollback`, the preserved `shutdown_status`, and the released `runtime`
+  for final inspection and release). After owner loss
+  (`DriverError::OwnerDropped`), `release_after_owner_loss` best-effort
+  releases the remaining process-local handles and reports every outstanding
+  registration as a lost-authority failure.
 - `CompositionError`: typed variants for every planning, conflict,
   activation, rollback, and construction failure — no generic string
   catch-all, with underlying definition/runtime errors preserved as `source`.
@@ -87,16 +106,30 @@ registry wipe, teardown scope, or Runtime recreation rollback.
 
 On partial startup failure the ledger unwinds in reverse activation order: a
 module's `dispose` hook runs only if its `activate` hook completed, started
-fibers dispose in reverse, un-armed disposers never run, cleanup continues
+fibers dispose in reverse contribution order, successfully registered plugin
+runtimes unregister in reverse registration order through
+`CapabilityRegistry::remove`, un-armed disposers never run, cleanup continues
 after an individual failure, and every failure is collected into the
-`RollbackReport`. Pre-existing or sibling registrations the composition never
-acquired are untouched. `RuntimeAssembly::shutdown` and
-`CompositionHandle::dispose` release composition-owned resources exactly
-once, with the same ledger semantics.
+`RollbackReport` with the structured `CleanupResource` class (`DisposeHook`,
+`Fiber`, or `PluginRegistration`). Pre-existing or sibling registrations the
+composition never acquired are untouched.
+
+One authority-correct cleanup primitive backs every release path: startup
+rollback and driverless `RuntimeAssembly::shutdown` run it against the
+still-live Runtime, and the driver path recovers the Runtime through
+`DriverExit::into_runtime` inside `CompositionHandle::dispose_after_driver`
+before claiming cleanup completion. The invariant: when K4 reports
+composition cleanup completed, no composition-owned `PluginRuntime`
+registration remains inside the still-live Runtime. After the driver owner
+is lost the registry authority disappeared with the Runtime;
+`release_after_owner_loss` therefore releases only the composition's
+remaining process-local handles (hooks and fibers, exactly once) and records
+every outstanding registration as a `PluginRegistration` failure instead of
+claiming orderly completion.
 
 ## Evidence
 
-The focused K4 suites are `cargo test -p runtime-composition` (22 tests).
+The focused K4 suites are `cargo test -p runtime-composition`.
 They cover every mandatory acceptance scenario:
 
 - A — three-module composition starts, drives to completion through the K3
@@ -131,6 +164,18 @@ They cover every mandatory acceptance scenario:
 A cross-plane case additionally proves a reactive plugin fiber resolves a
 declaratively owned factory value as a dependency (`k4_compat`).
 
+Cleanup-ownership regressions from the review repair (`k4_cleanup_ownership`,
+plus the extended A/I scenarios): driverless `shutdown` unregisters the
+plugin with the strong-count delta observed from inside the sweep before the
+runtime drop; startup rollback after a registered plugin unregisters it even
+when the module's own fiber disposal fails, continuing with the remaining
+modules; while the driver owns the Runtime the composition handle disposed
+nothing and the only orderly release entry point consumes the `DriverExit`,
+after which the registration is verified absent from the returned runtime
+with the `ShutdownStatus` preserved; owner loss releases hooks and fibers
+exactly once and reports the lost registry authority as a structured
+`PluginRegistration` failure without changing `OwnerDropped` classification.
+
 Focused compatibility evidence from the same verification run: K3 async suite
 23 passed; K3 owner-loss regression suite 3 passed; K2 declarative suite 14
 passed; K1 physical suite 9 passed; existing runtime suite 9 passed; M2-B
@@ -155,6 +200,29 @@ now boxes its `cause`, the workspace clippy and 275-test suite re-passed
 locally on 1.98.1, and CI passed on the repair `003014d`. The local
 checkpoint results above predate the merge; HTTPS to `github.com` was
 filtered in this environment, so the pushes went over `ssh.github.com:443`.
+
+## Review repair verification (2026-09-10)
+
+The cleanup-ownership repair runs on
+`fix/k4-composition-cleanup-ownership` (base `2ba3fd4`) and is a candidate
+awaiting independent re-review, not an integration.
+
+- `cargo fmt --all -- --check`: PASS (after applying rustfmt to the new
+  `k4_cleanup_ownership` suite)
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
+  PASS, 0 lint warnings (the only console warnings are cargo's incremental
+  cache hard-link notices on this Windows filesystem, which are not lints)
+- `cargo test --workspace --all-features`: PASS, 279 tests (the 275
+  candidate baseline plus the 4 new `k4_cleanup_ownership` regressions)
+- `cargo run -p graph-lab`: PASS
+- `git diff --check 2ba3fd4...HEAD`: PASS
+
+Focused K4 suites on the repair: `k4_composition` 6, `k4_conflicts` 10,
+`k4_rollback` 1, `k4_compat` 5, `k4_cleanup_ownership` 4 — 26 passed.
+Focused compatibility suites from the same run, unchanged against the
+candidate baseline: K3 async 23, K3 owner-loss regression 3, K2 declarative
+14, K1 physical 9, existing runtime suite 9, M2-B durable 18, M2-C1 repair
+1, M2-C2 integration 4, `cargo test -p workflow-recovery --all-features` 50.
 
 ## Non-goals
 

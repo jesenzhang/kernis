@@ -1,6 +1,6 @@
 //! Side-effect-free composition planning and deterministic activation.
 
-use crate::assembly::{ActivatedModule, RuntimeAssembly, rollback_modules};
+use crate::assembly::{ActivatedModule, CleanupAuthority, RuntimeAssembly, cleanup_modules};
 use crate::config::HostConfig;
 use crate::definition::{CapabilityContribution, CapabilityOwnership};
 use crate::error::{
@@ -226,7 +226,15 @@ impl CompositionPlan {
 
         let mut activated = Vec::new();
         if let Some(cause) = self.activate_modules(&runtime, &mut activated).await {
-            let rollback = rollback_modules(&mut activated).await;
+            // The Runtime is still alive here, so the rollback sweep holds
+            // the same registry authority as orderly shutdown and explicitly
+            // unregisters every composition-owned plugin registration. The
+            // runtime drop below is only the final resource release.
+            let rollback = cleanup_modules(
+                &mut activated,
+                CleanupAuthority::Registry(runtime.capability_registry()),
+            )
+            .await;
             drop(runtime);
             return Err(StartupFailure {
                 cause: Box::new(cause),

@@ -6,7 +6,11 @@
 //! into a single K2 [`RunDefinition`] and [`FactoryRegistry`], activates the
 //! result through the existing K2/K3/M2-C machinery, and owns exactly the
 //! resources activation acquired so rollback and shutdown release them in
-//! reverse order.
+//! reverse order: `dispose` hooks, started fibers, and plugin runtime
+//! registrations through the capability registry. Cleanup only claims
+//! completion while it holds that registry authority — after orderly driver
+//! shutdown through [`CompositionHandle::dispose_after_driver`], or with the
+//! live runtime on the driverless paths.
 //!
 //! # Two-plane model
 //!
@@ -36,7 +40,7 @@ mod error;
 mod plan;
 mod registration;
 
-pub use assembly::{CompositionHandle, RuntimeAssembly};
+pub use assembly::{CompositionDriverShutdown, CompositionHandle, RuntimeAssembly};
 pub use config::HostConfig;
 pub use definition::{
     CapabilityContribution, CapabilityOwnership, ConfigRequirement, ModuleDefinition,
@@ -57,6 +61,7 @@ pub use registration::{
 pub use capability_graph::{
     CapabilityDefinition, CapabilityFiber, CapabilityValue, FiberState, PluginConfig,
     PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime, ResolvedDependencies,
+    ScopedEffect,
 };
 pub use kernis_core::Id;
 pub use runtime_core::{

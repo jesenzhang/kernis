@@ -98,17 +98,41 @@ Activation proceeds in deterministic module order: register plugins,
 instantiate and start fibers, run the module `activate` hook; finally one
 `reconcile()` must reach the stable reactive boundary. K4 records exactly
 what each module successfully acquired. On failure it rolls back completed
-activations in reverse order — dispose hook, fiber disposal, plugin
-unregistration — continuing after cleanup failures and collecting all of
-them into a structured rollback report. It never disposes resources a failed
-module never acquired, never removes pre-existing or sibling-owned
-resources, and never fabricates a rollback of the K2 durable bootstrap: if
-Runtime construction/restore itself fails, K4 owns nothing and reports the
-typed construction failure. `RuntimeAssembly` then exposes `runtime()`,
-`runtime_mut()`, `into_driver(dispatcher)` (which hands the Runtime to the
-K3 driver and returns a `CompositionHandle` that disposes the
-composition-owned resources after driver shutdown), and a synchronous
-`shutdown()` for the driverless path.
+activations in reverse order — dispose hook, fiber disposal in reverse
+contribution order, and plugin unregistration in reverse registration
+order through the still-live `CapabilityRegistry` — continuing after
+cleanup failures and collecting all of them into a structured rollback
+report. It never disposes resources a failed module never acquired, never
+removes pre-existing or sibling-owned resources, and never fabricates a
+rollback of the K2 durable bootstrap: if Runtime construction/restore
+itself fails, K4 owns nothing and reports the typed construction failure.
+Startup rollback runs while the Runtime is still alive, so it holds the
+same registry authority as orderly shutdown; the Runtime drop is only the
+final resource release and never substitutes for an unperformed
+registration rollback.
+
+The cleanup contract is authority-bound: K4 may claim composition cleanup
+completed only while it holds the capability registry's unregistration
+authority, so a successful report implies that no composition-owned
+`PluginRuntime` registration remains inside the still-live Runtime.
+`RuntimeAssembly` accordingly exposes `runtime()`, `runtime_mut()`, the
+async `shutdown()` driverless path (hooks, fibers, and plugin
+unregistration in reverse activation order, then the runtime drop), and
+`into_driver(dispatcher)`, which hands the Runtime to the K3 driver and
+returns a `CompositionHandle`. While the driver is alive the handle owns
+no registry authority and therefore exposes no unconditional dispose:
+orderly completion passes the K3 `DriverExit` to
+`CompositionHandle::dispose_after_driver`, which re-acquires the Runtime
+and its registry, unregisters the composition-owned plugin runtimes, and
+returns the released runtime together with the preserved K3 shutdown
+classification. If the driver owner was dropped, aborted, or unwound by a
+panic, no `DriverExit` exists; `CompositionHandle::release_after_owner_loss`
+then performs best-effort release of the composition's remaining
+process-local handles and reports every outstanding registration as a
+`PluginRegistration` failure naming the registry authority that
+disappeared with the Runtime owner. This mirrors K3's unchanged
+`DriverError::OwnerDropped` semantics and keeps owner loss a distinct path
+instead of one ambiguous `dispose()`.
 
 ### Lifecycle hooks stay executor-neutral
 
@@ -127,7 +151,9 @@ registrations only.
 - Host code assembles a Runtime through
   `CompositionBuilder::register(..).build()?` then `plan.start(run_id, config)`
   or `plan.restore(run_id, config, store)`, and shuts down through the
-  assembly without touching internal registration order.
+  assembly's `shutdown()` or, for the driver path, through the K3 driver
+  shutdown followed by `CompositionHandle::dispose_after_driver`, without
+  touching internal registration order.
 - Module identity, ownership variants, error taxonomy, and hook types become
   long-lived public API decisions and require independent review.
 - The reactive plane remains outside the durable definition identity, exactly

@@ -106,8 +106,11 @@ future validated references.
   with its `k3_review_owner_drop` regression), on which GitHub CI passed
   (run 34446922406). The final independent review over the complete range is
   still pending, so K3 is not marked Integrated.
-- Stage 2 K4: runtime and plugin composition API is being implemented on
-  `feat/k4-runtime-plugin-composition`.
+- Stage 2 K4: runtime and plugin composition API is integrated on `main`
+  through `2ba3fd4`; its independent review returned CHANGES REQUIRED
+  (composition cleanup ownership), and the repair branch
+  `fix/k4-composition-cleanup-ownership` awaits independent re-review, so
+  K4 is not marked Integrated.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at

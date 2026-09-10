@@ -131,20 +131,26 @@ async fn scenario_a_composes_starts_drives_and_cleans_exactly_once() {
     );
     let exit = join.await.expect("driver task joins");
 
-    let report = composition
-        .dispose()
-        .await
-        .expect("composition releases exactly once");
-    drop(exit);
+    let outcome = composition.dispose_after_driver(exit).await;
+    let report = outcome.rollback;
     assert_eq!(
         report.cleaned,
         vec![id("module-c"), id("module-b"), id("module-a")]
     );
     assert!(report.is_success());
+    assert_eq!(outcome.shutdown_status, ShutdownStatus::Clean);
     assert_eq!(registry.count("activate:module-a"), 1);
     assert_eq!(registry.count("activate:module-b"), 1);
     assert_eq!(registry.count("dispose:module-a"), 1);
     assert_eq!(registry.count("dispose:module-b"), 1);
+    assert!(
+        !outcome
+            .runtime
+            .capability_registry()
+            .contains(&id("b-plugin")),
+        "composition cleanup unregisters the composition-owned plugin before \
+         the host performs the final runtime release"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
