@@ -4,8 +4,9 @@ use capability_graph::{CapabilityValue, Scope};
 use kernis_core::Id;
 use runtime_core::{
     CapabilityDeclaration, CapabilityRequirement, DefinitionError, DefinitionIdentity,
-    FactoryRegistry, FactoryResolutionError, LegacyMutationOperation, RunDefinition, Runtime,
-    RuntimeError, StepResult, TaskConfig, TaskDefinition,
+    FactoryRegistry, FactoryResolutionError, LEGACY_RUN_DEFINITION_FORMAT_V1,
+    LegacyMutationOperation, RUN_DEFINITION_FORMAT, RunDefinition, Runtime, RuntimeError,
+    StepResult, TaskConfig, TaskDefinition,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -266,9 +267,24 @@ fn canonical_identity_is_order_independent_and_excludes_display_labels() {
         reordered.identity().expect("reordered validates")
     );
     assert!(
-        first_identity
+        first_identity.as_str().starts_with(RUN_DEFINITION_FORMAT),
+        "the identity carries the current versioned format tag"
+    );
+    assert!(
+        !first_identity
             .as_str()
-            .starts_with("kernis-run-definition-v1")
+            .starts_with(LEGACY_RUN_DEFINITION_FORMAT_V1),
+        "the kernel never emits the ambiguous legacy definition format (ADR 0008)"
+    );
+    assert_eq!(
+        first_identity.as_str(),
+        "kernis-run-definition-v2#capabilities[2]#capability@5:other@7:service@8:other-v1\
+         #requires[0]#end#capability@7:service@7:service@10:service-v1#requires[0]#end#end\
+         #tasks[3]#task@4:sink#depends[2]@8:source-a@8:source-b#end#requires[2]@5:other\
+         @8:other-v1@7:service@10:service-v1#end#effect#present@6:effect#idempotent\
+         #task@8:source-a#depends[0]#end#requires[0]#end#effect#absent#task@8:source-b\
+         #depends[0]#end#requires[0]#end#effect#absent#end",
+        "golden canonical bytes pinned to the ADR 0008 grammar"
     );
 
     let mut topology_changed = first.clone();
@@ -627,7 +643,7 @@ fn declarative_identity_transition_is_cas_protected_at_durable_boundary() {
     let identity_b = effect_definition("declarative-transition-b")
         .identity()
         .expect("definition B identity is valid");
-    assert!(identity_a.as_str().starts_with("kernis-run-definition-v1"));
+    assert!(identity_a.as_str().starts_with(RUN_DEFINITION_FORMAT));
     assert_ne!(identity_a, identity_b);
 
     let mut writer = FileDurableStore::open(&temp.path).expect("physical store opens");
@@ -782,6 +798,156 @@ fn child_process_state_is_reconstructed_from_definition_and_reopened_store() {
             .expect("task exists")
             .label,
         "task"
+    );
+}
+
+/// Review R2-01 at the durable boundary: the two definitions that used to encode
+/// to the same `kernis-run-definition-v1` bytes now differ, and restoring the
+/// changed one fails closed before any factory construction or durable write.
+#[test]
+fn restore_rejects_the_reviewed_definition_collision_with_no_side_effects() {
+    let shared = RunDefinition::new()
+        .with_capability(CapabilityDeclaration::new(
+            id("x"),
+            "service",
+            "capabilities",
+        ))
+        .with_task(TaskDefinition::new(id("capabilities"), "prerequisite one"))
+        .with_task(TaskDefinition::new(id("x"), "prerequisite two"));
+    let started = shared.clone().with_task(
+        TaskDefinition::new(id("z"), "target").require_capability(requirement("x", "capabilities")),
+    );
+    let changed = shared.with_task(
+        TaskDefinition::new(id("z"), "target")
+            .depends_on(id("capabilities"))
+            .depends_on(id("x")),
+    );
+    assert_ne!(
+        started.identity().expect("started definition validates"),
+        changed.identity().expect("changed definition validates"),
+        "capability requirements and task prerequisites are different semantics"
+    );
+
+    let constructions = Arc::new(AtomicUsize::new(0));
+    let mut factories = FactoryRegistry::new();
+    let counted = Arc::clone(&constructions);
+    factories
+        .register(id("x"), "capabilities", move |_| {
+            counted.fetch_add(1, Ordering::Relaxed);
+            Ok(CapabilityValue::from_value(()))
+        })
+        .expect("capability factory registers");
+    let run_id = runtime_core::RunId::new("collision-run").expect("collision run id is valid");
+    let runtime = Runtime::start_from_definition(run_id.clone(), started, &factories)
+        .expect("the original definition starts");
+    let counted_after_start = constructions.load(Ordering::Relaxed);
+    let revision_before = runtime
+        .durable_state()
+        .expect("durable state loads")
+        .revision();
+
+    let result =
+        Runtime::restore_from_definition(run_id, changed, &factories, runtime.store().clone());
+    assert!(
+        matches!(result, Err(RuntimeError::DefinitionMismatch { .. })),
+        "a definition with different admission semantics must not restore"
+    );
+    assert_eq!(
+        constructions.load(Ordering::Relaxed),
+        counted_after_start,
+        "the rejected restore constructs no capability"
+    );
+    assert_eq!(
+        runtime
+            .durable_state()
+            .expect("durable state still loads")
+            .revision(),
+        revision_before,
+        "the rejected restore writes nothing durable"
+    );
+}
+
+/// A durable run whose recorded identity is the frozen, structurally ambiguous
+/// `kernis-run-definition-v1` form cannot authorize restore or migration
+/// (ADR 0008 §3): the rejection is typed, runs before any factory construction,
+/// and leaves the durable state untouched.
+#[test]
+fn restore_fails_closed_on_a_durable_legacy_v1_definition_identity() {
+    const LEGACY_V1_DEFINITION_IDENTITY: &str = "kernis-run-definition-v1:12:capabilities\
+        :10:capability:8:provider:4:kind:8:provider:10:definition:11:provider-v1\
+        :12:dependencies:5:tasks:4:task:4:task:12:dependencies:12:capabilities:8:provider\
+        :11:provider-v1:6:effect:7:present:8:effect-1:10:idempotent";
+
+    let temp = TempStore::new("legacy-v1-definition-identity");
+    let run_id = runtime_id();
+    let mut store = FileDurableStore::open(&temp.path).expect("physical store opens");
+    let initial_revision = store.create_run(run_id.clone()).expect("run creates");
+    let identity_revision = store
+        .commit(CommitRequest::single(
+            run_id.clone(),
+            initial_revision,
+            IdempotencyKey::new("legacy-v1-definition-identity").expect("key is valid"),
+            DurableMutation::RecordWorkflowReplayIdentity(
+                WorkflowReplayIdentity::new(LEGACY_V1_DEFINITION_IDENTITY)
+                    .expect("the legacy fixture is a valid identity"),
+            ),
+        ))
+        .expect("the legacy definition identity commits")
+        .revision;
+    drop(store);
+
+    let constructions = Arc::new(AtomicUsize::new(0));
+    let mut factories = FactoryRegistry::new();
+    let counted = Arc::clone(&constructions);
+    factories
+        .register(id("provider"), "provider-v1", move |_| {
+            counted.fetch_add(1, Ordering::Relaxed);
+            Ok(CapabilityValue::from_value("provider".to_owned()))
+        })
+        .expect("provider factory registers");
+
+    let result = Runtime::<FileDurableStore>::restore_from_definition(
+        run_id.clone(),
+        effect_definition("effect-1"),
+        &factories,
+        FileDurableStore::open(&temp.path).expect("store reopens"),
+    );
+    match result {
+        Err(RuntimeError::LegacyDefinitionIdentityUnsupported {
+            durable_identity,
+            supported_format,
+        }) => {
+            assert_eq!(durable_identity.as_str(), LEGACY_V1_DEFINITION_IDENTITY);
+            assert_eq!(supported_format, RUN_DEFINITION_FORMAT);
+        }
+        Err(error) => panic!(
+            "a legacy v1 definition identity must be refused with its own typed error, got \
+             {error}"
+        ),
+        Ok(_) => {
+            panic!("a legacy v1 definition identity must never authorize restore, per ADR 0008 §3")
+        }
+    }
+    assert_eq!(
+        constructions.load(Ordering::Relaxed),
+        0,
+        "the rejection constructs no capability"
+    );
+    let after = FileDurableStore::open(&temp.path)
+        .expect("store reopens after the rejection")
+        .load_run(&run_id)
+        .expect("state still loads");
+    assert_eq!(
+        after.revision(),
+        identity_revision,
+        "the rejection wrote nothing durable"
+    );
+    assert_eq!(
+        after
+            .workflow_replay_identity()
+            .map(WorkflowReplayIdentity::as_str),
+        Some(LEGACY_V1_DEFINITION_IDENTITY),
+        "the legacy identity is preserved for an authorized migration, never rewritten"
     );
 }
 

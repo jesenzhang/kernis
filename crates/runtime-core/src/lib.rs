@@ -26,7 +26,7 @@ use workflow_graph::{
 };
 use workflow_recovery::{
     AttemptAdmission, CommitRequest, DurableJournal, DurableMutation, DurableStore, EffectIntent,
-    IdempotencyKey, InMemoryDurableStore, StoreInvariant, StoreRevision, classify_recovery,
+    IdempotencyKey, InMemoryDurableStore, StoreRevision, classify_recovery,
 };
 
 pub use async_driver::{
@@ -36,7 +36,8 @@ pub use async_driver::{
 };
 pub use definition::{
     CapabilityDeclaration, CapabilityRequirement, DefinitionError, DefinitionIdentity,
-    FactoryRegistry, FactoryResolutionError, RUN_DEFINITION_FORMAT, RunDefinition, TaskDefinition,
+    FactoryRegistry, FactoryResolutionError, LEGACY_RUN_DEFINITION_FORMAT_V1,
+    RUN_DEFINITION_FORMAT, RunDefinition, TaskDefinition,
 };
 
 // R2 surface closure (K6, ADR 0007): every type that appears in this
@@ -48,8 +49,8 @@ pub use workflow_graph::WorkflowGraphError;
 pub use workflow_recovery::{
     AttemptId, CapabilityReplayIdentity, CompletionRecord, DispatchRecord, DurableRunState,
     EffectSemantics, JournalError, KnownEffectOutcome, OperationId, OutcomeRecord,
-    RecoveredEffectState, RecoveryAction, RecoveryDecision, RunId, StoreError, StoreErrorKind,
-    WorkflowReplayIdentity,
+    RecoveredEffectState, RecoveryAction, RecoveryDecision, RecoveryReason, RunId, StoreError,
+    StoreErrorKind, StoreInvariant, WorkflowReplayIdentity,
 };
 
 /// A capability handle pinned for the complete lifetime of one task attempt.
@@ -373,6 +374,22 @@ pub enum RuntimeError {
         /// Identity recorded by the durable run, if present.
         actual: Option<WorkflowReplayIdentity>,
     },
+    /// The durable run recorded a legacy `kernis-run-definition-v1` definition
+    /// identity, which cannot prove which definition produced it.
+    ///
+    /// The v1 canonicalization is structurally ambiguous: two definitions with
+    /// different task prerequisites and capability requirements can encode to the
+    /// same v1 bytes. Automatic restore and automatic migration are therefore
+    /// refused fail-closed instead of guessing, per
+    /// [ADR 0008](https://github.com/jesenzhang/kernis/blob/main/docs/architecture/0008-run-definition-identity-v2.md).
+    /// Restoring such a run requires an authorized migration from the trusted
+    /// original definition, which no kernel release performs implicitly.
+    LegacyDefinitionIdentityUnsupported {
+        /// The ambiguous legacy identity recorded by the durable run.
+        durable_identity: WorkflowReplayIdentity,
+        /// The only definition identity format this build writes and accepts.
+        supported_format: &'static str,
+    },
     /// A legacy live-object mutation cannot change a declaratively-created
     /// runtime into an identity that its definition can no longer rebuild.
     DeclarativeMutationUnsupported(LegacyMutationOperation),
@@ -493,6 +510,16 @@ impl fmt::Display for RuntimeError {
                 Some(actual) => write!(f, "{actual}"),
                 None => f.write_str("none"),
             }),
+            Self::LegacyDefinitionIdentityUnsupported {
+                durable_identity,
+                supported_format,
+            } => write!(
+                f,
+                "durable run definition identity {durable_identity} uses the ambiguous legacy \
+                 format and cannot authorize restore or migration; only {supported_format} is \
+                 accepted, and a legacy run needs an authorized migration from its trusted \
+                 original definition (ADR 0008)"
+            ),
             Self::DeclarativeMutationUnsupported(operation) => write!(
                 f,
                 "legacy mutation {operation} is unsupported for a declarative runtime"
@@ -717,6 +744,15 @@ where
     /// constructors run after the durable definition identity has been
     /// accepted, and the returned scope, coordinator, observations, and
     /// attempt pins are all newly allocated.
+    ///
+    /// The durable identity is version-gated before anything is constructed: a
+    /// legacy `kernis-run-definition-v1` identity is refused with
+    /// [`RuntimeError::LegacyDefinitionIdentityUnsupported`] (its bytes do not
+    /// determine the definition that produced them, so neither restore nor
+    /// migration may be attempted implicitly - ADR 0008), and a non-matching
+    /// current-format identity keeps failing closed with
+    /// [`RuntimeError::DefinitionMismatch`]. Both rejections happen with zero
+    /// factory invocations and zero durable writes.
     pub fn restore_from_definition(
         run_id: RunId,
         definition: RunDefinition,
@@ -726,12 +762,10 @@ where
         let validated = definition.validated()?;
         factories.validate(&validated)?;
         let state = store.load_run(&run_id)?;
-        if state.workflow_replay_identity() != Some(&validated.identity) {
-            return Err(RuntimeError::DefinitionMismatch {
-                expected: validated.identity,
-                actual: state.workflow_replay_identity().cloned(),
-            });
-        }
+        ensure_restorable_definition_identity(
+            &validated.identity,
+            state.workflow_replay_identity(),
+        )?;
         let (workflow, task_configs) = runtime_inputs(&validated)?;
         let scope = reconstruct_scope(&validated, factories)?;
         Self::restore_loaded(
@@ -1643,6 +1677,42 @@ where
         configs.insert(task_id, config);
     }
     Ok(configs)
+}
+
+/// Version and compatibility gate for restoring a declarative run (ADR 0008).
+///
+/// It runs before any factory construction, reconstruction, or durable write, so
+/// a rejected identity has no observable effect besides the typed error.
+fn ensure_restorable_definition_identity(
+    computed: &WorkflowReplayIdentity,
+    durable: Option<&WorkflowReplayIdentity>,
+) -> Result<(), RuntimeError> {
+    let Some(durable) = durable else {
+        return Err(RuntimeError::DefinitionMismatch {
+            expected: computed.clone(),
+            actual: None,
+        });
+    };
+    if is_legacy_run_definition_identity(durable.as_str()) {
+        return Err(RuntimeError::LegacyDefinitionIdentityUnsupported {
+            durable_identity: durable.clone(),
+            supported_format: RUN_DEFINITION_FORMAT,
+        });
+    }
+    if durable != computed {
+        return Err(RuntimeError::DefinitionMismatch {
+            expected: computed.clone(),
+            actual: Some(durable.clone()),
+        });
+    }
+    Ok(())
+}
+
+/// Returns whether `identity` is a declarative identity written by the frozen,
+/// structurally ambiguous `kernis-run-definition-v1` canonicalization.
+fn is_legacy_run_definition_identity(identity: &str) -> bool {
+    identity == LEGACY_RUN_DEFINITION_FORMAT_V1
+        || identity.starts_with(&format!("{LEGACY_RUN_DEFINITION_FORMAT_V1}:"))
 }
 
 fn legacy_workflow_replay_identity(
