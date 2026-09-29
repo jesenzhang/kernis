@@ -1,0 +1,15 @@
+[package]
+name = "r2-host-fixture"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+description = "Compile-only proof that runtime-loader alone names the supported R2 host vocabulary."
+
+[dependencies]
+runtime-loader = { path = "../../crates/runtime-loader" }
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
