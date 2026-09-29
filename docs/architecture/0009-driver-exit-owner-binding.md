@@ -229,11 +229,14 @@ distinct owners, an exit recognizes only its own driver's token, and the token i
 Sync`, cloneable, and opaque in `Debug`.
 
 Cleanup interruption, in `crates/runtime-composition/tests/k6_r2_cleanup_interruption.rs`:
-cancellation before the first await (including the module that is already current),
-cancellation while a dispose hook is pending, and cancellation while fiber disposal is
-pending; each re-entry continues the untouched modules, never starts a second hook run,
-keeps earlier failures in the final `RollbackReport`, and only after real completion does a
-further call resolve `AlreadyReleased`.
+dropping the release future before it is ever polled (nothing has started, so re-entry must do
+the whole cleanup), cancellation while a dispose hook is pending, and cancellation while fiber
+disposal is pending; each re-entry continues the untouched modules, never starts a second hook
+run, keeps earlier failures in the final `RollbackReport`, and only after real completion does a
+further call resolve `AlreadyReleased`. A fourth case covers the interrupted orderly sweep: the
+full-authority release is refused, the best-effort release finishes what remains, and the
+registration that can no longer be unregistered is reported as a failure rather than claimed
+clean.
 
 End-to-end lifecycle through the loader: `crates/runtime-loader/tests/k6_r2_end_to_end.rs`
 and `crates/runtime-loader/examples/r2_host.rs`.

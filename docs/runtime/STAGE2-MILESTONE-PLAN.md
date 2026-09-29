@@ -992,6 +992,87 @@ K6/R2 review has not been performed, so K6 is not Reviewed and R2 is not
 Closed; closure still requires the review verdict recorded in this plan,
 and this integration does not substitute for it.
 
+### Independent review result and repair reconciliation (2026-09-28, K6/R2)
+
+The independent K6/R2 review was performed against `d3818f5` and returned
+**CHANGES REQUIRED / R2 NOT CLOSED** with four findings
+(`docs/reviews/2026-09-28-K6-R2-rereview.md`, evidence under
+`docs/reviews/evidence/r2-2026-09-28/`): **R2-01** `RunDefinition`
+canonical identity was structurally ambiguous, so two definitions with
+different semantics could authorize each other's restore; **R2-02**
+`CompositionHandle::dispose_after_driver` accepted any `DriverExit` of the
+right store type and could dispose another composition's live resources;
+**R2-03** cancelling a cleanup future destroyed the ledger and then reported
+`AlreadyReleased`; **R2-04** five host-facing names were not nameable through
+`runtime-loader`, contradicting ADR 0007 §2. The statements in the K6
+candidate record above (including that K6 created no run-definition v2, and
+the 315-test verification figure at `55bb80b`) are kept as history; the
+repair supersedes the first of them through ADR 0008.
+
+```text
+Result: READY FOR REVIEW / NOT INTEGRATED. R2-01..R2-04 implemented and
+  verified locally; not pushed, not merged, not Reviewed; R2 not Closed;
+  Stage 3 not started.
+Base: d3818f5d2a77030f353e1a2a6c1744d494cae0c4 (reviewed baseline, branch
+  point from main for codex/k6-r2-repair).
+Final integrated HEAD: none — the branch is not integrated. Branch head with
+  the code and contract surface is 5215c86; the commit appending this record
+  follows it and changes documentation only.
+Implementation blocks / explicit Slices actually used: one continuing
+  implementation block, split into reviewable commits — a7965ad (ADRs 0008 /
+  0009 plus the three reproduction probes placed as the review instructed),
+  08c0e22 (R2-01), 5a5ebcb (canonical data marker moved off the loader
+  reference sigil), 06c88e7 (R2-02 + R2-03), 29a2305 (R2-04), c634ce9 and
+  5215c86 (contract/inventory/ADR/README/ROADMAP reconciliation).
+Material decisions: ADR 0008 — v2 run-definition identity (tagged, counted,
+  length-delimited), v1 frozen under #[cfg(test)] golden pinning and never
+  written, a durable v1-tagged identity refused fail-closed with
+  RuntimeError::LegacyDefinitionIdentityUnsupported, and data tokens marked
+  with % because @ is the host-facing module-reference separator; ADR 0009 —
+  DriverOwner as the opaque identity of the K3 command mailbox, owner-bound
+  dispose_after_driver answering CompositionReleaseOutcome /
+  CompositionReleaseRejection, cleanup moved into a handle-owned ledger whose
+  in-flight step is polled rather than restarted, boxed rejection payloads,
+  and ledger-first precedence in release_after_owner_loss. ADR 0007 §2 gains
+  the structural closure proof.
+Focused verification: review_r2_identity (1, now green; failed at base with
+  two definitions sharing an identity and restore accepting it),
+  review_r2_probes (3, all green; 2 failed at base), review_r2_exports
+  (green; E0432 for five names at base), k6_r2_cleanup_interruption (4),
+  k2_declarative (15), k3_async (25), k3_owner_state (4),
+  k3_review_owner_drop (3), runtime-composition --all-features (37),
+  runtime-loader --all-features (green), fixture cargo check + clippy
+  -D warnings on stable and +1.85.
+Broad verification at the branch head: cargo test --workspace --all-features
+  342 passed / 0 failed; cargo +1.85 test --workspace --all-features 342 passed /
+  0 failed; clippy --workspace --all-targets --all-features
+  -D warnings clean; fmt --check clean; check --workspace --all-targets
+  --all-features clean; doc --workspace --all-features --no-deps clean with
+  no broken intra-doc links; cargo run -p graph-lab and
+  cargo run -p runtime-loader --example r2_host both complete successfully;
+  git diff --check clean. Declared test functions moved 310 -> 328 (+18:
+  5 definition unit tests, 4 interruption, 3 probes, 2 k2, 2 k3, 1 identity
+  probe, 1 exports probe); no existing assertion was deleted, ignored, or
+  re-targeted, and the reviewed @-separator guard in k5_composition was kept
+  passing unchanged.
+Independent review: the repair has NOT been independently reviewed. Nothing
+  here is an APPROVE or a Closed verdict; implementer-green gates are not
+  review evidence.
+Remaining risks and non-goals: a v1 durable run has no migration path (a
+  documented refusal, per ADR 0008); RuntimeAssembly::shutdown(&mut self)
+  stays non-resumable by design, so cancellation safety covers the two
+  handle release paths; the fixture proves nameability, not semantic
+  correctness of the exported surface; cargo +1.85 clippy was not runnable
+  here (the clippy component is not installed for the 1.85 toolchain), only
+  +1.85 check and +1.85 test; no remote CI has observed this branch.
+```
+
+The reviewed lifecycle and identity statements in `R2-KERNEL-CONTRACT.md`,
+`COMPATIBILITY.md` §2/§7, and the K2/K3/K4 documents were reconciled to the
+new contract in the same branch, and `K6-supported-api-inventory.md` records
+the fourth closure wave with its exclusions and the reason import lists were
+replaced by the fixture as closure evidence.
+
 ## Stage 3 entry gate
 
 Stage 3 planning starts only after K6 closes Stage 2. Declarative meta-framework

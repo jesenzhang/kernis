@@ -1,8 +1,9 @@
 //! R2-03 regression: an interrupted composition cleanup loses neither the
 //! outstanding resources nor the facts already recorded.
 //!
-//! Every case cancels a release at a real `Pending` await — a started `dispose`
-//! hook or a started fiber disposal — and then re-enters:
+//! Every case cancels a release and then re-enters: by dropping the future
+//! before it is ever polled, or at a real `Pending` await — a started `dispose`
+//! hook or a started fiber disposal:
 //!
 //! * the not-yet-started modules are still cleaned;
 //! * a step whose future already started is resumed, never started again, so a
@@ -378,5 +379,70 @@ async fn an_interrupted_orderly_sweep_continues_best_effort_and_says_so() {
             .expect_err("a completed flow reports AlreadyReleased"),
         OwnerLossReleaseError::AlreadyReleased,
         "the resumed flow ended exactly once"
+    );
+}
+
+/// Dropping a release future before it is ever polled is the strictest form of
+/// "cancelled before the first await": nothing has started and nothing has been
+/// popped, so re-entry must still perform the whole cleanup and only a completed
+/// flow may end in `AlreadyReleased`.
+#[tokio::test(flavor = "current_thread")]
+async fn dropping_a_release_future_before_its_first_poll_starts_nothing() {
+    let recorder = Recorder::new();
+    let plan = CompositionBuilder::new()
+        .register(
+            ModuleRegistration::new(ModuleDefinition::new(id("audit")))
+                .on_activate(recorder.hook("activate:audit", None))
+                .on_dispose(recorder.hook("dispose:audit", None)),
+        )
+        .expect("the audit module registers")
+        .register(
+            ModuleRegistration::new(ModuleDefinition::new(id("ledger")).depends_on(id("audit")))
+                .on_activate(recorder.hook("activate:ledger", None))
+                .on_dispose(recorder.hook("dispose:ledger", None)),
+        )
+        .expect("the ledger module registers")
+        .build()
+        .expect("the composition validates");
+    let (_handle, mut composition) = owner_lost(plan, "r2-cancel-before-poll").await;
+
+    drop(Box::pin(composition.release_after_owner_loss()));
+    assert_eq!(
+        recorder.count("dispose:ledger"),
+        0,
+        "a release future that was never polled started no dispose hook"
+    );
+    assert_eq!(
+        recorder.count("dispose:audit"),
+        0,
+        "a release future that was never polled cleaned nothing"
+    );
+
+    let report = composition
+        .release_after_owner_loss()
+        .await
+        .expect("the release still runs after a pre-poll drop");
+    assert!(
+        report.is_success(),
+        "re-entry performs the whole cleanup, failures: {:?}",
+        report.failures
+    );
+    assert_eq!(
+        recorder.count("dispose:ledger"),
+        1,
+        "the module whose release was dropped first is still cleaned exactly once"
+    );
+    assert_eq!(
+        recorder.count("dispose:audit"),
+        1,
+        "the remaining module is cleaned exactly once"
+    );
+    assert_eq!(
+        composition
+            .release_after_owner_loss()
+            .await
+            .expect_err("a completed flow is terminal"),
+        OwnerLossReleaseError::AlreadyReleased,
+        "only a completed flow clears the ledger"
     );
 }
