@@ -278,13 +278,18 @@ fn canonical_identity_is_order_independent_and_excludes_display_labels() {
     );
     assert_eq!(
         first_identity.as_str(),
-        "kernis-run-definition-v2#capabilities[2]#capability@5:other@7:service@8:other-v1\
-         #requires[0]#end#capability@7:service@7:service@10:service-v1#requires[0]#end#end\
-         #tasks[3]#task@4:sink#depends[2]@8:source-a@8:source-b#end#requires[2]@5:other\
-         @8:other-v1@7:service@10:service-v1#end#effect#present@6:effect#idempotent\
-         #task@8:source-a#depends[0]#end#requires[0]#end#effect#absent#task@8:source-b\
+        "kernis-run-definition-v2#capabilities[2]#capability%5:other%7:service%8:other-v1\
+         #requires[0]#end#capability%7:service%7:service%10:service-v1#requires[0]#end#end\
+         #tasks[3]#task%4:sink#depends[2]%8:source-a%8:source-b#end#requires[2]%5:other\
+         %8:other-v1%7:service%10:service-v1#end#effect#present%6:effect#idempotent\
+         #task%8:source-a#depends[0]#end#requires[0]#end#effect#absent#task%8:source-b\
          #depends[0]#end#requires[0]#end#effect#absent#end",
         "golden canonical bytes pinned to the ADR 0008 grammar"
+    );
+    assert!(
+        !first_identity.as_str().contains('@'),
+        "`@` is the host-facing module-reference separator, so a durable definition \
+         identity must never contain it"
     );
 
     let mut topology_changed = first.clone();

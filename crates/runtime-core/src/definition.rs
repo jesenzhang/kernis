@@ -841,8 +841,10 @@ fn canonical_identity(
 }
 
 /// Appends one structural tag. Structural tokens always begin with `#` while
-/// data tokens always begin with `@`, so user data can never imitate structure
-/// or shift a field boundary.
+/// data tokens always begin with `%`, so user data can never imitate structure
+/// or shift a field boundary. `%` is used rather than `@` because `@` is the
+/// host-facing module-reference separator (`module@version`) and a durable
+/// identity must stay lexically distinct from loader reference syntax.
 fn push_tag(canonical: &mut String, tag: &str) {
     canonical.push('#');
     canonical.push_str(tag);
@@ -855,9 +857,9 @@ fn push_count(canonical: &mut String, count: usize) {
     canonical.push(']');
 }
 
-/// Appends one length-delimited data token: `@<byte length>:<bytes>`.
+/// Appends one length-delimited data token: `%<byte length>:<bytes>`.
 fn push_value(canonical: &mut String, value: &str) {
-    canonical.push('@');
+    canonical.push('%');
     canonical.push_str(&value.len().to_string());
     canonical.push(':');
     canonical.push_str(value);
@@ -1066,8 +1068,8 @@ mod tests {
             .with_task(TaskDefinition::new(id("load"), "display label"));
         assert_eq!(
             canonical_v2(&minimal),
-            "kernis-run-definition-v2#capabilities[1]#capability@5:store@7:service@2:v1\
-             #requires[0]#end#end#tasks[1]#task@4:load#depends[0]#end#requires[0]#end\
+            "kernis-run-definition-v2#capabilities[1]#capability%5:store%7:service%2:v1\
+             #requires[0]#end#end#tasks[1]#task%4:load#depends[0]#end#requires[0]#end\
              #effect#absent#end"
         );
 
@@ -1088,11 +1090,11 @@ mod tests {
             );
         assert_eq!(
             canonical_v2(&shaped),
-            "kernis-run-definition-v2#capabilities[2]#capability@5:clock@10:capability\
-             @8:clock-v1#requires[0]#end#capability@5:store@8:provider@8:store-v1\
-             #requires[1]@5:clock@8:clock-v1#end#end#tasks[2]#task@4:read#depends[0]#end\
-             #requires[0]#end#effect#absent#task@5:write#depends[1]@4:read#end#requires[1]\
-             @5:store@8:store-v1#end#effect#present@4:op-1#non_idempotent#end"
+            "kernis-run-definition-v2#capabilities[2]#capability%5:clock%10:capability\
+             %8:clock-v1#requires[0]#end#capability%5:store%8:provider%8:store-v1\
+             #requires[1]%5:clock%8:clock-v1#end#end#tasks[2]#task%4:read#depends[0]#end\
+             #requires[0]#end#effect#absent#task%5:write#depends[1]%4:read#end#requires[1]\
+             %5:store%8:store-v1#end#effect#present%4:op-1#non_idempotent#end"
         );
     }
 
@@ -1202,6 +1204,8 @@ mod tests {
             "0:1:2",
             "@0:",
             "@5:store",
+            "%0:",
+            "%5:store",
             "#end",
             "#requires[1]",
             "#capability",
@@ -1209,6 +1213,7 @@ mod tests {
             ":",
             "#",
             "@",
+            "%",
             "任务",
             "🔐",
             "0",

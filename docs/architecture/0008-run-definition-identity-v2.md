@@ -72,16 +72,22 @@ effect       := "#effect#absent"
               / "#effect#present" VALUE semantics
 semantics    := "#idempotent" / "#non_idempotent"
 
-VALUE        := "@" <decimal byte length> ":" <that many UTF-8 bytes>
+VALUE        := "%" <decimal byte length> ":" <that many UTF-8 bytes>
 COUNT        := <decimal number>                  (terminated by "]")
 ```
 
 Properties, each of which is a test obligation rather than an aspiration:
 
 - **Tags and data are disjoint.** Every structural token begins with `#`; every data token
-  begins with `@` and is length-delimited, so no identifier (`tasks`, `capabilities`,
-  `dependencies`, `effect`, `present`, `absent`, `#end`, `@3:x`, `12:capabilities`, digits,
-  `:`, `#`, or non-ASCII text) can imitate structure or shift a field boundary.
+  begins with `%` and is length-delimited, so no identifier (`tasks`, `capabilities`,
+  `dependencies`, `effect`, `present`, `absent`, `#end`, `%3:x`, `12:capabilities`, digits,
+  `:`, `#`, `@`, or non-ASCII text) can imitate structure or shift a field boundary.
+- **The data marker is not `@`.** `@` is the host-facing module-reference separator
+  (`module@version`, K5), and a durable K2 identity must stay lexically distinguishable
+  from loader reference syntax; the reviewed loader regression
+  (`scenario_o_cold_reconstruction_works_through_the_loader`) asserts that no `@` appears
+  in a composition-derived definition identity, and `%` keeps that guard meaningful
+  instead of forcing it to be relaxed.
 - **Collections carry an element count and an explicit end tag**, so an empty list and a
   missing field are distinct, and a list of the wrong arity cannot re-read as its neighbour.
 - **Every field is tagged**, so reordering canonicalizer fields cannot silently redefine what
