@@ -26,13 +26,13 @@ use workflow_graph::{
 };
 use workflow_recovery::{
     AttemptAdmission, CommitRequest, DurableJournal, DurableMutation, DurableStore, EffectIntent,
-    IdempotencyKey, InMemoryDurableStore, StoreRevision, classify_recovery,
+    IdempotencyKey, InMemoryDurableStore, classify_recovery,
 };
 
 pub use async_driver::{
-    DriveResult, DriverError, DriverExit, DriverFuture, DriverOwnerState, EffectDispatchError,
-    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, RuntimeDriver, RuntimeHandle,
-    ShutdownStatus,
+    DriveResult, DriverError, DriverExit, DriverFuture, DriverOwner, DriverOwnerState,
+    EffectDispatchError, EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher,
+    RuntimeDriver, RuntimeHandle, ShutdownStatus,
 };
 pub use definition::{
     CapabilityDeclaration, CapabilityRequirement, DefinitionError, DefinitionIdentity,
@@ -50,7 +50,7 @@ pub use workflow_recovery::{
     AttemptId, CapabilityReplayIdentity, CompletionRecord, DispatchRecord, DurableRunState,
     EffectSemantics, JournalError, KnownEffectOutcome, OperationId, OutcomeRecord,
     RecoveredEffectState, RecoveryAction, RecoveryDecision, RecoveryReason, RunId, StoreError,
-    StoreErrorKind, StoreInvariant, WorkflowReplayIdentity,
+    StoreErrorKind, StoreInvariant, StoreRevision, WorkflowReplayIdentity,
 };
 
 /// A capability handle pinned for the complete lifetime of one task attempt.

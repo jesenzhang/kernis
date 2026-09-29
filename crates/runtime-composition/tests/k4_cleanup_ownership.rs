@@ -395,7 +395,11 @@ async fn no_composition_release_is_possible_while_the_driver_owns_the_runtime() 
         "the waiting composition could not have unregistered anything"
     );
 
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert!(outcome.rollback.is_success());
     assert!(
         !outcome
@@ -565,7 +569,11 @@ async fn orderly_shutdown_is_not_owner_loss_for_the_bound_handle() {
     assert_eq!(recorder.count("dispose:f"), 0);
     assert_eq!(event_count(&events, "fiber-effect"), 0);
 
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert!(outcome.rollback.is_success());
     assert!(
         !outcome
@@ -747,7 +755,11 @@ async fn another_drivers_owner_loss_cannot_release_this_composition() {
         runtime_composition::ShutdownStatus::Clean
     );
     let exit_a = join_a.await.expect("driver a joins");
-    let outcome_a = composition_a.dispose_after_driver(exit_a).await;
+    let outcome_a = composition_a
+        .dispose_after_driver(exit_a)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert!(outcome_a.rollback.is_success());
     assert_eq!(recorder.count("dispose:a"), 1);
     assert_eq!(

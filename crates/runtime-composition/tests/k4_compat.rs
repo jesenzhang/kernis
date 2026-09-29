@@ -139,7 +139,7 @@ async fn scenario_i_driver_drive_dispatch_shutdown_keeps_the_k3_contract() {
         .expect("composition activates");
 
     let dispatcher = SuccessDispatcher::new();
-    let (driver, handle, composition) = assembly.into_driver(dispatcher.clone());
+    let (driver, handle, mut composition) = assembly.into_driver(dispatcher.clone());
     let join = tokio::spawn(driver.run());
     assert!(matches!(
         handle.drive().await.expect("driver dispatch succeeds"),
@@ -174,7 +174,11 @@ async fn scenario_i_driver_drive_dispatch_shutdown_keeps_the_k3_contract() {
          cleanup is only available through the driver exit"
     );
 
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert_eq!(
         outcome.shutdown_status,
         runtime_composition::ShutdownStatus::Clean,

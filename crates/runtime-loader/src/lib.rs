@@ -77,27 +77,31 @@ pub use resolve::{ResolvedModules, RuntimeLoader};
 
 // Upstream types the host passes through or receives from the loader and
 // composition boundaries, re-exported so a host can declare, resolve,
-// compose, and activate depending on this crate alone.
-pub use kernis_core::Id;
+// compose, and activate depending on this crate alone. `InvalidId` is included
+// because `Id::new` is the host's entry point for every identifier and its
+// failure must be nameable without reaching for `kernis-core`.
+pub use kernis_core::{Id, InvalidId};
 pub use runtime_composition::{
-    ActivationStage, CapabilityContribution, CapabilityFactoryFn, CapabilityOwnership,
-    CapabilitySlot, CleanupResource, CompositionBuilder, CompositionDriverShutdown,
-    CompositionError, CompositionHandle, CompositionPlan, CompositionShutdownFailure,
+    ActivationStage, CapabilityConflictReason, CapabilityContribution, CapabilityFactoryFn,
+    CapabilityOwnership, CapabilitySlot, CleanupResource, CompositionBuilder,
+    CompositionDriverShutdown, CompositionError, CompositionHandle, CompositionPlan,
+    CompositionReleaseOutcome, CompositionReleaseRejection, CompositionShutdownFailure,
     ConfigRequirement, ConstructionStage, FactoryConflictReason, HookFuture, HostConfig,
     LifecycleHook, ModuleDefinition, ModuleRegistration, OwnerLossReleaseError,
     PluginConflictReason, ReactiveCapabilityDeclaration, RollbackFailure, RollbackReport,
-    StartupFailure, lifecycle_hook,
+    RuntimeAssembly, StartupFailure, lifecycle_hook,
 };
 pub use runtime_composition::{
     AttemptId, Cancellation, CapabilityDeclaration, CapabilityHandle, CapabilityPin,
     CapabilityReplayIdentity, CapabilityRequirement, CompletionRecord, DefinitionError,
     DefinitionIdentity, DispatchRecord, DriveResult, DriverError, DriverExit, DriverFuture,
-    DriverOwnerState, DurableRunState, EffectDispatchError, EffectDispatchFuture,
-    EffectDispatchRequest, EffectDispatcher, FactoryResolutionError, JournalError, KeyedStreamItem,
-    LegacyMutationOperation, OutcomeRecord, ReconstructionError, RecoveredEffectState,
-    RecoveryAction, RecoveryDecision, RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError,
+    DriverOwner, DriverOwnerState, DurableRunState, EffectDispatchError, EffectDispatchFuture,
+    EffectDispatchRequest, EffectDispatcher, FactoryRegistry, FactoryResolutionError, JournalError,
+    KeyedStreamItem, LEGACY_RUN_DEFINITION_FORMAT_V1, LegacyMutationOperation, OutcomeRecord,
+    RUN_DEFINITION_FORMAT, ReconstructionError, RecoveredEffectState, RecoveryAction,
+    RecoveryDecision, RecoveryReason, RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError,
     RuntimeEvent, RuntimeHandle, ScopeError, SequenceError, ShutdownStatus, StepResult, StoreError,
-    StoreErrorKind, StreamItem, TaskAttempt, TaskDefinition, WorkflowGraphError,
+    StoreErrorKind, StoreInvariant, StreamItem, TaskAttempt, TaskDefinition, WorkflowGraphError,
     WorkflowReplayIdentity,
 };
 pub use runtime_composition::{
@@ -107,5 +111,5 @@ pub use runtime_composition::{
 };
 pub use runtime_composition::{
     DurableStore, EffectSemantics, FileDurableStore, InMemoryDurableStore, KnownEffectOutcome,
-    OperationId,
+    OperationId, StoreRevision,
 };

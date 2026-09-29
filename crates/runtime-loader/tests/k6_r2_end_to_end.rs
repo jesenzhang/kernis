@@ -237,11 +237,15 @@ async fn orderly_finish(
     session: Session,
     expect_status: ShutdownStatus,
 ) -> CompositionDriverShutdown<FileDurableStore> {
-    let (handle, join, composition, _calls) = session;
+    let (handle, join, mut composition, _calls) = session;
     let status = handle.shutdown().await.expect("orderly shutdown");
     assert_eq!(status, expect_status);
     let exit = join.await.expect("the driver task joins");
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert_eq!(outcome.shutdown_status, expect_status);
     assert!(
         outcome.rollback.failures.is_empty(),
@@ -282,7 +286,7 @@ async fn child_phase(mode: &str, path: &Path) {
         }
         "complete" => {
             let store = FileDurableStore::open(path).expect("the child opens the store");
-            let (handle, join, composition, calls) =
+            let (handle, join, mut composition, calls) =
                 start_session(store, EffectSemantics::Idempotent).await;
             let prepared = handle.drive().await.expect("driving succeeds");
             assert!(matches!(&prepared,
@@ -298,7 +302,11 @@ async fn child_phase(mode: &str, path: &Path) {
             let status = handle.shutdown().await.expect("orderly shutdown");
             assert_eq!(status, ShutdownStatus::Clean);
             let exit = join.await.expect("the driver task joins");
-            let outcome = composition.dispose_after_driver(exit).await;
+            let outcome = composition
+                .dispose_after_driver(exit)
+                .await
+                .into_released()
+                .expect("the exit from the composition's own driver releases it");
             assert!(outcome.rollback.failures.is_empty());
             let state = outcome
                 .runtime
@@ -323,7 +331,7 @@ async fn child_phase(mode: &str, path: &Path) {
                 .start_with_store(run_id(), &HostConfig::new(), store)
                 .await
                 .expect("the composition activates");
-            let (driver, handle, composition) = assembly.into_driver(dispatcher);
+            let (driver, handle, mut composition) = assembly.into_driver(dispatcher);
             let join = tokio::spawn(driver.run());
             let prepared = handle.drive().await.expect("driving succeeds");
             assert!(matches!(&prepared,
@@ -341,7 +349,11 @@ async fn child_phase(mode: &str, path: &Path) {
                 }
             );
             let exit = join.await.expect("the driver task joins");
-            let outcome = composition.dispose_after_driver(exit).await;
+            let outcome = composition
+                .dispose_after_driver(exit)
+                .await
+                .into_released()
+                .expect("the exit from the composition's own driver releases it");
             assert!(outcome.rollback.failures.is_empty());
             let state = outcome
                 .runtime

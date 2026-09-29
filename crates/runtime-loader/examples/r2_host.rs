@@ -123,7 +123,7 @@ async fn main() {
         )
         .await
         .expect("the composition activates");
-    let (driver, handle, composition) = assembly.into_driver(ExampleDispatcher);
+    let (driver, handle, mut composition) = assembly.into_driver(ExampleDispatcher);
     let join = tokio::spawn(driver.run());
     let prepared = handle.drive().await.expect("driving succeeds");
     println!("  drive -> {prepared:?}");
@@ -132,7 +132,11 @@ async fn main() {
     let status = handle.shutdown().await.expect("orderly shutdown");
     assert_eq!(status, ShutdownStatus::Clean);
     let exit = join.await.expect("the driver task joins");
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert_eq!(outcome.shutdown_status, ShutdownStatus::Clean);
     println!(
         "  dispose cleaned: {}",
@@ -166,7 +170,7 @@ async fn main() {
         )
         .await
         .expect("the cold restore reconstructs the runtime");
-    let (driver, handle, composition) = assembly.into_driver(ExampleDispatcher);
+    let (driver, handle, mut composition) = assembly.into_driver(ExampleDispatcher);
     let join = tokio::spawn(driver.run());
     let dispatched = handle.drive().await.expect("driving succeeds");
     println!("  drive -> {dispatched:?}");
@@ -187,7 +191,11 @@ async fn main() {
     let status = handle.shutdown().await.expect("orderly shutdown");
     assert_eq!(status, ShutdownStatus::Clean);
     let exit = join.await.expect("the driver task joins");
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
 
     // Verify the durable facts exactly once, after the whole lifecycle.
     let state = outcome
