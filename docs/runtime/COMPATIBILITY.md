@@ -37,14 +37,32 @@ umbrella and its mirrored `runtime-composition` vocabulary):
 
 ## 2. RunDefinition identity compatibility
 
-- `RUN_DEFINITION_FORMAT = "kernis-run-definition-v1"` is a **versioned
-  format** promise: the canonicalization behind
-  `RunDefinition::canonical_identity` is frozen for v1. R2 stores and
-  compares these identities; a v1 durable identity must keep validating
-  under the same definition bytes.
-- Classification: **stable within v1**; semantic change ⇒ new format tag
-  (v2) plus an explicit migration decision. K6 explicitly created no
-  v2.
+- `RUN_DEFINITION_FORMAT = "kernis-run-definition-v2"` is the **current
+  versioned format**: the canonicalization behind
+  `RunDefinition::identity` is tagged, counted, and length-delimited
+  (ADR 0008). The R2 review proved the reviewed v1 canonicalization was
+  structurally ambiguous — a task prerequisite list and a capability
+  requirement list could produce identical bytes — so v2 replaces it.
+  This is a **format change**, not a compatibility extension: an identity
+  computed by v1 and an identity computed by v2 for the same definition
+  are different strings by design.
+- Classification: **stable within v2**; semantic change ⇒ new format tag
+  (v3) plus an explicit migration decision. K6 explicitly created no v2;
+  the R2 repair introduced it under ADR 0008, which supersedes that
+  sentence.
+- **v1 is frozen as a historical interpretation, never as a write
+  format.** `LEGACY_RUN_DEFINITION_FORMAT_V1` is exported for
+  diagnostics, and the v1 canonicalizer stays in the crate under
+  `#[cfg(test)]` golden pinning so its historical bytes cannot be
+  redefined. The kernel never writes a v1 identity. A durable run whose
+  recorded definition identity carries the v1 tag is refused fail-closed
+  on restore with `RuntimeError::LegacyDefinitionIdentityUnsupported`
+  (naming the durable identity and the only supported format); no silent
+  re-canonicalization, no automatic re-adoption, and no migration tool is
+  provided or promised.
+- Data tokens in the canonical string begin with `%`, not `@`: `@` is the
+  host-facing `ModuleReference` separator (§4), and a durable definition
+  identity must stay lexically distinct from loader reference syntax.
 - Presentation-only fields (task display labels) remain excluded from
   the identity, as documented by K2.
 - The typed constructors (`DefinitionIdentity::new`,
@@ -126,7 +144,11 @@ umbrella and its mirrored `runtime-composition` vocabulary):
   legacy provenance: no automatic fallback and no durable identity
   migration is provided or promised. A declarative runtime rejects
   `configure_task`/`apply_workflow_mutation` fail-closed before any
-  legacy identity write.
+  legacy identity write. Since the R2 repair, a declarative restore whose
+  durable definition identity carries the v1 tag is refused with
+  `RuntimeError::LegacyDefinitionIdentityUnsupported` rather than being
+  compared as if it were current-format bytes (ADR 0008); the
+  `kernis-workflow-replay-v1` algorithm itself is untouched.
 - K6 verified with pinned regression tests that a known-valid legacy
   identity still restores, mismatches still fail closed
   (`RuntimeError::WorkflowReplayIdentityMismatch` /

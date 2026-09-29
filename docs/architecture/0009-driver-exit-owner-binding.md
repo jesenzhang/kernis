@@ -1,9 +1,10 @@
 # ADR 0009: Driver-exit owner binding and cancellation-safe composition cleanup
 
-Status: proposed for the K6/R2 repair (Stage 2 / R2 closeout); it tightens the K4 lifecycle
-contract in `docs/runtime/R2-KERNEL-CONTRACT.md` "Shutdown (the supported lifecycle)" and
-`docs/architecture/0005-k4-runtime-composition.md`, and records a pre-1.0 breaking signature
-change per `COMPATIBILITY.md` §1.
+Status: accepted and implemented in the K6/R2 repair (Stage 2 / R2 closeout); it tightens the
+K4 lifecycle contract in `docs/runtime/R2-KERNEL-CONTRACT.md` "Shutdown (the supported
+lifecycle)" and `docs/architecture/0005-k4-runtime-composition.md`, and records a pre-1.0
+breaking signature change per `COMPATIBILITY.md` §1. Section 5 records where the
+implementation differs from the sketch above, as it now stands in the tree.
 
 ## Context
 
@@ -69,23 +70,29 @@ pub async fn dispose_after_driver<S>(
 where S: DurableStore + Send
 
 pub enum CompositionReleaseOutcome<S = InMemoryDurableStore> {
-    Released(CompositionDriverShutdown<S>),
-    Rejected(DriverExitRejection<S>),
+    Released(Box<CompositionDriverShutdown<S>>),
+    Rejected(CompositionReleaseRejection<S>),
 }
 
-pub enum DriverExitRejection<S = InMemoryDurableStore> {
+pub enum CompositionReleaseRejection<S = InMemoryDurableStore> {
     /// The exit belongs to a different driver owner. Nothing was disposed,
     /// this handle's ledger is untouched, and the exit is returned intact.
-    ForeignDriverExit { exit: DriverExit<S> },
+    ForeignDriverExit { exit: Box<DriverExit<S>> },
     /// This handle's resources were already released exactly once. The exit
     /// is returned intact so the caller still holds its own shutdown fact.
-    AlreadyReleased { exit: DriverExit<S> },
+    AlreadyReleased { exit: Box<DriverExit<S>> },
+    /// An earlier orderly sweep for this handle was cancelled and its
+    /// registry authority died with that future, so no sweep with full
+    /// authority can run here again; the remaining best-effort cleanup
+    /// continues through `release_after_owner_loss`. No exit is carried: the
+    /// interrupted sweep already consumed the one it was given.
+    OrderlySweepInterrupted,
 }
 ```
 
 - The same-owner check happens before any hook, fiber disposal, or registry operation.
 - A rejection consumes nothing: no hook runs, no fiber is disposed, no registration is
-  unregistered, and `DriverExitRejection` hands the `DriverExit` back by value so the
+  unregistered, and `CompositionReleaseRejection` hands the `DriverExit` back by value so the
   composition that actually owns it can still release through its own orderly path. That is
   why the outcome carries the exit instead of returning a plain error.
 - Two already-`Shutdown` instances of the same store type with the same configuration and the
@@ -100,11 +107,16 @@ pub enum DriverExitRejection<S = InMemoryDurableStore> {
   (`Pin<Box<dyn Future ... + Send>>`) for the two awaits that can block indefinitely - the
   armed `dispose` hook and fiber disposal. Both step futures own their subject, so they stay
   `'static` and survive the cancellation of the caller's future.
-- The sweep is a hand-written resumable future that borrows the ledger and the authority and
-  polls the parked in-flight future **in place**. Consequently: a module is removed from the
-  ledger only after all of its owned steps completed; failures are recorded as they happen;
-  and dropping the caller's future loses neither the remaining resources nor the facts already
-  collected.
+- The sweep runs off the ledger, borrowing it and the authority, and awaits the
+  parked in-flight future **in place** (`await_parked`) instead of building a
+  fresh one; a `SweepGuard` marks the ledger orderly-interrupted if the caller's
+  future is dropped before the sweep reports completion. Consequently: a module
+  is removed from the ledger only after all of its owned steps completed;
+  failures are recorded as they happen; and dropping the caller's future loses
+  neither the remaining resources nor the facts already collected. The ledger
+  and the parked futures live on the handle, which is what survives the
+  cancellation of the caller's future; `unsafe` code is forbidden in this
+  workspace, so no self-referential resumable future is constructed.
 - `release_after_owner_loss` therefore never answers `AlreadyReleased` for work that is
   outstanding. `AlreadyReleased` now means exactly one thing: the entire cleanup flow for this
   handle completed once. A re-entry resumes the parked step instead of re-calling a started
@@ -139,10 +151,19 @@ repository-wide search proving no supported path keeps needing the old form:
   `crates/runtime-composition/tests/k4_cleanup_ownership.rs` (3).
 - Migration for a host: match the outcome. `Released(shutdown)` is the previous behavior
   unchanged; `Rejected(rejection)` means nothing was disposed and `rejection.into_exit()`
-  returns the exit for its owning composition.
+  returns the exit for its owning composition. `into_exit()` returns `Option<DriverExit<S>>`:
+  `Some` for the two exit-carrying variants, `None` for `OrderlySweepInterrupted`.
 - Additive surface: `DriverOwner`, `RuntimeHandle::owner`, `DriverExit::owner`,
-  `CompositionReleaseOutcome`, `DriverExitRejection`. Per ADR 0007 §2 all of them are threaded
-  `runtime-core` -> `runtime-composition` -> `runtime-loader`.
+  `CompositionReleaseOutcome`, `CompositionReleaseRejection`. Per ADR 0007 §2 all of them are
+  threaded `runtime-core` -> `runtime-composition` -> `runtime-loader`.
+- Payload sizing: `CompositionReleaseOutcome` boxes the shutdown and
+  `CompositionReleaseRejection` boxes each carried exit, following the existing
+  `StartupFailure::cause` convention, so the host-facing enum stays pointer-sized per variant
+  instead of moving a whole runtime (985 bytes at the time of writing) through every
+  rejection; `into_released()`/`into_exit()` unbox at the boundary the host sees.
+- Precedence inside `release_after_owner_loss`: the completed-ledger check runs **first**, so a
+  handle that already finished its flow answers `AlreadyReleased` before the driver-state
+  observation is consulted, and only afterwards does the interrupted-sweep precondition apply.
 - `OwnerLossReleaseError` keeps its variants; `AlreadyReleased` is re-documented to the
   completion-only meaning above, and `OrderlyShutdownCompleted` keeps its guidance except for
   the one new precondition recorded in the ledger.
@@ -187,3 +208,32 @@ repository-wide search proving no supported path keeps needing the old form:
 - **Making `RuntimeAssembly::shutdown(&mut self)` resumable.** `RuntimeAssembly`'s host-facing
   `runtime()`/`runtime_mut()` accessors promise a live runtime, so holding it in an `Option`
   to survive cancellation would weaken an inventory promise. Documented limitation instead.
+
+## Evidence
+
+Owner binding, in `crates/runtime-composition/tests/review_r2_probes.rs`:
+
+- a foreign exit while the bound driver is `Running` is refused before anything moves, and
+  the composition's own driver still releases it afterwards;
+- a foreign exit from a twin instance of the *same* composition, host configuration and
+  `RunId`, whose driver reached `Shutdown`, is refused, with the refused exit still releasing
+  cleanly through its own composition;
+- a lost owner plus another driver's exit is refused;
+- every refusal asserts zero dispose-hook starts, zero fiber disposals and zero registry
+  removals, and that the refused exit still sees its own plugin registration intact.
+
+Owner-token semantics, in `crates/runtime-core/tests/k3_async.rs`
+(`driver_owner_token_recognizes_only_its_own_drivers_exit`,
+`driver_owner_token_is_opaque_and_send_sync`): two drivers over the same run shape are
+distinct owners, an exit recognizes only its own driver's token, and the token is `Send +
+Sync`, cloneable, and opaque in `Debug`.
+
+Cleanup interruption, in `crates/runtime-composition/tests/k6_r2_cleanup_interruption.rs`:
+cancellation before the first await (including the module that is already current),
+cancellation while a dispose hook is pending, and cancellation while fiber disposal is
+pending; each re-entry continues the untouched modules, never starts a second hook run,
+keeps earlier failures in the final `RollbackReport`, and only after real completion does a
+further call resolve `AlreadyReleased`.
+
+End-to-end lifecycle through the loader: `crates/runtime-loader/tests/k6_r2_end_to_end.rs`
+and `crates/runtime-loader/examples/r2_host.rs`.

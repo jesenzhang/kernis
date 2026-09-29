@@ -57,6 +57,24 @@ this at base `3ee011b` (e.g. `RuntimeEvent`, `StreamItem`,
 `AttemptId`); K6 closes the gaps with additive `pub use` only — nothing
 was hidden or removed at this stage.
 
+The rule is about *naming*, so the proof has to name things. The 2026-09-28
+R2 review found five more violations of this rule that every existing
+consumer had missed, precisely because examples and test import lists let
+type inference do the naming (`FactoryRegistry`, `RUN_DEFINITION_FORMAT`,
+`RuntimeAssembly`, `RecoveryReason`, `StoreInvariant`). Closure is therefore
+checked structurally, not by import lists: `fixtures/r2-host-fixture` is a
+compile-only crate whose only dependency is `runtime-loader`, which is not a
+workspace member (so no subsystem crate is reachable through workspace
+unification), and which annotates every supported-path value with an
+explicit type. It is compiled on stable and on the MSRV as part of the
+closeout gate, and `crates/runtime-loader/tests/review_r2_exports.rs` keeps
+the same vocabulary as an in-workspace regression. The repair's own audit
+found three further gaps of the same kind, closed additively as well
+(`StoreRevision`, `CapabilityConflictReason`, `InvalidId`; plus
+`LEGACY_RUN_DEFINITION_FORMAT_V1` once ADR 0008 made the refused legacy tag
+a fact a host must recognize). Inventory waves are listed in
+`docs/runtime/K6-supported-api-inventory.md`.
+
 ### 3. Four public API tiers
 
 Host-facing supported / subsystem supported / experimental-compatibility

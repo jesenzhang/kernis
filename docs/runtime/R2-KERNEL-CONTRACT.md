@@ -109,9 +109,13 @@ experimental-compat / internal) are recorded in
 Stable, serializable `ModuleDefinition`s declare tasks
 (`TaskDefinition`), capability contributions, and effects.
 `RunDefinition` is the merged declarative definition of the whole run; its
-identity is `kernis-run-definition-v1` and must match a durable run's
-recorded identity on restore. See [`COMPATIBILITY.md`](COMPATIBILITY.md) §2
-and `docs/runtime/K2-declarative-cold-reconstruction.md`.
+identity is `kernis-run-definition-v2` (ADR 0008) and must match a durable
+run's recorded identity on restore. A durable identity recorded in the
+frozen legacy format is refused fail-closed with
+`RuntimeError::LegacyDefinitionIdentityUnsupported` instead of being
+compared as current-format bytes. See
+[`COMPATIBILITY.md`](COMPATIBILITY.md) §2 and
+`docs/runtime/K2-declarative-cold-reconstruction.md`.
 
 ### Loading
 
@@ -141,7 +145,16 @@ a `RuntimeAssembly`; `into_driver(dispatcher)` yields the supported triple
 `RuntimeHandle::owner_state` is additionally a synchronous, read-only
 observation of the driver's owner lifecycle (`DriverOwnerState::Running` /
 `Shutdown` / `OwnerDropped`): it submits no command, closes nothing, and
-acquires no Runtime authority. Effects carry `EffectSemantics`
+acquires no Runtime authority. `RuntimeHandle::owner()` yields a
+`DriverOwner` — an opaque, cloneable, `Send + Sync` token naming exactly
+the driver this handle commands, carrying no command, inspection, or
+control capability, and deliberately not structurally inspectable (its
+`Debug` output exposes no mailbox detail). `DriverExit::owner()` reports
+the token of the driver that produced the exit, and
+`DriverOwner::same_driver_as` is the only way to compare them: it is
+identity, not equality, and it holds across a handle clone, across
+shutdown, and across the exit itself. Two drivers over the same run are
+distinct owners (ADR 0009). Effects carry `EffectSemantics`
 (`Idempotent` / `NonIdempotent`); dispatch outcomes are `Succeeded` /
 `Failed` / unknown, and unknown outcomes restore to recovery
 classification, never silent re-execution.
@@ -167,27 +180,60 @@ The single normal lifecycle (§22 of the K6 contract):
 RuntimeAssembly::into_driver
 → RuntimeDriver::run            (spawned by the host)
 → RuntimeHandle::shutdown       → ShutdownStatus
-→ DriverExit
+→ DriverExit                    (carries the producing driver's DriverOwner)
 → CompositionHandle::dispose_after_driver
+→ CompositionReleaseOutcome     (Released / Rejected)
 → final Runtime release         (drop of the returned shutdown outcome)
 ```
+
+The release is **owner-bound**, not merely ordered. `CompositionHandle` is
+bound at `into_driver` to the `DriverOwner` of the driver it was separated
+with, and `dispose_after_driver` runs no dispose hook, disposes no fiber,
+and unregisters nothing until the exit it is handed reports that same
+owner (`CompositionReleaseRejection::ForeignDriverExit`, with the exit
+returned untouched so the composition it does belong to can still use it).
+Run id and definition identity are not identity here: two instances of the
+same composition for the same run id, with the same host configuration,
+still refuse each other's exits, and both stay fully usable afterwards.
+`CompositionReleaseRejection::AlreadyReleased` means this handle already
+completed its cleanup exactly once; the exit comes back untouched.
+
+**Cancellation is safe and resumable.** Cleanup is a ledger, not a
+best-effort loop inside one future: the remaining module queue, the current
+module, the in-flight dispose hook or fiber disposer, and the report built
+so far all live on the `CompositionHandle`, so dropping
+`dispose_after_driver` (or `release_after_owner_loss`) mid-await — the
+ordinary outcome when a host's shutdown timeout fires, or the task is
+aborted — loses nothing. Re-entering continues where the cancellation
+happened: the started step is polled again rather than restarted, so a
+non-idempotent dispose hook never runs twice; failures already collected
+stay in the final `RollbackReport`; and no cancellation is ever reported as
+a completion. One consequence is unavoidable and stated rather than hidden:
+an orderly sweep cancelled after its registry authority was released with
+the future can no longer run with that authority, so a later
+`dispose_after_driver` on the same handle is refused with
+`CompositionReleaseRejection::OrderlySweepInterrupted` and the remaining
+cleanup continues through `release_after_owner_loss`. A completed flow is
+terminal: whatever the driver reports afterwards, a third release attempt
+resolves `AlreadyReleased` rather than inventing a second completion.
 
 Abnormal owner loss: when the driver future is dropped, aborted, or
 unwound by a panic, **no `DriverExit` exists**. The K3 driver-owner guard
 marks the command mailbox owner-dropped — the single driver-owner truth
 — after which `RuntimeHandle` commands resolve `DriverError::OwnerDropped`
 and `RuntimeHandle::owner_state` reports `DriverOwnerState::OwnerDropped`.
-`CompositionHandle` is bound to the exact driver separated by the same
-`into_driver` call, and `CompositionHandle::release_after_owner_loss`
-performs its best-effort cleanup only after observing `OwnerDropped`
-through that bound observation; it returns a structured report of any
-incomplete registration cleanup. While the driver is still `Running` — or
-completed an orderly `Shutdown` — the release is rejected with a typed
-`OwnerLossReleaseError`, disposes nothing, and leaves the handle usable.
-An orderly shutdown is therefore never downgradeable to owner loss: it
-produces a `DriverExit` and must release through
-`CompositionHandle::dispose_after_driver`. Examples and docs must not use
-the pre-K4 incomplete shutdown order.
+`CompositionHandle::release_after_owner_loss` performs its best-effort
+cleanup only after observing `OwnerDropped` through that bound observation;
+it returns a structured report of any incomplete registration cleanup.
+While the driver is still `Running` — or completed an orderly `Shutdown` —
+the release is rejected with a typed `OwnerLossReleaseError`, disposes
+nothing, and leaves the handle usable. An orderly shutdown is therefore
+never downgradeable to owner loss: it produces a `DriverExit` and must
+release through `CompositionHandle::dispose_after_driver`. A handle whose
+orderly sweep was interrupted is the one documented exception: the
+`Running`/`Shutdown` rejection is lifted for it, because its remaining
+cleanup can only run best-effort. Examples and docs must not use the pre-K4
+incomplete shutdown order.
 
 ## Public error domains
 
@@ -198,8 +244,18 @@ each `std::error::Error` with `source()` chains where a cause exists:
 - `CompositionError` / `StartupFailure` — plan validation and activation,
   with the rollback report (K4).
 - `RuntimeError` / `DriverError` — coordination and async ownership (K2/K3).
+  `RuntimeError::LegacyDefinitionIdentityUnsupported` is the typed refusal
+  of a durable definition identity recorded in the frozen legacy format
+  (ADR 0008); `DriverError::OwnerDropped` is the typed consequence of a
+  lost driver owner (K3).
 - `StoreError` (+ `StoreErrorKind`) — durable backend facts and corruption
   fail-closed (K1/M2-B).
+
+Release refusals are a separate, inert outcome rather than an error domain:
+`CompositionReleaseRejection` (`ForeignDriverExit` / `AlreadyReleased` /
+`OrderlySweepInterrupted`) and `OwnerLossReleaseError`
+(`OwnerStillRunning` / `OrderlyShutdownCompleted` / `AlreadyReleased`)
+report why cleanup did not run and preserve the resources and the exit.
 
 Audit details and the documented `String`-payload limitations:
 [`K6-supported-api-inventory.md`](K6-supported-api-inventory.md).
@@ -207,7 +263,9 @@ Audit details and the documented `String`-payload limitations:
 ## Compatibility guarantees
 
 Recorded in [`COMPATIBILITY.md`](COMPATIBILITY.md): Rust API surface rules,
-`RunDefinition` identity (v1, no v2 created), physical schema
+`RunDefinition` identity (`kernis-run-definition-v2`, with
+`kernis-run-definition-v1` frozen as a historical interpretation the kernel
+never writes), physical schema
 `KERNIS-DURABLE-STATE` version 5, `ModuleReference` textual grammar
 bijectivity (K5 repair `a4bc425`), exact-version semantics, K4
 `ModuleDefinition` frozen contribution semantics, and the preserved legacy

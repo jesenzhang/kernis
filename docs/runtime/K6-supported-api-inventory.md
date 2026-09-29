@@ -70,6 +70,47 @@ removals, no renames):
   as additive re-exports along the same chain (core → composition →
   loader). Scenario N of `k6_r2_end_to_end.rs` keeps the standing import
   block covering them.
+- The R2 repair review is the fourth wave, and it changed how closure is
+  *proved*. Importing a name list in a test is weak evidence: examples and
+  tests compile partly through type inference, so a name a host cannot
+  spell can still go unnoticed. Closure is now proved structurally by a
+  separate compile-only crate, `fixtures/r2-host-fixture`, which declares
+  `runtime-loader` as its only dependency, is not a workspace member (so
+  nothing can reach a subsystem crate through workspace unification), and
+  annotates every intermediate value with an explicit type. It is checked
+  with `cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml
+  --all-targets` on stable and on the MSRV, plus clippy `-D warnings` on
+  the same manifest. `crates/runtime-loader/tests/review_r2_exports.rs`
+  stays as the in-workspace vocabulary regression.
+- This wave adds, additively along the same chain: `DriverOwner`,
+  `CompositionReleaseOutcome`, `CompositionReleaseRejection` (the
+  owner-bound release of ADR 0009), `FactoryRegistry`,
+  `RUN_DEFINITION_FORMAT`, `LEGACY_RUN_DEFINITION_FORMAT_V1` (ADR 0008
+  makes the legacy tag a host-visible fact, because a durable identity
+  carrying it is refused), `RecoveryReason`, `StoreInvariant`,
+  `StoreRevision` (bound from `DurableRunState::revision`),
+  `CapabilityConflictReason` (the payload a host matches in
+  `CompositionError::CapabilityDefinitionConflict`), and `InvalidId`
+  (returned by `Id::new`, the host's entry point for every identifier).
+  `RuntimeAssembly` was already re-exported by `runtime-composition`; the
+  review proved the loader mirror omitted it, and it is now present.
+- Deliberate exclusions, restated with the evidence that produced them. The
+  store seam is exercised in the fixture through a generic
+  `S: DurableStore` parameter, and the pass-through vocabulary is bound by
+  name only — that is the boundary. Types reachable only by method-call
+  inference from an inspection accessor (`Scope`, `CapabilityRegistry`,
+  `CapabilityContext`, and the deep-API types behind them: `RegistryError`,
+  `FiberError`, `EffectError`, `DependencyPin`, `EntryId`, `Generation`,
+  `PluginFuture`), the legacy configuration vocabulary (`TaskConfig`,
+  `EffectSpec`, §runtime-core below), and the store-authoring/conformance
+  vocabulary (`DurableMutation`, `CommitRequest`, `CommitResult`,
+  `CommitLedgerEntry`, `IdempotencyKey`, `DurableJournal`,
+  `JournalInvariant`, `classify_recovery`, `AttemptAdmission`,
+  `EffectIntent`, `CancellationRecord`) stay at the subsystem tier exactly
+  as the closure rule above states. A host implementing its own
+  `DurableStore` is a store author — documented subsystem work; the
+  supported R2 host selects one of the two exported store implementations
+  or stays generic over the exported trait.
 
 ## runtime-loader — canonical host entry (K5)
 
@@ -100,12 +141,16 @@ Host-facing supported (all also re-exported by the loader):
 | Stable declarations | `ModuleDefinition` (builder: `new`, `depends_on`, `with_task`, `with_declarative_capability`, `with_reactive_capability`, `with_capability`, `requiring_config`, `with_optional_config`), `CapabilityContribution`, `CapabilityOwnership`, `ReactiveCapabilityDeclaration`, `ConfigRequirement` |
 | Process-local registration | `ModuleRegistration` (`factory`, `plugin`, `plugin_with_config`, `on_activate`, `on_dispose`), `LifecycleHook`, `HookFuture`, `CapabilityFactoryFn`, `lifecycle_hook` |
 | Planning | `CompositionBuilder` (`register`, `build`), `CompositionPlan` (`definition`, `module_order`, `slots`, async `start`, `start_with_store`, `restore`), `CapabilitySlot`, `HostConfig` |
-| Activation / shutdown | `RuntimeAssembly` (`runtime`, `runtime_mut`, `module_order`, `host_config`, async `shutdown`, `into_driver`), `CompositionHandle` (`module_order`, `dispose_after_driver`, async `release_after_owner_loss` — bound-guarded, `&mut self`, proves the bound driver's `DriverOwnerState::OwnerDropped` before any cleanup), `CompositionDriverShutdown` |
+| Activation / shutdown | `RuntimeAssembly` (`runtime`, `runtime_mut`, `module_order`, `host_config`, async `shutdown`, `into_driver`), `CompositionHandle` (`module_order`, async `dispose_after_driver` — `&mut self`, owner-bound: it runs no cleanup until the `DriverExit` reports the `DriverOwner` this handle was separated with; async `release_after_owner_loss` — bound-guarded, proves the bound driver's `DriverOwnerState::OwnerDropped` before any cleanup), `CompositionReleaseOutcome` (`is_released`, `into_released`), `CompositionReleaseRejection` (`ForeignDriverExit`, `AlreadyReleased`, `OrderlySweepInterrupted`, `into_exit`), `CompositionDriverShutdown` |
 | Errors | `CompositionError` + `ActivationStage`, `ConstructionStage`, `CapabilityConflictReason`, `FactoryConflictReason`, `PluginConflictReason`, `CleanupResource`, `RollbackFailure`, `RollbackReport`; `StartupFailure`; `CompositionShutdownFailure`; `OwnerLossReleaseError` |
 
-Internal: `ActivatedModule` and the rollback execution internals are
-crate-private. Composition coordinates existing authorities; it creates
-no second registry/runtime/store.
+Internal: `ActivatedModule`, `CleanupAuthority`, and `CleanupLedger` are
+crate-private. The ledger is the cleanup authority's queue: it holds the
+remaining modules, the current module, the in-flight dispose hook or fiber
+disposer, and the report built so far, so cancelling a cleanup future
+mid-await cannot forget work that had already started (ADR 0009 §3).
+Composition coordinates existing authorities; it creates no second
+registry/runtime/store.
 
 ## runtime-core — deterministic coordination + driver (K2/K3)
 
@@ -117,15 +162,19 @@ Host-facing supported:
 - Declarative construction: `RunDefinition`, `TaskDefinition`,
   `CapabilityDeclaration`, `CapabilityRequirement`,
   `DefinitionIdentity`, `DefinitionError`, `RUN_DEFINITION_FORMAT`,
+  `LEGACY_RUN_DEFINITION_FORMAT_V1` (the frozen historical tag, ADR 0008),
   `FactoryRegistry`, `FactoryResolutionError`, `RUN` entry points
   `Runtime::start_from_definition`, `start_from_definition_with_store`,
   `restore_from_definition`.
 - K3 driver: `RuntimeDriver::new` → `(driver, handle)` +
   `RuntimeHandle` (`drive`, `wake`, `dispatch_effect`, `recover`,
-  `cancel_task`, drain methods, `shutdown`, and the synchronous read-only
-  `owner_state`), `DriverFuture`, `DriveResult`, `ShutdownStatus`,
-  `DriverOwnerState`, `DriverExit`, `DriverError`, `EffectDispatcher`,
-  `EffectDispatchRequest`, `EffectDispatchFuture`, `EffectDispatchError`.
+  `cancel_task`, drain methods, `shutdown`, the synchronous read-only
+  `owner_state`, and `owner()` → `DriverOwner`), `DriverFuture`,
+  `DriveResult`, `ShutdownStatus`, `DriverOwnerState`, `DriverOwner`
+  (opaque, cloneable, `Send + Sync`; `same_driver_as` is the only way to
+  compare it with `DriverExit::owner()`, ADR 0009), `DriverExit`,
+  `DriverError`, `EffectDispatcher`, `EffectDispatchRequest`,
+  `EffectDispatchFuture`, `EffectDispatchError`.
 - Coordination results: `StepResult`, `RuntimeEvent`, `Cancellation`,
   `TaskAttempt`, `CapabilityPin`, `RecoveryDecision`, `DurableRunState`.
 - Errors: `RuntimeError`, `ReconstructionError`,

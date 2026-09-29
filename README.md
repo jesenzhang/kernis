@@ -145,10 +145,18 @@ Stage 2 milestones use the status vocabulary defined in the
   (`crates/runtime-loader/examples/r2_host.rs`) and acceptance suite
   (including genuine cross-process cold restart), the declared MSRV
   1.85 verified by a CI `msrv` job, and the full verification record
-  (315 tests green on stable and on 1.85). K6 is Integrated but not
-  Reviewed: the independent K6/R2 review is still pending, and R2 is
-  not declared Closed until it passes. See
-  [R2-KERNEL-CONTRACT.md](docs/runtime/R2-KERNEL-CONTRACT.md).
+  (315 tests green on stable and on 1.85). The independent K6/R2 review
+  returned **CHANGES REQUIRED** with four findings (R2-01 ambiguous
+  `RunDefinition` identity, R2-02 unbound driver-exit release, R2-03
+  cleanup lost on cancellation, R2-04 host-surface closure gaps); the
+  reviewed baseline is `d3818f5`. The repair lives on
+  `codex/k6-r2-repair` and is **READY FOR REVIEW, NOT INTEGRATED**: it is
+  neither merged to `main` nor declared Reviewed, and R2 remains not
+  Closed. The repair changes the run-definition format tag to
+  `kernis-run-definition-v2` (ADR 0008) and the composition release
+  contract (ADR 0009). See
+  [R2-KERNEL-CONTRACT.md](docs/runtime/R2-KERNEL-CONTRACT.md) and
+  `docs/reviews/` for the review and repair records.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at

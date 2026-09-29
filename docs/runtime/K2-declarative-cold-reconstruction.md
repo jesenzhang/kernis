@@ -81,18 +81,39 @@ reconfiguration protocol is outside K2.
 `restore_run` remains the compatibility path for K1/main durable runs whose
 identity starts with `kernis-workflow-replay-v1`; a fixed physical fixture
 proves that the exact legacy identity still restores after K2. Conversely,
-`restore_from_definition` requires the exact `kernis-run-definition-v1`
-identity produced by `RunDefinition`. There is no automatic migration or
+`restore_from_definition` requires the exact current-format identity
+produced by `RunDefinition`. There is no automatic migration or
 fallback matching between the two formats.
+
+The definition format itself moved to `kernis-run-definition-v2` during the
+R2 repair (ADR 0008); K2's original note that "K2 does not create a v2"
+describes K2 as reviewed and is kept here as history. A durable run whose
+recorded definition identity carries the frozen
+`kernis-run-definition-v1` tag is refused with
+`RuntimeError::LegacyDefinitionIdentityUnsupported`, naming the durable
+identity and `RUN_DEFINITION_FORMAT`, before any state is loaded into live
+authority; the legacy `kernis-workflow-replay-v1` algorithm and its
+`restore_run` path are untouched by that change.
 
 ## RunDefinition canonical identity
 
 Only `RunDefinition` uses the K2 canonical representation. It is explicitly
-versioned as `kernis-run-definition-v1` and uses length-prefixed textual
-fields. It is not based on Rust `Debug` output or an incidental serializer
-format. Task and
+versioned — currently `kernis-run-definition-v2` (ADR 0008) — and is tagged,
+counted, and length-delimited. It is not based on Rust `Debug` output or an
+incidental serializer format. Task and
 capability declarations, prerequisite edges, capability requirements, and
 effect configuration are sorted by logical identity before canonicalization.
+
+v1 was structurally ambiguous: a task prerequisite list and a capability
+requirement list produced the same bytes, so two definitions with different
+meaning could authorize each other's restore. v2 gives every field a tag,
+every collection a count and an explicit end, and every value a byte length,
+and `definition.rs` pins the documented bytes as goldens plus an
+adversarial-value test (values that imitate v1 framing, v2 framing, a
+count, or the loader's `@` reference separator are ordinary data and cannot
+move a field boundary). `legacy_canonical_identity_v1` remains in the crate
+under `#[cfg(test)]` with frozen golden bytes so the historical
+interpretation cannot be redefined; the kernel never writes it.
 
 Task display labels are excluded: changing a human-readable label does not
 change replay identity. Changes to task identity, topology, capability
