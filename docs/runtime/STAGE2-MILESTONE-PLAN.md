@@ -1015,15 +1015,16 @@ Result: READY FOR REVIEW / NOT INTEGRATED. R2-01..R2-04 implemented and
   Stage 3 not started.
 Base: d3818f5d2a77030f353e1a2a6c1744d494cae0c4 (reviewed baseline, branch
   point from main for codex/k6-r2-repair).
-Final integrated HEAD: none — the branch is not integrated. Branch head with
-  the code and contract surface is 5215c86; the commit appending this record
-  follows it and changes documentation only.
+Final integrated HEAD: none — the branch is not integrated. Branch head at the
+  time of writing is 93d01c1 (the pre-poll cancellation regression this record
+  prompted); the commit appending this record is the branch tip and changes
+  documentation only.
 Implementation blocks / explicit Slices actually used: one continuing
   implementation block, split into reviewable commits — a7965ad (ADRs 0008 /
   0009 plus the three reproduction probes placed as the review instructed),
   08c0e22 (R2-01), 5a5ebcb (canonical data marker moved off the loader
   reference sigil), 06c88e7 (R2-02 + R2-03), 29a2305 (R2-04), c634ce9 and
-  5215c86 (contract/inventory/ADR/README/ROADMAP reconciliation).
+  5215c86 (contract/inventory/ADR/README/ROADMAP reconciliation), 93d01c1 (the extra R2-03 cancellation case).
 Material decisions: ADR 0008 — v2 run-definition identity (tagged, counted,
   length-delimited), v1 frozen under #[cfg(test)] golden pinning and never
   written, a durable v1-tagged identity refused fail-closed with
