@@ -823,6 +823,11 @@ fn canonical_identity(
         if let Some(effect) = &task.effect {
             push_tag(&mut canonical, "present");
             push_value(&mut canonical, effect.operation_id.as_str());
+            // The v2 tag is `non_idempotent`, unlike the frozen v1 bytes'
+            // `non-idempotent`: v2 renames this tag on purpose, and the v1
+            // spelling stays pinned by `legacy_v1_identity_bytes_stay_frozen`
+            // so a future migration reproduces the historical bytes instead
+            // of "aligning" one grammar to the other.
             push_tag(
                 &mut canonical,
                 match effect.semantics {
