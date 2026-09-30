@@ -4,13 +4,30 @@ on:
   push:
   pull_request:
 
+# Every job here only reads the repository; no step mints or pushes tokens,
+# so the workflow token stays at the least privilege that checkout needs.
+permissions:
+  contents: read
+
+# Supersede queued runs of the same branch or PR; a push run is never
+# cancelled, so main's CI history stays complete.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Third-party actions are pinned to a full commit SHA because tags are
+      # mutable; dtolnay/rust-toolchain release 1.120.0, with the `toolchain`
+      # input selecting the Rust version the way the action recommends for
+      # pinned use.
+      - uses: dtolnay/rust-toolchain@237493ca54d1a1baf507a5ca665506aa0d208a0a
         with:
+          toolchain: stable
           components: rustfmt, clippy
       - name: Format
         run: cargo fmt --all -- --check
@@ -25,9 +42,12 @@ jobs:
   # Check-only and cheap: compilation, not the full test suite.
   msrv:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@237493ca54d1a1baf507a5ca665506aa0d208a0a
+        with:
+          toolchain: 1.85
       - name: MSRV check
         run: cargo check --workspace --all-features
 
@@ -37,15 +57,19 @@ jobs:
   # gate rather than a local convention.
   r2-host-fixture:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@237493ca54d1a1baf507a5ca665506aa0d208a0a
         with:
+          toolchain: stable
           components: clippy
       - name: Fixture check (stable)
         run: cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml --all-targets
       - name: Fixture clippy (stable)
         run: cargo clippy --manifest-path fixtures/r2-host-fixture/Cargo.toml --all-targets -- -D warnings
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@237493ca54d1a1baf507a5ca665506aa0d208a0a
+        with:
+          toolchain: 1.85
       - name: Fixture check (MSRV)
         run: cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml --all-targets
