@@ -11,9 +11,11 @@
 //! * failures recorded before the cancellation are still in the report;
 //! * `AlreadyReleased` appears only after the whole flow completed, never as a
 //!   way of quietly forgetting an unfinished ledger;
-//! * an interrupted orderly sweep, whose registry authority went with the
-//!   cancelled future, continues best-effort and reports the registrations it
-//!   can no longer unregister instead of claiming orderly completion.
+//! * an interrupted orderly sweep, whose registry authority went with the exit
+//!   the accepted call took, continues best-effort and reports the registrations
+//!   it can no longer unregister instead of claiming orderly completion — and
+//!   that holds even when the release future is dropped before its first poll,
+//!   because acceptance is recorded when `dispose_after_driver` is called.
 
 mod k4_common;
 
@@ -206,7 +208,13 @@ async fn cancelling_a_pending_dispose_hook_never_forgets_the_ledger() {
 }
 
 /// Cancelling at a pending fiber disposal keeps the disposal single-shot and
-/// keeps the failure recorded before the cancellation.
+/// keeps the failure recorded *before* the cancellation.
+///
+/// The `noisy` module is activated last, so it is cleaned first, and its armed
+/// `dispose` hook fails immediately: by the time the cancellation point (the
+/// `gated` module's fiber disposal) is pending, the ledger already holds one
+/// recorded failure. Without that ordering the assertion below would hold for an
+/// implementation that dropped the accumulated report on every cancellation.
 #[tokio::test(flavor = "current_thread")]
 async fn cancelling_a_pending_fiber_disposal_keeps_the_step_and_the_failures() {
     let recorder = Recorder::new();
@@ -230,6 +238,12 @@ async fn cancelling_a_pending_fiber_disposal_keeps_the_step_and_the_failures() {
             .on_activate(recorder.hook("activate:gated", None)),
         )
         .expect("the gated module registers")
+        .register(
+            ModuleRegistration::new(ModuleDefinition::new(id("noisy")).depends_on(id("gated")))
+                .on_activate(recorder.hook("activate:noisy", None))
+                .on_dispose(recorder.hook("dispose:noisy", Some("noisy cleanup failed"))),
+        )
+        .expect("the noisy module registers")
         .build()
         .expect("the composition validates");
     let (_handle, mut composition) = owner_lost(plan, "r2-cancel-fiber").await;
@@ -237,6 +251,11 @@ async fn cancelling_a_pending_fiber_disposal_keeps_the_step_and_the_failures() {
     let mut interrupted = Box::pin(composition.release_after_owner_loss());
     poll_once_pending(&mut interrupted, "the pending fiber disposal");
     assert_eq!(disposals.load(Ordering::SeqCst), 1, "the disposer started");
+    assert_eq!(
+        recorder.count("dispose:noisy"),
+        1,
+        "the module cleaned before the blocked step was already cleaned, and failed"
+    );
     assert_eq!(
         recorder.count("dispose:audit"),
         0,
@@ -250,6 +269,11 @@ async fn cancelling_a_pending_fiber_disposal_keeps_the_step_and_the_failures() {
         disposals.load(Ordering::SeqCst),
         1,
         "re-entering resumes the started disposal instead of disposing twice"
+    );
+    assert_eq!(
+        recorder.count("dispose:noisy"),
+        1,
+        "the already-cleaned module is not cleaned a second time"
     );
     drop(resumed);
 
@@ -268,23 +292,29 @@ async fn cancelling_a_pending_fiber_disposal_keeps_the_step_and_the_failures() {
         report.cleaned.is_empty(),
         "a module whose registration could not be unregistered is not reported clean"
     );
-    assert_eq!(report.failures.len(), 2, "both failures are still recorded");
+    assert_eq!(report.failures.len(), 3, "all three failures are recorded");
     assert!(
         report
             .failures
-            .iter()
-            .any(|failure| failure.module_id == id("audit")
+            .first()
+            .is_some_and(|failure| failure.module_id == id("noisy")
                 && failure.resource == CleanupResource::DisposeHook
-                && failure.reason == "audit cleanup failed"),
-        "the failure recorded before the cancellation survived the ledger"
+                && failure.reason == "noisy cleanup failed"),
+        "the failure recorded before the cancellation survived both drops, in order"
     );
     assert!(
-        report
-            .failures
-            .iter()
-            .any(|failure| failure.module_id == id("gated")
-                && matches!(failure.resource, CleanupResource::PluginRegistration { .. })),
+        report.failures[1].module_id == id("gated")
+            && matches!(
+                report.failures[1].resource,
+                CleanupResource::PluginRegistration { .. }
+            ),
         "the owner-loss path reports the registration it can no longer unregister"
+    );
+    assert!(
+        report.failures[2].module_id == id("audit")
+            && report.failures[2].resource == CleanupResource::DisposeHook
+            && report.failures[2].reason == "audit cleanup failed",
+        "the module reached after the cancellation is cleaned and reported too"
     );
     assert_eq!(
         composition
@@ -379,6 +409,74 @@ async fn an_interrupted_orderly_sweep_continues_best_effort_and_says_so() {
             .expect_err("a completed flow reports AlreadyReleased"),
         OwnerLossReleaseError::AlreadyReleased,
         "the resumed flow ended exactly once"
+    );
+}
+
+/// The strictest form of cancelling the **orderly** path: dropping the release
+/// future before it is ever polled. Acceptance is recorded when
+/// `dispose_after_driver` is called — not when its future is first polled — so
+/// the ledger already knows its full-authority sweep can no longer be promised,
+/// and the remaining cleanup stays reachable best-effort instead of being
+/// stranded behind an `OrderlyShutdownCompleted` answer that points at an exit
+/// the dropped future already consumed.
+#[tokio::test(flavor = "current_thread")]
+async fn dropping_the_orderly_release_before_its_first_poll_stays_recoverable() {
+    let recorder = Recorder::new();
+    let plan = CompositionBuilder::new()
+        .register(
+            ModuleRegistration::new(ModuleDefinition::new(id("solo")))
+                .on_activate(recorder.hook("activate:solo", None))
+                .on_dispose(recorder.hook("dispose:solo", None)),
+        )
+        .expect("the module registers")
+        .build()
+        .expect("the composition validates");
+    let assembly = plan
+        .start(run_id("r2-cancel-orderly-before-poll"), &HostConfig::new())
+        .await
+        .expect("the composition activates");
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
+    let driver_task = tokio::spawn(async move { driver.run().await });
+    handle
+        .shutdown()
+        .await
+        .expect("the driver shuts down cleanly");
+    let exit = driver_task.await.expect("the driver task joins");
+    assert_eq!(handle.owner_state(), DriverOwnerState::Shutdown);
+
+    drop(Box::pin(composition.dispose_after_driver(exit)));
+    assert_eq!(
+        recorder.count("dispose:solo"),
+        0,
+        "a release future that was never polled started no dispose hook"
+    );
+
+    // The accepted call already took the exit, so its registry authority is
+    // gone: what remains must still be reachable, and must say so.
+    let report = composition
+        .release_after_owner_loss()
+        .await
+        .expect("a release dropped before its first poll is still recoverable");
+    assert_eq!(
+        recorder.count("dispose:solo"),
+        1,
+        "the armed hook is cleaned exactly once, after the drop"
+    );
+    assert_eq!(
+        report.cleaned,
+        vec![id("solo")],
+        "the module the dropped future never reached is cleaned after all"
+    );
+    assert!(
+        report.failures.is_empty(),
+        "this module owned no registration, so nothing needed the lost authority"
+    );
+    assert_eq!(
+        composition
+            .release_after_owner_loss()
+            .await
+            .expect_err("the continuation ended exactly once"),
+        OwnerLossReleaseError::AlreadyReleased
     );
 }
 

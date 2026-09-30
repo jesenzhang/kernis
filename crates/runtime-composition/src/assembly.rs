@@ -4,10 +4,13 @@
 //! authority it is cleaning through ([`CleanupAuthority`]): either the live
 //! capability registry of a `Runtime` released by an orderly driver shutdown, or
 //! the acknowledged fact that the driver owner was lost and the registry went
-//! with it. Two entry points implement that rule, and both are cancellation-safe:
-//! cleanup progress lives in the handle's ledger rather than in a temporary
-//! future, and a step whose future already started stays parked there so a
-//! re-entry resumes it instead of re-running a started non-idempotent hook.
+//! with it. Two entry points implement that rule, and both are cancellation-safe
+//! at every point a future can be dropped: cleanup progress lives in the
+//! handle's ledger rather than in a temporary future, a step whose future
+//! already started stays parked there so a re-entry resumes it instead of
+//! re-running a started non-idempotent hook, and an accepted orderly release is
+//! recorded in the ledger when it is accepted — not when its future is first
+//! polled — so even a never-polled drop leaves its remaining work reachable.
 
 use crate::config::HostConfig;
 use crate::error::{
@@ -23,8 +26,9 @@ use runtime_core::{
 };
 use std::collections::VecDeque;
 use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use workflow_recovery::{DurableStore, InMemoryDurableStore};
 
 /// One module whose activation resources are owned by the composition.
@@ -117,10 +121,12 @@ pub(crate) struct CleanupLedger {
     current_clean: bool,
     in_flight: Option<InFlight>,
     report: RollbackReport,
-    /// Set once, by [`SweepGuard`], when an orderly sweep's future was dropped
-    /// before completion: the `Runtime` whose registry that sweep cleaned
-    /// through was released with it, so orderly authority cannot return.
-    orderly_interrupted: Arc<AtomicBool>,
+    /// Set the moment an orderly release is accepted for this ledger, before
+    /// its future is ever polled: from then on the `Runtime` whose registry the
+    /// sweep cleans through lives in a future the caller may drop at any time,
+    /// so a full-authority sweep can no longer be promised and only the
+    /// best-effort path is left if this ledger is still outstanding.
+    orderly_release_accepted: bool,
 }
 
 impl CleanupLedger {
@@ -134,7 +140,7 @@ impl CleanupLedger {
             current_clean: true,
             in_flight: None,
             report: RollbackReport::default(),
-            orderly_interrupted: Arc::new(AtomicBool::new(false)),
+            orderly_release_accepted: false,
         }
     }
 
@@ -181,38 +187,11 @@ impl CleanupLedger {
         self.queue.is_empty() && self.current.is_none() && self.in_flight.is_none()
     }
 
-    /// Returns whether an orderly sweep for this ledger was interrupted, which
-    /// is also the proof that its registry authority is gone.
-    fn orderly_interrupted(&self) -> bool {
-        self.orderly_interrupted.load(Ordering::Acquire)
-    }
-}
-
-/// Marks a ledger as orderly-interrupted when its sweep future is dropped
-/// before the sweep completes.
-struct SweepGuard {
-    interrupted: Arc<AtomicBool>,
-    completed: bool,
-}
-
-impl SweepGuard {
-    fn new(interrupted: Arc<AtomicBool>) -> Self {
-        Self {
-            interrupted,
-            completed: false,
-        }
-    }
-
-    fn complete(mut self) {
-        self.completed = true;
-    }
-}
-
-impl Drop for SweepGuard {
-    fn drop(&mut self) {
-        if !self.completed {
-            self.interrupted.store(true, Ordering::Release);
-        }
+    /// Returns whether an orderly release has been accepted for this ledger.
+    /// Once it has, the registry authority lives in a future the caller may
+    /// drop at any time, so only the best-effort path can still be promised.
+    fn orderly_release_accepted(&self) -> bool {
+        self.orderly_release_accepted
     }
 }
 
@@ -415,6 +394,18 @@ where
     /// cleanup completed, no composition-owned plugin registration remains
     /// in the runtime. Cleanup continues after individual failures and all
     /// failures are reported; the runtime is dropped in every case.
+    ///
+    /// # Dropping the returned future
+    ///
+    /// This is the one composition release path that is **not**
+    /// cancellation-safe. The assembly is consumed by the call and the whole
+    /// sweep lives in the returned future, so dropping it — before its first
+    /// poll or at any await — drops the runtime and every composition-owned
+    /// resource with no report and no way to resume. A host that must be able
+    /// to cancel, or to continue after a shutdown timeout, uses
+    /// [`Self::into_driver`] and the two [`CompositionHandle`] release paths,
+    /// whose ledger is owned by the handle and survives cancellation
+    /// (ADR 0009 §3).
     pub async fn shutdown(self) -> Result<RollbackReport, CompositionShutdownFailure> {
         let Self {
             runtime, mut owned, ..
@@ -501,17 +492,22 @@ where
 ///   the release is rejected with a typed [`OwnerLossReleaseError`], the handle
 ///   stays fully usable, and nothing is disposed. An orderly shutdown normally
 ///   keeps its `DriverExit` and must go through [`Self::dispose_after_driver`];
-///   the single exception is this handle's own interrupted orderly sweep, whose
-///   ledger records that the registry authority was released with it.
+///   the single exception is this handle's own accepted-but-unfinished orderly
+///   release, whose ledger knows the registry authority left with the exit.
 ///
 /// # Cancellation
 ///
 /// Cleanup progress lives in this handle, not in the caller's future. Dropping
-/// either release future part-way therefore keeps everything recoverable: the
-/// not-yet-started resources, the report collected so far, and the future of the
-/// step that had already started (so a re-entry resumes it rather than
-/// re-triggering a started non-idempotent hook). Dropping the handle without
-/// either call only drops the bound handle clone and the fiber references.
+/// either release future — before its first poll or between polls — keeps the
+/// remaining resources, the report collected so far, and the future of the step
+/// that had already started (so a re-entry resumes it rather than re-triggering
+/// a started non-idempotent hook). The two paths differ only in authority: an
+/// interrupted owner-loss release resumes with the same authority, while an
+/// interrupted orderly release has handed its `Runtime`, and with it the
+/// registry authority, to the dropped future, so what is left runs best-effort
+/// through [`Self::release_after_owner_loss`] and is reported as such. Dropping
+/// the handle without either call only drops the bound handle clone and the
+/// fiber references.
 pub struct CompositionHandle {
     order: Vec<Id>,
     /// Outstanding composition cleanup. `None` only after a release flow ran to
@@ -552,43 +548,74 @@ impl CompositionHandle {
     /// successful report means no composition-owned plugin registration remains
     /// in the returned runtime.
     ///
-    /// Dropping the returned future part-way is recoverable: the ledger stays
-    /// here with its remaining resources and started steps, and the remaining
-    /// best-effort cleanup continues through [`Self::release_after_owner_loss`]
-    /// — an interrupted orderly sweep lost its registry authority together with
-    /// the cancelled future, and the report says so instead of pretending the
+    /// # Dropping the returned future
+    ///
+    /// Acceptance — the owner check above and the ledger's record that this
+    /// handle's full-authority sweep has been handed its exit — happens *here*,
+    /// when the method is called, not when the returned future is first polled.
+    /// Dropping that future is therefore recoverable at every point, including
+    /// before its first poll: the ledger stays here with its remaining
+    /// resources, its collected failures, and the future of the step that had
+    /// already started, and the remaining cleanup continues best-effort through
+    /// [`Self::release_after_owner_loss`]. That continuation cannot recover the
+    /// `Runtime` the accepted call took with the exit, so it reports each
+    /// registration it can no longer unregister instead of pretending the
     /// sweep finished.
     #[must_use = "composition cleanup releases the runtime only through this outcome"]
-    pub async fn dispose_after_driver<S>(
-        &mut self,
+    pub fn dispose_after_driver<'a, S>(
+        &'a mut self,
         exit: DriverExit<S>,
-    ) -> CompositionReleaseOutcome<S>
+    ) -> CompositionReleaseFuture<'a, S>
     where
-        S: DurableStore + Send,
+        S: DurableStore + Send + 'a,
     {
+        // Deliberately not an `async fn`: an async body runs nothing until it
+        // is polled, and a caller that drops the future before its first poll
+        // (a `select!` whose other branch is already ready) would take the
+        // exit — and with it the registry authority — while this ledger still
+        // claimed a full-authority sweep could run. The decision and its
+        // bookkeeping are synchronous, so they happen at call time.
         if !self.driver_owner.owner().same_driver_as(exit.owner()) {
-            return CompositionReleaseOutcome::Rejected(
-                CompositionReleaseRejection::ForeignDriverExit {
-                    exit: Box::new(exit),
-                },
-            );
+            return Box::pin(async move {
+                CompositionReleaseOutcome::Rejected(
+                    CompositionReleaseRejection::ForeignDriverExit {
+                        exit: Box::new(exit),
+                    },
+                )
+            });
         }
         if self.ledger.is_none() {
-            return CompositionReleaseOutcome::Rejected(
-                CompositionReleaseRejection::AlreadyReleased {
+            return Box::pin(async move {
+                CompositionReleaseOutcome::Rejected(CompositionReleaseRejection::AlreadyReleased {
                     exit: Box::new(exit),
-                },
-            );
+                })
+            });
         }
         if self
             .ledger
             .as_ref()
-            .is_some_and(CleanupLedger::orderly_interrupted)
+            .is_some_and(CleanupLedger::orderly_release_accepted)
         {
-            return CompositionReleaseOutcome::Rejected(
-                CompositionReleaseRejection::OrderlySweepInterrupted,
-            );
+            return Box::pin(async move {
+                CompositionReleaseOutcome::Rejected(
+                    CompositionReleaseRejection::OrderlySweepInterrupted,
+                )
+            });
         }
+        self.ledger
+            .as_mut()
+            .expect("the ledger was present when the exit was accepted")
+            .orderly_release_accepted = true;
+        Box::pin(self.orderly_sweep(exit))
+    }
+
+    /// Runs the accepted full-authority sweep. Reached only through
+    /// [`Self::dispose_after_driver`], which has already validated the exit and
+    /// recorded the acceptance.
+    async fn orderly_sweep<S>(&mut self, exit: DriverExit<S>) -> CompositionReleaseOutcome<S>
+    where
+        S: DurableStore + Send,
+    {
         let shutdown_status = exit.shutdown_status().clone();
         let runtime = exit.into_runtime();
         let rollback = {
@@ -596,14 +623,11 @@ impl CompositionHandle {
                 .ledger
                 .as_mut()
                 .expect("the ledger was present when the exit was accepted");
-            let guard = SweepGuard::new(Arc::clone(&ledger.orderly_interrupted));
-            let rollback = run_sweep(
+            run_sweep(
                 ledger,
                 CleanupAuthority::Registry(runtime.capability_registry()),
             )
-            .await;
-            guard.complete();
-            rollback
+            .await
         };
         self.ledger = None;
         CompositionReleaseOutcome::Released(Box::new(CompositionDriverShutdown {
@@ -628,9 +652,9 @@ impl CompositionHandle {
     /// [`Self::dispose_after_driver`] with full registry authority. A rejected
     /// release consumes nothing: the handle stays usable for the orderly path or
     /// for a later, genuine owner-loss release. The one exception is a ledger
-    /// that records an interrupted orderly sweep: there the registry authority
-    /// really was released with the cancelled future, so best-effort release is
-    /// the only path left and this guard accepts it.
+    /// whose orderly release was accepted and never completed: there the
+    /// registry authority really left with the exit that accepted call took, so
+    /// best-effort release is the only path left and this guard accepts it.
     ///
     /// Once the guard passes, the sweep completes the release exactly once. A
     /// completed flow is terminal and answers
@@ -662,11 +686,11 @@ impl CompositionHandle {
                 return Err(OwnerLossReleaseError::OwnerStillRunning);
             }
             DriverOwnerState::Shutdown => {
-                let interrupted = self
+                let accepted = self
                     .ledger
                     .as_ref()
-                    .is_some_and(CleanupLedger::orderly_interrupted);
-                if !interrupted {
+                    .is_some_and(CleanupLedger::orderly_release_accepted);
+                if !accepted {
                     return Err(OwnerLossReleaseError::OrderlyShutdownCompleted);
                 }
             }
@@ -689,6 +713,16 @@ impl fmt::Debug for CompositionHandle {
             .finish_non_exhaustive()
     }
 }
+
+/// The future returned by [`CompositionHandle::dispose_after_driver`].
+///
+/// Boxed for the same reason [`HookFuture`](crate::HookFuture) is: it keeps one
+/// executor-neutral type for a release that may complete in a single poll or be
+/// dropped at any point. The acceptance it carries out was already recorded
+/// when the method was called, so dropping this future never hides the release
+/// from [`CompositionHandle::release_after_owner_loss`].
+pub type CompositionReleaseFuture<'a, S = InMemoryDurableStore> =
+    Pin<Box<dyn Future<Output = CompositionReleaseOutcome<S>> + Send + 'a>>;
 
 /// Outcome of an orderly composition release.
 #[must_use = "the released runtime or the untouched DriverExit must be handled"]
@@ -774,16 +808,25 @@ where
     },
     /// This handle completed its cleanup exactly once, so nothing remains to
     /// release. The exit is returned untouched.
+    ///
+    /// Defensive: one driver mints exactly one [`DriverExit`], so a host that
+    /// has already released cannot legitimately hold a matching second exit.
+    /// The arm exists so a released handle can never clean twice, whatever it
+    /// is handed.
     AlreadyReleased {
         /// The untouched exit.
         exit: Box<DriverExit<S>>,
     },
-    /// An earlier orderly sweep for this handle was cancelled and the registry
-    /// authority it cleaned through was released with that future, so no sweep
-    /// with full authority can run here again. Only
+    /// An orderly release was accepted for this handle and never completed, so
+    /// the registry authority it cleaned through left with the exit and no
+    /// sweep with full authority can run here again. Only
     /// [`CompositionHandle::release_after_owner_loss`] can finish the remaining
-    /// best-effort cleanup; no exit is carried, because the interrupted sweep
-    /// already consumed the one it was given.
+    /// best-effort cleanup. No exit is carried: acceptance consumed the one it
+    /// was given, which is why this rejection cannot hand one back.
+    ///
+    /// Defensive in the same way as [`Self::AlreadyReleased`]: the accepted
+    /// exit cannot be presented twice, so a host reaches best-effort release
+    /// directly rather than through this rejection.
     OrderlySweepInterrupted,
 }
 

@@ -57,7 +57,9 @@ product:
   K3 `RuntimeDriver`/`RuntimeHandle` pair plus a `CompositionHandle`.
 - `CompositionHandle`: composition-owned activation resources with no
   unconditional `dispose`. Orderly completion consumes the K3 `DriverExit`
-  in `dispose_after_driver`, which answers
+  in `dispose_after_driver`, which validates the exit and records its
+  acceptance synchronously, then returns a `CompositionReleaseFuture` that
+  answers
   `CompositionReleaseOutcome::{Released, Rejected}`: on `Released` it
   re-acquires the Runtime, runs cleanup with full registry authority, and
   returns `CompositionDriverShutdown` (`rollback`, the preserved
@@ -69,8 +71,9 @@ product:
   `CompositionReleaseRejection::ForeignDriverExit` hands the exit back
   untouched for the composition it does belong to, and
   `AlreadyReleased` means this handle's cleanup already completed exactly
-  once. `OrderlySweepInterrupted` is the documented consequence of a sweep
-  cancelled after its registry authority was released with the future; only
+  once. `OrderlySweepInterrupted` is the documented consequence of an orderly
+  release that was accepted — the accepted call took its `DriverExit`, and with
+  it the registry authority — and never completed; only
   `release_after_owner_loss` can finish what is left.
   `release_after_owner_loss` is bound-guarded: the handle carries a private
   observation of the owner state of the exact driver separated by the same
@@ -84,14 +87,15 @@ product:
   leaves the handle usable. A completed flow is terminal: the ledger check
   runs first, so a finished release resolves `AlreadyReleased` whatever the
   driver reports afterwards, and the one lifted case is a handle whose
-  orderly sweep was interrupted.
+  orderly release was accepted and never completed.
 - Cleanup is a **ledger, not a loop inside a future** (ADR 0009 §3).
   `CleanupLedger` is owned by the `CompositionHandle` and holds the
   remaining module queue, the current module, the in-flight dispose hook or
   fiber disposer future, the report collected so far, and whether an orderly
-  sweep was interrupted. Nothing that cleanup depends on is parked inside a
+  release was accepted. Nothing that cleanup depends on is parked inside a
   cancellable temporary, so dropping `dispose_after_driver` or
-  `release_after_owner_loss` at any await point — a pending dispose hook, a
+  `release_after_owner_loss` at any point — before the returned future's first
+  poll, or at a pending dispose hook, a
   pending fiber disposal, a pending unregister — loses no work: re-entry
   continues with the untouched modules, polls the started step instead of
   restarting it (a non-idempotent hook therefore never runs twice), keeps

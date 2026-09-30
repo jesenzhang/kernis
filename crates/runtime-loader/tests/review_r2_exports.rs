@@ -20,15 +20,16 @@
 //!
 //! The R2 review proved five host-facing names were missing from the umbrella
 //! (`FactoryRegistry`, `RUN_DEFINITION_FORMAT`, `RuntimeAssembly`,
-//! `RecoveryReason`, `StoreInvariant`). The repair's own audit then found
-//! three more in the same category — `RUN_DEFINITION_FORMAT`'s legacy sibling
+//! `RecoveryReason`, `StoreInvariant`). The repair's own audit then found four
+//! more in the same category — `RUN_DEFINITION_FORMAT`'s legacy sibling
 //! `LEGACY_RUN_DEFINITION_FORMAT_V1` (ADR 0008 makes it a host-visible fact: a
 //! durable identity carrying it is refused, and a host must recognize that
 //! prefix), `StoreRevision` (bound from `DurableRunState::revision`),
-//! `CapabilityConflictReason` (an error payload it must match), plus
+//! `CapabilityConflictReason` (an error payload it must match), and
 //! `InvalidId` (returned by `Id::new`, the host's entry point for every
-//! identifier) and the R2-02/R2-03 lifecycle vocabulary
-//! (`DriverOwner`, `CompositionReleaseOutcome`, `CompositionReleaseRejection`).
+//! identifier) — together with the R2-02/R2-03 lifecycle vocabulary
+//! (`DriverOwner`, `CompositionReleaseOutcome`, `CompositionReleaseRejection`,
+//! and the `CompositionReleaseFuture` that `dispose_after_driver` returns).
 //! All are additive re-exports along core → composition → loader.
 //!
 //! # Deliberate exclusions (documented, not accidental)
@@ -53,11 +54,12 @@
 //! `docs/runtime/K6-supported-api-inventory.md`.
 
 use runtime_loader::{
-    CapabilityConflictReason, CompositionReleaseOutcome, CompositionReleaseRejection, DriverOwner,
-    DurableRunState, FactoryRegistry, Id, InvalidId, LEGACY_RUN_DEFINITION_FORMAT_V1, LoaderError,
-    RUN_DEFINITION_FORMAT, RecoveryDecision, RecoveryReason, RollbackFailure, RollbackReport,
-    RunDefinition, RunId, Runtime, RuntimeAssembly, RuntimeError, RuntimeHandle, StoreError,
-    StoreErrorKind, StoreInvariant, StoreRevision,
+    CapabilityConflictReason, CompositionReleaseFuture, CompositionReleaseOutcome,
+    CompositionReleaseRejection, DriverOwner, DurableRunState, FactoryRegistry, Id, InvalidId,
+    LEGACY_RUN_DEFINITION_FORMAT_V1, LoaderError, RUN_DEFINITION_FORMAT, RecoveryDecision,
+    RecoveryReason, RollbackFailure, RollbackReport, RunDefinition, RunId, Runtime,
+    RuntimeAssembly, RuntimeError, RuntimeHandle, StoreError, StoreErrorKind, StoreInvariant,
+    StoreRevision,
 };
 
 /// The five gaps the review proved, plus the ones the repair's own audit added,
@@ -101,7 +103,10 @@ async fn release_vocabulary_is_nameable(
             exit: Box::new(exit),
         });
     }
-    match composition.dispose_after_driver(exit).await {
+    // The release future is a nameable type, not only an inferable one.
+    let release: CompositionReleaseFuture<'_, runtime_loader::InMemoryDurableStore> =
+        composition.dispose_after_driver(exit);
+    match release.await {
         CompositionReleaseOutcome::Released(shutdown) => Ok(shutdown.rollback),
         CompositionReleaseOutcome::Rejected(rejection) => Err(rejection),
     }

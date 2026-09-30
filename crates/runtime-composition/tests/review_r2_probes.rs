@@ -133,36 +133,44 @@ impl Fixture {
     }
 
     /// Asserts that this composition is untouched, and returns the refused exit.
+    ///
+    /// The exit is recovered through the public
+    /// [`CompositionReleaseRejection::into_exit`] accessor, so the hand-back
+    /// path the host relies on is what this file proves.
     fn refused_foreign(&self, outcome: CompositionReleaseOutcome<Store>) -> DriverExit<Store> {
-        match outcome {
-            CompositionReleaseOutcome::Rejected(
-                CompositionReleaseRejection::ForeignDriverExit { exit },
-            ) => {
-                assert_eq!(
-                    self.hook_starts.load(Ordering::SeqCst),
-                    0,
-                    "a foreign exit must not start a dispose hook"
-                );
-                assert_eq!(
-                    self.disposals.load(Ordering::SeqCst),
-                    0,
-                    "a foreign exit must not dispose a fiber"
-                );
-                assert!(
-                    exit.runtime()
-                        .capability_registry()
-                        .contains(&id("shared-plugin")),
-                    "the refused path removed no plugin registration from the exit's registry"
-                );
-                *exit
-            }
-            CompositionReleaseOutcome::Rejected(other) => {
-                panic!("a foreign DriverExit must be refused as ForeignDriverExit, got {other:?}")
-            }
-            CompositionReleaseOutcome::Released(shutdown) => {
+        let rejection = match outcome.into_released() {
+            Err(rejection) => rejection,
+            Ok(shutdown) => {
                 panic!("a foreign DriverExit must never release this composition: {shutdown:?}")
             }
-        }
+        };
+        assert!(
+            matches!(
+                rejection,
+                CompositionReleaseRejection::ForeignDriverExit { .. }
+            ),
+            "a foreign DriverExit must be refused as ForeignDriverExit, got {rejection:?}"
+        );
+        let exit = rejection
+            .into_exit()
+            .expect("a refused release hands the exit back untouched");
+        assert_eq!(
+            self.hook_starts.load(Ordering::SeqCst),
+            0,
+            "a foreign exit must not start a dispose hook"
+        );
+        assert_eq!(
+            self.disposals.load(Ordering::SeqCst),
+            0,
+            "a foreign exit must not dispose a fiber"
+        );
+        assert!(
+            exit.runtime()
+                .capability_registry()
+                .contains(&id("shared-plugin")),
+            "the refused path removed no plugin registration from the exit's registry"
+        );
+        exit
     }
 
     /// Releases through this fixture's own exit and asserts full cleanup.

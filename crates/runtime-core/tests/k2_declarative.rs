@@ -843,16 +843,29 @@ fn restore_rejects_the_reviewed_definition_collision_with_no_side_effects() {
         })
         .expect("capability factory registers");
     let run_id = runtime_core::RunId::new("collision-run").expect("collision run id is valid");
-    let runtime = Runtime::start_from_definition(run_id.clone(), started, &factories)
-        .expect("the original definition starts");
+    // A physical store, so "wrote nothing durable" can actually be falsified:
+    // `InMemoryDurableStore` is `Clone`, and a cloned store handed to restore is
+    // a detached copy whose writes would never be visible to this assertion.
+    let temp = TempStore::new("definition-collision");
+    let runtime = Runtime::<FileDurableStore>::start_from_definition_with_store(
+        run_id.clone(),
+        started,
+        &factories,
+        FileDurableStore::open(&temp.path).expect("physical store opens"),
+    )
+    .expect("the original definition starts");
     let counted_after_start = constructions.load(Ordering::Relaxed);
     let revision_before = runtime
         .durable_state()
         .expect("durable state loads")
         .revision();
 
-    let result =
-        Runtime::restore_from_definition(run_id, changed, &factories, runtime.store().clone());
+    let result = Runtime::restore_from_definition(
+        run_id.clone(),
+        changed,
+        &factories,
+        FileDurableStore::open(&temp.path).expect("store reopens for the restore"),
+    );
     assert!(
         matches!(result, Err(RuntimeError::DefinitionMismatch { .. })),
         "a definition with different admission semantics must not restore"
@@ -862,12 +875,13 @@ fn restore_rejects_the_reviewed_definition_collision_with_no_side_effects() {
         counted_after_start,
         "the rejected restore constructs no capability"
     );
+    let revision_after = FileDurableStore::open(&temp.path)
+        .expect("store reopens after the rejection")
+        .load_run(&run_id)
+        .expect("state still loads")
+        .revision();
     assert_eq!(
-        runtime
-            .durable_state()
-            .expect("durable state still loads")
-            .revision(),
-        revision_before,
+        revision_after, revision_before,
         "the rejected restore writes nothing durable"
     );
 }

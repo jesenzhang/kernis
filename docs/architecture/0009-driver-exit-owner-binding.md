@@ -63,11 +63,16 @@ is supposed to hold them.
 `dispose_after_driver` becomes:
 
 ```rust
-pub async fn dispose_after_driver<S>(
+/// The future returned by `dispose_after_driver`, returned already
+/// constructed: the acceptance it depends on was recorded at call time.
+pub type CompositionReleaseFuture<'a, S = InMemoryDurableStore> =
+    Pin<Box<dyn Future<Output = CompositionReleaseOutcome<S>> + Send + 'a>>;
+
+pub fn dispose_after_driver<S>(
     &mut self,
     exit: DriverExit<S>,
-) -> CompositionReleaseOutcome<S>
-where S: DurableStore + Send
+) -> CompositionReleaseFuture<'_, S>
+where S: DurableStore + Send + '_
 
 pub enum CompositionReleaseOutcome<S = InMemoryDurableStore> {
     Released(Box<CompositionDriverShutdown<S>>),
@@ -81,11 +86,11 @@ pub enum CompositionReleaseRejection<S = InMemoryDurableStore> {
     /// This handle's resources were already released exactly once. The exit
     /// is returned intact so the caller still holds its own shutdown fact.
     AlreadyReleased { exit: Box<DriverExit<S>> },
-    /// An earlier orderly sweep for this handle was cancelled and its
-    /// registry authority died with that future, so no sweep with full
-    /// authority can run here again; the remaining best-effort cleanup
-    /// continues through `release_after_owner_loss`. No exit is carried: the
-    /// interrupted sweep already consumed the one it was given.
+    /// An orderly release was accepted for this handle and never completed, so
+    /// its registry authority left with the accepted exit and no sweep with
+    /// full authority can run here again; the remaining best-effort cleanup
+    /// continues through `release_after_owner_loss`. No exit is carried:
+    /// acceptance consumed the one it was given.
     OrderlySweepInterrupted,
 }
 ```
@@ -109,8 +114,8 @@ pub enum CompositionReleaseRejection<S = InMemoryDurableStore> {
   `'static` and survive the cancellation of the caller's future.
 - The sweep runs off the ledger, borrowing it and the authority, and awaits the
   parked in-flight future **in place** (`await_parked`) instead of building a
-  fresh one; a `SweepGuard` marks the ledger orderly-interrupted if the caller's
-  future is dropped before the sweep reports completion. Consequently: a module
+  fresh one; the ledger already recorded, when the orderly release was accepted,
+  that this handle may no longer promise a full-authority sweep. Consequently: a module
   is removed from the ledger only after all of its owned steps completed;
   failures are recorded as they happen; and dropping the caller's future loses
   neither the remaining resources nor the facts already collected. The ledger
@@ -124,11 +129,15 @@ pub enum CompositionReleaseRejection<S = InMemoryDurableStore> {
 - Registry removals cannot be parked (`registry.remove` borrows the runtime's registry), so an
   interruption inside a removal is recorded as an interrupted step with its registration still
   outstanding, and is never retried blindly.
-- Interruption of the orderly sweep also proves the registry authority is unreachable: the
-  `Runtime` the sweep borrowed was dropped with the cancelled future. The ledger records that
-  fact, and `release_after_owner_loss` accepts exactly two preconditions - the bound mailbox
-  reports `OwnerDropped`, or this handle's own ledger records an interrupted orderly sweep.
-  Only a real interruption can set the second condition, so this widens no authority: a foreign
+- Accepting the orderly release also proves the registry authority can become unreachable: the
+  accepted call takes the `Runtime` the sweep cleans through, and the acceptance is recorded
+  when `dispose_after_driver` is called with an exit this handle accepts, not when the returned
+  future is first polled, so the fact is already on the ledger even if that future is dropped
+  before its first poll.
+  `release_after_owner_loss` accepts exactly two preconditions - the bound mailbox
+  reports `OwnerDropped`, or this handle's own ledger records an accepted-but-unfinished
+  orderly release.
+  Only a real acceptance can set the second condition, so this widens no authority: a foreign
   exit still cannot start a sweep, and a composition whose driver is alive still cannot
   best-effort-dispose while its runtime owns the registry. Registrations that can no longer be
   unregistered keep being reported as `CleanupResource::PluginRegistration` failures, so a
@@ -137,14 +146,18 @@ pub enum CompositionReleaseRejection<S = InMemoryDurableStore> {
 ### 4. Breaking-change and migration note (pre-1.0)
 
 `dispose_after_driver` changes from `async fn(self, DriverExit<S>) ->
-CompositionDriverShutdown<S>` to `async fn(&mut self, DriverExit<S>) ->
-CompositionReleaseOutcome<S>`. Per `COMPATIBILITY.md` §1 this needs a migration note plus a
+CompositionDriverShutdown<S>` to `fn(&mut self, DriverExit<S>) ->
+CompositionReleaseFuture<'_, S>`, a boxed future of `CompositionReleaseOutcome<S>`. It is
+deliberately not an `async fn`: the ownership check and the ledger marking described above are
+synchronous, so they happen when the method is called and not at the future's first poll;
+awaiting the returned value stays the same source syntax for every caller.
+Per `COMPATIBILITY.md` §1 this needs a migration note plus a
 repository-wide search proving no supported path keeps needing the old form:
 
 - Repository-wide call sites at base `d3818f5` (all updated in this repair, none kept on the
   old form): `crates/runtime-loader/examples/r2_host.rs` (2),
   `crates/runtime-loader/examples/host_end_to_end.rs` (1),
-  `crates/runtime-loader/tests/k6_r2_end_to_end.rs` (4),
+  `crates/runtime-loader/tests/k6_r2_end_to_end.rs` (3),
   `crates/runtime-loader/tests/k5_composition.rs` (1),
   `crates/runtime-composition/tests/k4_composition.rs` (1),
   `crates/runtime-composition/tests/k4_compat.rs` (1),
@@ -154,7 +167,8 @@ repository-wide search proving no supported path keeps needing the old form:
   returns the exit for its owning composition. `into_exit()` returns `Option<DriverExit<S>>`:
   `Some` for the two exit-carrying variants, `None` for `OrderlySweepInterrupted`.
 - Additive surface: `DriverOwner`, `RuntimeHandle::owner`, `DriverExit::owner`,
-  `CompositionReleaseOutcome`, `CompositionReleaseRejection`. Per ADR 0007 §2 all of them are
+  `CompositionReleaseOutcome`, `CompositionReleaseRejection`, `CompositionReleaseFuture`.
+  Per ADR 0007 §2 all of them are
   threaded `runtime-core` -> `runtime-composition` -> `runtime-loader`.
 - Payload sizing: `CompositionReleaseOutcome` boxes the shutdown and
   `CompositionReleaseRejection` boxes each carried exit, following the existing

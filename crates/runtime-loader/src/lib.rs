@@ -85,11 +85,11 @@ pub use runtime_composition::{
     ActivationStage, CapabilityConflictReason, CapabilityContribution, CapabilityFactoryFn,
     CapabilityOwnership, CapabilitySlot, CleanupResource, CompositionBuilder,
     CompositionDriverShutdown, CompositionError, CompositionHandle, CompositionPlan,
-    CompositionReleaseOutcome, CompositionReleaseRejection, CompositionShutdownFailure,
-    ConfigRequirement, ConstructionStage, FactoryConflictReason, HookFuture, HostConfig,
-    LifecycleHook, ModuleDefinition, ModuleRegistration, OwnerLossReleaseError,
-    PluginConflictReason, ReactiveCapabilityDeclaration, RollbackFailure, RollbackReport,
-    RuntimeAssembly, StartupFailure, lifecycle_hook,
+    CompositionReleaseFuture, CompositionReleaseOutcome, CompositionReleaseRejection,
+    CompositionShutdownFailure, ConfigRequirement, ConstructionStage, FactoryConflictReason,
+    HookFuture, HostConfig, LifecycleHook, ModuleDefinition, ModuleRegistration,
+    OwnerLossReleaseError, PluginConflictReason, ReactiveCapabilityDeclaration, RollbackFailure,
+    RollbackReport, RuntimeAssembly, StartupFailure, lifecycle_hook,
 };
 pub use runtime_composition::{
     AttemptId, Cancellation, CapabilityDeclaration, CapabilityHandle, CapabilityPin,

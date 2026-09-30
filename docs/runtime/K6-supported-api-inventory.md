@@ -80,11 +80,14 @@ removals, no renames):
   annotates every intermediate value with an explicit type. It is checked
   with `cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml
   --all-targets` on stable and on the MSRV, plus clippy `-D warnings` on
-  the same manifest. `crates/runtime-loader/tests/review_r2_exports.rs`
+  the same manifest, and `.github/workflows/ci.yml` runs exactly those three
+  commands in its `r2-host-fixture` job — the fixture is a gate, not only a
+  command in a document. `crates/runtime-loader/tests/review_r2_exports.rs`
   stays as the in-workspace vocabulary regression.
 - This wave adds, additively along the same chain: `DriverOwner`,
-  `CompositionReleaseOutcome`, `CompositionReleaseRejection` (the
-  owner-bound release of ADR 0009), `FactoryRegistry`,
+  `CompositionReleaseOutcome`, `CompositionReleaseRejection` and
+  `CompositionReleaseFuture` (the owner-bound release of ADR 0009),
+  `FactoryRegistry`,
   `RUN_DEFINITION_FORMAT`, `LEGACY_RUN_DEFINITION_FORMAT_V1` (ADR 0008
   makes the legacy tag a host-visible fact, because a durable identity
   carrying it is refused), `RecoveryReason`, `StoreInvariant`,
@@ -141,7 +144,7 @@ Host-facing supported (all also re-exported by the loader):
 | Stable declarations | `ModuleDefinition` (builder: `new`, `depends_on`, `with_task`, `with_declarative_capability`, `with_reactive_capability`, `with_capability`, `requiring_config`, `with_optional_config`), `CapabilityContribution`, `CapabilityOwnership`, `ReactiveCapabilityDeclaration`, `ConfigRequirement` |
 | Process-local registration | `ModuleRegistration` (`factory`, `plugin`, `plugin_with_config`, `on_activate`, `on_dispose`), `LifecycleHook`, `HookFuture`, `CapabilityFactoryFn`, `lifecycle_hook` |
 | Planning | `CompositionBuilder` (`register`, `build`), `CompositionPlan` (`definition`, `module_order`, `slots`, async `start`, `start_with_store`, `restore`), `CapabilitySlot`, `HostConfig` |
-| Activation / shutdown | `RuntimeAssembly` (`runtime`, `runtime_mut`, `module_order`, `host_config`, async `shutdown`, `into_driver`), `CompositionHandle` (`module_order`, async `dispose_after_driver` — `&mut self`, owner-bound: it runs no cleanup until the `DriverExit` reports the `DriverOwner` this handle was separated with; async `release_after_owner_loss` — bound-guarded, proves the bound driver's `DriverOwnerState::OwnerDropped` before any cleanup), `CompositionReleaseOutcome` (`is_released`, `into_released`), `CompositionReleaseRejection` (`ForeignDriverExit`, `AlreadyReleased`, `OrderlySweepInterrupted`, `into_exit`), `CompositionDriverShutdown` |
+| Activation / shutdown | `RuntimeAssembly` (`runtime`, `runtime_mut`, `module_order`, `host_config`, async `shutdown`, `into_driver`), `CompositionHandle` (`module_order`, `dispose_after_driver` — `&mut self`, owner-bound, and deliberately **not** `async`: it validates the `DriverExit` against the `DriverOwner` this handle was separated with and records its acceptance before returning the `CompositionReleaseFuture` that is then awaited, so a future dropped before its first poll cannot hide the release; async `release_after_owner_loss` — bound-guarded, proves the bound driver's `DriverOwnerState::OwnerDropped` before any cleanup), `CompositionReleaseFuture`, `CompositionReleaseOutcome` (`is_released`, `into_released`), `CompositionReleaseRejection` (`ForeignDriverExit`, `AlreadyReleased`, `OrderlySweepInterrupted`, `into_exit`), `CompositionDriverShutdown` |
 | Errors | `CompositionError` + `ActivationStage`, `ConstructionStage`, `CapabilityConflictReason`, `FactoryConflictReason`, `PluginConflictReason`, `CleanupResource`, `RollbackFailure`, `RollbackReport`; `StartupFailure`; `CompositionShutdownFailure`; `OwnerLossReleaseError` |
 
 Internal: `ActivatedModule`, `CleanupAuthority`, and `CleanupLedger` are

@@ -32,24 +32,25 @@ use runtime_loader::{
     CapabilityDeclaration, CapabilityDefinition, CapabilityHandle, CapabilityPin,
     CapabilityReplayIdentity, CapabilityRequirement, CapabilitySlot, CapabilityValue, CatalogEntry,
     CleanupResource, CompletionRecord, CompositionBuilder, CompositionDriverShutdown,
-    CompositionError, CompositionHandle, CompositionPlan, CompositionReleaseOutcome,
-    CompositionReleaseRejection, CompositionShutdownFailure, ConfigRequirement, ConstructionStage,
-    DefinitionError, DefinitionIdentity, DispatchRecord, DriveResult, DriverError, DriverExit,
-    DriverFuture, DriverOwner, DriverOwnerState, DurableRunState, DurableStore,
-    EffectDispatchError, EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher,
-    EffectSemantics, FactoryConflictReason, FactoryRegistry, FactoryResolutionError, FiberState,
-    FileDurableStore, HookFuture, HostConfig, Id, InMemoryDurableStore, IncompatibleEntryReason,
-    InvalidId, InvalidReferenceReason, JournalError, KeyedStreamItem, KnownEffectOutcome,
-    LegacyMutationOperation, LifecycleHook, LoaderError, ModuleCatalog, ModuleDefinition,
-    ModuleFactoryError, ModuleReference, ModuleRegistration, ModuleVersion, OperationId,
-    OutcomeRecord, OwnerLossReleaseError, PluginConfig, PluginConflictReason, PluginDefinition,
-    PluginFactory, PluginLoadContext, PluginRuntime, ReactiveCapabilityDeclaration,
-    ReconstructionError, RecoveredEffectState, ResolvedDependencies, ResolvedModules,
-    RollbackFailure, RollbackReport, RunDefinition, RunId, Runtime, RuntimeAssembly, RuntimeDriver,
-    RuntimeError, RuntimeEvent, RuntimeHandle, RuntimeLoader, ScopeError, ScopedEffect,
-    SequenceError, ShutdownStatus, StartupFailure, StepResult, StoreError, StoreErrorKind,
-    StoreInvariant, StoreRevision, StreamItem, TaskAttempt, TaskDefinition, WorkflowGraphError,
-    WorkflowReplayIdentity, LEGACY_RUN_DEFINITION_FORMAT_V1, RUN_DEFINITION_FORMAT,
+    CompositionError, CompositionHandle, CompositionPlan, CompositionReleaseFuture,
+    CompositionReleaseOutcome, CompositionReleaseRejection, CompositionShutdownFailure,
+    ConfigRequirement, ConstructionStage, DefinitionError, DefinitionIdentity, DispatchRecord,
+    DriveResult, DriverError, DriverExit, DriverFuture, DriverOwner, DriverOwnerState,
+    DurableRunState, DurableStore, EffectDispatchError, EffectDispatchFuture,
+    EffectDispatchRequest, EffectDispatcher, EffectSemantics, FactoryConflictReason,
+    FactoryRegistry, FactoryResolutionError, FiberState, FileDurableStore, HookFuture, HostConfig,
+    Id, InMemoryDurableStore, IncompatibleEntryReason, InvalidId, InvalidReferenceReason,
+    JournalError, KeyedStreamItem, KnownEffectOutcome, LegacyMutationOperation, LifecycleHook,
+    LoaderError, ModuleCatalog, ModuleDefinition, ModuleFactoryError, ModuleReference,
+    ModuleRegistration, ModuleVersion, OperationId, OutcomeRecord, OwnerLossReleaseError,
+    PluginConfig, PluginConflictReason, PluginDefinition, PluginFactory, PluginLoadContext,
+    PluginRuntime, ReactiveCapabilityDeclaration, ReconstructionError, RecoveredEffectState,
+    ResolvedDependencies, ResolvedModules, RollbackFailure, RollbackReport, RunDefinition, RunId,
+    Runtime, RuntimeAssembly, RuntimeDriver, RuntimeError, RuntimeEvent, RuntimeHandle,
+    RuntimeLoader, ScopeError, ScopedEffect, SequenceError, ShutdownStatus, StartupFailure,
+    StepResult, StoreError, StoreErrorKind, StoreInvariant, StoreRevision, StreamItem, TaskAttempt,
+    TaskDefinition, WorkflowGraphError, WorkflowReplayIdentity, LEGACY_RUN_DEFINITION_FORMAT_V1,
+    RUN_DEFINITION_FORMAT,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -250,7 +251,9 @@ pub async fn orderly_lifecycle(
         let runtime: &Runtime<InMemoryDurableStore> = exit.runtime();
         let _run: &RunId = runtime.run_id();
     }
-    match composition.dispose_after_driver(exit).await {
+    let release: CompositionReleaseFuture<'_, InMemoryDurableStore> =
+        composition.dispose_after_driver(exit);
+    match release.await {
         CompositionReleaseOutcome::Released(shutdown) => Ok(*shutdown),
         CompositionReleaseOutcome::Rejected(rejection) => {
             // A refused exit is handed back untouched for its own composition.

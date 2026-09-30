@@ -30,3 +30,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85
       - name: MSRV check
         run: cargo check --workspace --all-features
+
+  # The R2 host fixture is the structural closure proof for the supported
+  # surface (ADR 0007 §2, K6 inventory). It is deliberately not a workspace
+  # member, so no other job builds it: these are the commands that make it a
+  # gate rather than a local convention.
+  r2-host-fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Fixture check (stable)
+        run: cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml --all-targets
+      - name: Fixture clippy (stable)
+        run: cargo clippy --manifest-path fixtures/r2-host-fixture/Cargo.toml --all-targets -- -D warnings
+      - uses: dtolnay/rust-toolchain@1.85
+      - name: Fixture check (MSRV)
+        run: cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml --all-targets

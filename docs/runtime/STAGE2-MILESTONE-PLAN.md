@@ -1039,33 +1039,54 @@ Material decisions: ADR 0008 — v2 run-definition identity (tagged, counted,
 Focused verification: review_r2_identity (1, now green; failed at base with
   two definitions sharing an identity and restore accepting it),
   review_r2_probes (3, all green; 2 failed at base), review_r2_exports
-  (green; E0432 for five names at base), k6_r2_cleanup_interruption (4),
+  (green; E0432 for five names at base), k6_r2_cleanup_interruption (5),
   k2_declarative (15), k3_async (25), k3_owner_state (4),
-  k3_review_owner_drop (3), runtime-composition --all-features (37),
-  runtime-loader --all-features (green), fixture cargo check + clippy
-  -D warnings on stable and +1.85.
+  k3_review_owner_drop (3), runtime-composition --all-features (38),
+  runtime-loader --all-features (green), fixture cargo check on stable and on
+  +1.85 plus fixture clippy -D warnings on stable — the same three commands
+  the `r2-host-fixture` CI job now runs, so the fixture is enforced rather
+  than customary.
 Broad verification at the branch head: cargo test --workspace --all-features
-  342 passed / 0 failed; cargo +1.85 test --workspace --all-features 342 passed /
+  345 passed / 0 failed; cargo +1.85 test --workspace --all-features 345 passed /
   0 failed; clippy --workspace --all-targets --all-features
   -D warnings clean; fmt --check clean; check --workspace --all-targets
   --all-features clean; doc --workspace --all-features --no-deps clean with
   no broken intra-doc links; cargo run -p graph-lab and
   cargo run -p runtime-loader --example r2_host both complete successfully;
-  git diff --check clean. Declared test functions moved 310 -> 328 (+18:
-  5 definition unit tests, 4 interruption, 3 probes, 2 k2, 2 k3, 1 identity
+  git diff --check clean. Declared test functions moved 310 -> 331 (+21:
+  7 definition unit tests, 5 interruption, 3 probes, 2 k2, 2 k3, 1 identity
   probe, 1 exports probe); no existing assertion was deleted, ignored, or
   re-targeted, and the reviewed @-separator guard in k5_composition was kept
-  passing unchanged.
-Independent review: the repair has NOT been independently reviewed. Nothing
-  here is an APPROVE or a Closed verdict; implementer-green gates are not
-  review evidence.
+  passing unchanged. Two review-found assertions were rewritten in place
+  because both were vacuous: the fiber-cancellation case now cleans a failing
+  module before the cancellation point, so "the recorded failure survived the
+  drops" can actually fail, and the definition-collision case now observes the
+  durable store on reopen instead of reading a detached `InMemoryDurableStore`
+  clone. The v2 grammar also gained byte-length goldens (multibyte values) and
+  a skeleton-invariance oracle that strips every data token.
+Independent review: the repair has been independently reviewed against the
+  four R2 findings, and that review found R2-03 incomplete: dropping the
+  orderly release future before its first poll consumed the `DriverExit`, and
+  with it the registry authority, while the ledger still claimed a
+  full-authority sweep could run — leaving the remaining cleanup unreachable
+  behind an `OrderlyShutdownCompleted` answer that pointed at an exit no host
+  held. The fix commit that follows `93d01c1` makes the ownership check and the
+  ledger marking happen at call time, returns a named `CompositionReleaseFuture`
+  instead of an anonymous `async fn` future, pins the behaviour with the new
+  pre-first-poll regression case, wires the fixture into CI, and repairs the two
+  vacuous assertions above. That fix commit has itself not been re-reviewed.
+  Nothing here is an APPROVE or a Closed verdict; implementer-green gates are
+  not review evidence.
 Remaining risks and non-goals: a v1 durable run has no migration path (a
-  documented refusal, per ADR 0008); RuntimeAssembly::shutdown(&mut self)
-  stays non-resumable by design, so cancellation safety covers the two
+  documented refusal, per ADR 0008); RuntimeAssembly::shutdown(self)
+  stays non-resumable by design — the consumed assembly and its whole sweep
+  live in the returned future, which the method documentation now states — so
+  cancellation safety covers the two
   handle release paths; the fixture proves nameability, not semantic
   correctness of the exported surface; cargo +1.85 clippy was not runnable
   here (the clippy component is not installed for the 1.85 toolchain), only
-  +1.85 check and +1.85 test; no remote CI has observed this branch.
+  +1.85 check and +1.85 test, for the workspace and for the fixture alike;
+  no remote CI has observed this branch.
 ```
 
 The reviewed lifecycle and identity statements in `R2-KERNEL-CONTRACT.md`,

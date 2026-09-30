@@ -1189,6 +1189,95 @@ mod tests {
         assert_ne!(v2[0], v2[1]);
     }
 
+    /// Data is framed by **byte** length and can never imitate structure.
+    ///
+    /// The goldens pin multibyte lengths (a `chars()`-based length would emit
+    /// `%2:任务`), and stripping every length-delimited token out of an
+    /// adversarial value leaves one constant skeleton — the direct statement of
+    /// "user data cannot move a field boundary", which value-by-value
+    /// distinctness alone does not express.
+    #[test]
+    fn identity_v2_frames_data_by_byte_length_and_keeps_the_skeleton_constant() {
+        let multibyte = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(id("store"), "任务", "🔐"))
+            .with_task(TaskDefinition::new(id("load"), "display label"));
+        assert_eq!(
+            canonical_v2(&multibyte),
+            "kernis-run-definition-v2#capabilities[1]#capability%5:store%6:任务%4:🔐\
+             #requires[0]#end#end#tasks[1]#task%4:load#depends[0]#end#requires[0]#end\
+             #effect#absent#end",
+            "a data token declares its UTF-8 byte length, not its character count"
+        );
+
+        let wider = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(id("store"), "任务🔐", "v1"))
+            .with_task(TaskDefinition::new(id("load"), "display label"));
+        assert_eq!(
+            canonical_v2(&wider),
+            "kernis-run-definition-v2#capabilities[1]#capability%5:store%10:任务🔐%2:v1\
+             #requires[0]#end#end#tasks[1]#task%4:load#depends[0]#end#requires[0]#end\
+             #effect#absent#end",
+            "任务 is six bytes and the lock emoji is four, so that kind token is ten long"
+        );
+
+        /// Removes every `%<byte length>:<bytes>` token, leaving the frame.
+        fn skeleton(identity: &str) -> String {
+            let mut rest = identity;
+            let mut frame = String::new();
+            while let Some(offset) = rest.find('%') {
+                frame.push_str(&rest[..offset]);
+                let header = &rest[offset + 1..];
+                let colon = header
+                    .find(':')
+                    .expect("a data token carries a length header");
+                let length: usize = header[..colon]
+                    .parse()
+                    .expect("a data token length is a decimal byte count");
+                let value = &header[colon + 1..];
+                assert!(
+                    value.is_char_boundary(length),
+                    "the declared {length} bytes do not land on a character boundary"
+                );
+                rest = &value[length..];
+            }
+            frame.push_str(rest);
+            frame
+        }
+
+        let shaped = |value: &str| {
+            RunDefinition::new()
+                .with_capability(CapabilityDeclaration::new(id("capabilities"), value, value))
+                .with_task(
+                    TaskDefinition::new(id("tasks"), value)
+                        .depends_on(id("effect"))
+                        .require_capability(requirement("capabilities", value)),
+                )
+                .with_task(task("effect"))
+        };
+        let frame = skeleton(&canonical_v2(&shaped("plain")));
+        assert!(!frame.contains('%'), "the frame itself carries no data");
+        for value in [
+            "任务",
+            "🔐",
+            "#end",
+            "%5:store",
+            "#tasks[0]#end",
+            "#requires[1]",
+            "[0]",
+            "]",
+            "0:1:2",
+            "#capability%0:#end",
+        ] {
+            let identity = canonical_v2(&shaped(value));
+            assert!(identity.contains(value), "{value:?} is present as data");
+            assert_eq!(
+                skeleton(&identity),
+                frame,
+                "{value:?} moved a structural boundary: {identity}"
+            );
+        }
+    }
+
     /// Strings that imitate the v1 framing, the v2 framing, or a v2 count are
     /// ordinary data: they never move a field boundary.
     #[test]
@@ -1334,5 +1423,62 @@ mod tests {
                 assert_ne!(left, right, "each semantic variant needs its own identity");
             }
         }
+    }
+
+    /// The parts of the grammar the sensitivity list above does not vary: a
+    /// capability's own dependency edge, an empty collection, and an empty
+    /// scalar field.
+    #[test]
+    fn identity_v2_is_sensitive_to_capability_edges_and_empty_fields() {
+        let plain = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(
+                id("clock"),
+                "service",
+                "clock-v1",
+            ))
+            .with_capability(CapabilityDeclaration::new(
+                id("store"),
+                "service",
+                "store-v1",
+            ))
+            .with_task(task("read"));
+        let with_edge = RunDefinition::new()
+            .with_capability(
+                CapabilityDeclaration::new(id("clock"), "service", "clock-v1")
+                    .depends_on(requirement("store", "store-v1")),
+            )
+            .with_capability(CapabilityDeclaration::new(
+                id("store"),
+                "service",
+                "store-v1",
+            ))
+            .with_task(task("read"));
+        assert_ne!(
+            canonical_v2(&plain),
+            canonical_v2(&with_edge),
+            "a capability dependency edge is admission-relevant, so it is identity-bearing"
+        );
+
+        let no_capabilities = RunDefinition::new().with_task(task("read"));
+        let no_capabilities_identity = canonical_v2(&no_capabilities);
+        assert!(
+            no_capabilities_identity.contains("#capabilities[0]"),
+            "an empty collection is framed as a zero count: {no_capabilities_identity}"
+        );
+        assert_ne!(
+            no_capabilities_identity,
+            canonical_v2(&plain),
+            "no capability declarations is not the same run as some"
+        );
+
+        let empty_kind = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(id("store"), "", "store-v1"))
+            .with_task(task("read"));
+        let empty_kind_identity = canonical_v2(&empty_kind);
+        assert!(
+            empty_kind_identity.contains("%0:"),
+            "an empty field is a zero-length token, never an omitted one: \
+             {empty_kind_identity}"
+        );
     }
 }

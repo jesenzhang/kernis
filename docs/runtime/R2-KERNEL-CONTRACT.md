@@ -202,20 +202,33 @@ completed its cleanup exactly once; the exit comes back untouched.
 best-effort loop inside one future: the remaining module queue, the current
 module, the in-flight dispose hook or fiber disposer, and the report built
 so far all live on the `CompositionHandle`, so dropping
-`dispose_after_driver` (or `release_after_owner_loss`) mid-await — the
-ordinary outcome when a host's shutdown timeout fires, or the task is
-aborted — loses nothing. Re-entering continues where the cancellation
-happened: the started step is polled again rather than restarted, so a
-non-idempotent dispose hook never runs twice; failures already collected
-stay in the final `RollbackReport`; and no cancellation is ever reported as
-a completion. One consequence is unavoidable and stated rather than hidden:
-an orderly sweep cancelled after its registry authority was released with
-the future can no longer run with that authority, so a later
-`dispose_after_driver` on the same handle is refused with
-`CompositionReleaseRejection::OrderlySweepInterrupted` and the remaining
-cleanup continues through `release_after_owner_loss`. A completed flow is
-terminal: whatever the driver reports afterwards, a third release attempt
-resolves `AlreadyReleased` rather than inventing a second completion.
+`dispose_after_driver` (or `release_after_owner_loss`) — the ordinary outcome
+when a host's shutdown timeout fires, or the task is aborted — loses neither
+the outstanding resources nor the facts already recorded. The drop point that
+matters most is the earliest one: a future dropped **before its first poll**
+has started nothing, and re-entry still performs the whole cleanup.
+Re-entering continues where the cancellation happened: the started step is
+polled again rather than restarted, so a non-idempotent dispose hook never
+runs twice; failures already collected stay in the final `RollbackReport`; and
+no cancellation is ever reported as a completion.
+
+Acceptance is recorded when a release is accepted, not when its future is
+first polled. `dispose_after_driver` is deliberately not an `async fn`: it
+checks the exit owner and this ledger synchronously, and a call this handle
+accepts marks its ledger before returning the `CompositionReleaseFuture`. One
+consequence follows and is stated rather than hidden: an accepted orderly
+release takes the `DriverExit`, and with it the capability registry, so if the
+returned future is dropped before it completes that authority is gone. A later
+`dispose_after_driver` on the same handle is then refused with
+`CompositionReleaseRejection::OrderlySweepInterrupted`, and
+`release_after_owner_loss` — the only authority left — finishes the remaining
+cleanup and reports every registration it can no longer unregister as a
+failure. This holds for a future dropped before its first poll exactly as for
+one cancelled mid-await: nothing is stranded behind an
+`OrderlyShutdownCompleted` answer that points at an exit no host holds.
+A completed flow is terminal: whatever the driver reports afterwards, a third
+release attempt resolves `AlreadyReleased` rather than inventing a second
+completion.
 
 Abnormal owner loss: when the driver future is dropped, aborted, or
 unwound by a panic, **no `DriverExit` exists**. The K3 driver-owner guard

@@ -41,8 +41,8 @@ mod plan;
 mod registration;
 
 pub use assembly::{
-    CompositionDriverShutdown, CompositionHandle, CompositionReleaseOutcome,
-    CompositionReleaseRejection, RuntimeAssembly,
+    CompositionDriverShutdown, CompositionHandle, CompositionReleaseFuture,
+    CompositionReleaseOutcome, CompositionReleaseRejection, RuntimeAssembly,
 };
 pub use config::HostConfig;
 pub use definition::{
