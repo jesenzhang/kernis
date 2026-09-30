@@ -577,23 +577,49 @@ impl CapabilityRegistry {
     }
 
     /// Removes a runtime and disposes all associated fibers.
+    ///
+    /// This is the one-shot form of [`Self::take`] followed by
+    /// [`Self::dispose_taken`], kept for callers that cannot lose the started
+    /// disposal by being cancelled.
     pub async fn remove(&self, id: &Id) -> Result<Option<Arc<PluginRuntime>>, RegistryError> {
-        let runtime = self
-            .runtimes
-            .lock()
-            .expect("plugin registry lock poisoned")
-            .remove(id);
-        let Some(runtime) = runtime else {
+        let Some(runtime) = self.take(id) else {
             return Ok(None);
         };
+        match Self::dispose_taken(id.clone(), &runtime).await {
+            Ok(()) => Ok(Some(runtime)),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Removes a runtime from the registry synchronously, without disposing
+    /// its fibers.
+    ///
+    /// This is the non-awaiting half of [`Self::remove`]. It exists so a
+    /// cancellation-safe cleanup caller can take ownership of the runtime here
+    /// and park [`Self::dispose_taken`] as its own resumable step, instead of
+    /// a drop between the map removal and the disposal completing the removal
+    /// while stranding a runtime that is no longer reachable through the
+    /// registry.
+    #[must_use = "the taken runtime is the only handle left once it leaves the registry"]
+    pub fn take(&self, id: &Id) -> Option<Arc<PluginRuntime>> {
+        self.runtimes
+            .lock()
+            .expect("plugin registry lock poisoned")
+            .remove(id)
+    }
+
+    /// Disposes the fibers of one runtime previously removed with
+    /// [`Self::take`], reporting the same [`RegistryError::Dispose`] that
+    /// [`Self::remove`] reports for a failed cleanup.
+    ///
+    /// The caller owns the runtime for the duration of this future, so
+    /// cancelling it loses the started disposal but never the runtime.
+    pub async fn dispose_taken(plugin: Id, runtime: &PluginRuntime) -> Result<(), RegistryError> {
         let errors = runtime.dispose_fibers().await;
         if errors.is_empty() {
-            Ok(Some(runtime))
+            Ok(())
         } else {
-            Err(RegistryError::Dispose {
-                plugin: id.clone(),
-                errors,
-            })
+            Err(RegistryError::Dispose { plugin, errors })
         }
     }
 }

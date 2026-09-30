@@ -18,7 +18,7 @@ use crate::error::{
     RollbackReport,
 };
 use crate::registration::{HookFuture, LifecycleHook};
-use capability_graph::{CapabilityFiber, CapabilityRegistry};
+use capability_graph::{CapabilityFiber, CapabilityRegistry, PluginRuntime};
 use kernis_core::Id;
 use runtime_core::{
     DriverExit, DriverOwnerState, EffectDispatcher, Runtime, RuntimeDriver, RuntimeHandle,
@@ -95,6 +95,21 @@ enum InFlight {
         /// The module that owns the fiber.
         module_id: Id,
         /// The plugin identity the fiber was started for.
+        plugin_id: Id,
+        /// The started disposal future, parked until it completes.
+        future: StepFuture,
+    },
+    /// One synchronously taken plugin registration's disposal, started and
+    /// awaiting its external cleanup.
+    ///
+    /// The registry entry is already gone when this step is parked (the take
+    /// itself never awaits), so the parked future owns the runtime and a
+    /// cancellation between the take and the disposal completing strands
+    /// neither the registration bookkeeping nor the runtime.
+    RegistrationRemoval {
+        /// The module that owns the registration.
+        module_id: Id,
+        /// The plugin identity whose registration was taken.
         plugin_id: Id,
         /// The started disposal future, parked until it completes.
         future: StepFuture,
@@ -201,6 +216,14 @@ async fn dispose_fiber(fiber: Arc<CapabilityFiber>) -> Result<(), String> {
     fiber.dispose().await.map_err(|source| source.to_string())
 }
 
+/// Owns the taken runtime for the duration of its fiber disposal so the
+/// started step can be parked in the ledger as a `'static` future.
+async fn dispose_registration(plugin_id: Id, runtime: Arc<PluginRuntime>) -> Result<(), String> {
+    CapabilityRegistry::dispose_taken(plugin_id, &runtime)
+        .await
+        .map_err(|source| source.to_string())
+}
+
 /// Awaits the already-started step without touching the rest of the ledger.
 async fn await_parked(step: &mut InFlight) -> (Id, CleanupResource, Result<(), String>) {
     match step {
@@ -220,6 +243,17 @@ async fn await_parked(step: &mut InFlight) -> (Id, CleanupResource, Result<(), S
             },
             future.await,
         ),
+        InFlight::RegistrationRemoval {
+            module_id,
+            plugin_id,
+            future,
+        } => (
+            module_id.clone(),
+            CleanupResource::PluginRegistration {
+                plugin_id: plugin_id.clone(),
+            },
+            future.await,
+        ),
     }
 }
 
@@ -233,8 +267,10 @@ async fn await_parked(step: &mut InFlight) -> (Id, CleanupResource, Result<(), S
 /// owned cleanup succeeded.
 ///
 /// A module leaves the ledger only after its last step completed, and a started
-/// step is awaited *in place* from the ledger, so dropping this future preserves
-/// both the outstanding resources and everything already recorded.
+/// step — a hook, a fiber disposal, or the disposal of a synchronously taken
+/// plugin registration — is awaited *in place* from the ledger, so dropping
+/// this future preserves both the outstanding resources and everything already
+/// recorded.
 async fn run_sweep(ledger: &mut CleanupLedger, authority: CleanupAuthority<'_>) -> RollbackReport {
     loop {
         if ledger.in_flight.is_some() {
@@ -273,24 +309,42 @@ async fn run_sweep(ledger: &mut CleanupLedger, authority: CleanupAuthority<'_>) 
         }
 
         if let Some(plugin_id) = ledger.current_plugins.last().cloned() {
-            let result = match authority {
-                CleanupAuthority::Registry(registry) => registry
-                    .remove(&plugin_id)
-                    .await
-                    .map_err(|source| source.to_string()),
-                CleanupAuthority::OwnerLost => {
-                    Err("the capability registry authority was released with the \
-                     runtime owner, so the registration could not be unregistered"
-                        .to_owned())
+            match authority {
+                CleanupAuthority::Registry(registry) => {
+                    // The registry removal itself never awaits, so the entry
+                    // leaves `current_plugins` with the take: what is still
+                    // outstanding afterwards is owned by the parked disposal,
+                    // not by the queue. Cancellation therefore cannot strand a
+                    // runtime that has already left the registry, and a resume
+                    // completes the disposal it parked instead of reporting a
+                    // removal that already happened as impossible.
+                    match registry.take(&plugin_id) {
+                        Some(runtime) => {
+                            let future = Box::pin(dispose_registration(plugin_id.clone(), runtime));
+                            ledger.current_plugins.pop();
+                            ledger.in_flight = Some(InFlight::RegistrationRemoval {
+                                module_id,
+                                plugin_id,
+                                future,
+                            });
+                        }
+                        // Already unregistered: the same no-op success the
+                        // one-shot `remove` reported as `Ok(None)`.
+                        None => {
+                            ledger.current_plugins.pop();
+                        }
+                    }
                 }
-            };
-            ledger.current_plugins.pop();
-            if let Err(reason) = result {
-                ledger.record_failure(
-                    module_id,
-                    CleanupResource::PluginRegistration { plugin_id },
-                    reason,
-                );
+                CleanupAuthority::OwnerLost => {
+                    ledger.current_plugins.pop();
+                    ledger.record_failure(
+                        module_id,
+                        CleanupResource::PluginRegistration { plugin_id },
+                        "the capability registry authority was released with the \
+                         runtime owner, so the registration could not be unregistered"
+                            .to_owned(),
+                    );
+                }
             }
             continue;
         }
