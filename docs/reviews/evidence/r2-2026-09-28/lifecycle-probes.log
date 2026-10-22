@@ -1,0 +1,110 @@
+cargo : warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving
+
+ the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\
+
+incremental\capability_graph-14g6wdct9f12y\s-hm61iskdde-0i7cue2-working`
+
+At line:1 char:683
+
++ ...  $case.Log; cargo test -p $case.Package --test $case.Test -- --nocapt ...
+
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    + CategoryInfo          : NotSpecified: (warning: hard l...i7cue2-working`:String) [], RemoteException
+
+    + FullyQualifiedErrorId : NativeCommandError
+
+ 
+
+
+
+warning: `capability-graph` (lib) generated 1 warning
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+tal\workflow_recovery-2ljrwte04x93s\s-hm61iskdd3-0ckw1ue-working`
+
+
+
+warning: `workflow-recovery` (lib) generated 1 warning
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+tal\runtime_core-2abuf8rdc631q\s-hmpfmkfaux-13lc8fd-working`
+
+
+
+warning: `runtime-core` (lib) generated 1 warning
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+tal\runtime_composition-2ueverm7w6e53\s-hmpfmn0yb2-0mdvmzp-working`
+
+
+
+warning: `runtime-composition` (lib) generated 1 warning
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
+
+     Running tests\review_r2_probes.rs (target\debug\deps\review_r2_probes-647f86b8ce1383be.exe)
+
+
+
+running 2 tests
+
+cancelled cleanup: retry=Err(AlreadyReleased), untouched A dispose count=0
+
+
+
+thread 'review_cancelled_owner_loss_cleanup_must_not_claim_already_released' (31336) panicked at crates\runtime-composi
+
+tion\tests\review_r2_probes.rs:75:5:
+
+cancellation cannot discard untouched cleanup resources and claim AlreadyReleased
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+foreign exit: A state=Running, A disposed=1, cleanup success=true, returned run=review-b
+
+
+
+thread 'review_foreign_exit_must_not_dispose_live_composition' (28748) panicked at crates\runtime-composition\tests\rev
+
+iew_r2_probes.rs:41:5:
+
+assertion `left == right` failed: foreign DriverExit must not authorize cleanup of live A
+
+  left: 1
+
+ right: 0
+
+test review_foreign_exit_must_not_dispose_live_composition ... FAILED
+
+test review_cancelled_owner_loss_cleanup_must_not_claim_already_released ... FAILED
+
+
+
+failures:
+
+
+
+failures:
+
+    review_cancelled_owner_loss_cleanup_must_not_claim_already_released
+
+    review_foreign_exit_must_not_dispose_live_composition
+
+
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+error: test failed, to rerun pass `-p runtime-composition --test review_r2_probes`
+

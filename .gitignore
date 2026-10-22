@@ -7,3 +7,6 @@
 
 # Compile-only fixture crates outside the workspace build into their own target dir.
 fixtures/**/target/
+
+# Local tool scratch space (agent session artifacts), never committed.
+/.workbuddy/

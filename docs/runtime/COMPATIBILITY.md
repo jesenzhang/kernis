@@ -178,8 +178,15 @@ umbrella and its mirrored `runtime-composition` vocabulary):
   verifies this is a real contract, not unverified metadata: the
   declared MSRV is checked with `cargo +1.85 check --workspace
   --all-features` (and `cargo +1.85 test --workspace --all-features`
-  at K6 closeout), and CI runs `cargo check --workspace --all-features`
-  on 1.85 in a dedicated `msrv` job on every push.
+  at K6 closeout), and a dedicated `msrv` CI job repeats both the check
+  and the clippy gate on 1.85 on every push.
+- The pin, not the runner default, selects the toolchain: the
+  repository's `rust-toolchain.toml` selects `stable` for the working
+  directory and outranks an installed default, so the MSRV jobs name
+  1.85 through `RUSTUP_TOOLCHAIN` and print `cargo --version` as
+  evidence. The earlier `msrv` job ran plain `cargo check` and was
+  therefore exercising stable; that is corrected in
+  `.github/workflows/ci.yml` (R2 repair reconciliation, 2026-10-22).
 - Raising the MSRV is a public API-tier change under §1 (a
   dependency-level MSRV bump forces it too); it requires the verification
   above plus a closeout note. Lowering it requires the same proof at the

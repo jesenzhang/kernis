@@ -1095,6 +1095,77 @@ new contract in the same branch, and `K6-supported-api-inventory.md` records
 the fourth closure wave with its exclusions and the reason import lists were
 replaced by the fixture as closure evidence.
 
+### R2 repair branch reconciliation (2026-10-22)
+
+The 2026-09-28/29 record above describes the branch at `0ec8096`. Four
+commits it does not cover landed after it, and the branch has since been
+re-verified end to end. This entry records the current branch state; it is not
+a review verdict, and no independent review has been performed on this head.
+
+```text
+Result: READY FOR REVIEW / NOT INTEGRATED. K6 stays Integrated, R2 stays not
+  Closed, Stage 3 not started.
+Base: d3818f5d2a77030f353e1a2a6c1744d494cae0c4 (unchanged).
+Final integrated HEAD: none. Branch head at the time of writing is the tip
+  that appends this entry; the commit is documentation-only.
+Commits after the 2026-09-28 record: fdc8e5e (parkable registration disposal
+  through a take/dispose_taken split), eeb44b5 (one action pin per toolchain,
+  MSRV forced onto 1.85 through RUSTUP_TOOLCHAIN, 1.85 clippy added), a108bee
+  (identifier reservation by relaxed compare-and-swap instead of the
+  deprecated fetch_update), 281d293 (the take/dispose_taken equivalence
+  regression), and the documentation commit that appends this entry.
+CI history on the branch - the branch had never been green before:
+  * 36699645785 (63b443d): all three jobs failed within five seconds. The
+    pinned dtolnay/rust-toolchain commit was the action release for Rust
+    1.120.0: that action.yml declares no `toolchain` input and hard-codes
+    `toolchain: 1.120.0`, so every `with: toolchain` was silently ignored and
+    rustup answered 404 for a version that does not exist.
+  * 39719615044 (eeb44b5): the new pins worked, and the stable clippy gate
+    then failed on a genuine upstream deprecation, AtomicU64::fetch_update
+    (deprecated on CI's stable 1.99.1, not yet on the local 1.98.1).
+    try_update does not exist on MSRV 1.85, so both identifier counters moved
+    to a relaxed compare-and-swap loop that is warning-free on both.
+  * 39719852556 (a108bee): passed rust, msrv, and r2-host-fixture.
+MSRV: the `msrv` job previously ran plain `cargo check`, while the
+  repository's rust-toolchain.toml selects `stable` for the working directory
+  and outranks an installed default - so the job was testing stable and the
+  "MSRV gate" never observed 1.85. It now sets RUSTUP_TOOLCHAIN=1.85.1, the
+  run log for 39719852556 shows `cargo 1.85.1`, and the 1.85 clippy pass that
+  the 2026-09-28 record listed as unrunnable now runs in CI and locally.
+Classification of fdc8e5e: defensive, not a reproducible leak on the current
+  wiring. Every plugin fiber is instantiated by the activating module and
+  recorded in that module's fiber list (`plan.rs`), the ledger disposes those
+  fibers before it reaches the registrations (`assembly.rs`, `run_sweep`), and
+  `CapabilityFiber::dispose` returns immediately for an already-Disposed fiber
+  (`semantic.rs`), so `PluginRuntime::dispose_fibers` has nothing left to
+  await and the registration disposal completes within one poll. Parking is
+  kept because it makes the step safe if a plugin runtime ever holds a fiber
+  the activating module did not instantiate. ADR 0009 §3 now states that
+  boundary instead of claiming removals cannot be parked, and
+  `take_plus_dispose_taken_matches_one_shot_removal` pins the split as
+  behaviourally identical to the one-shot removal on the absent, successful,
+  and failing cases.
+Documentation: the earlier record's statements that the branch was not pushed
+  and that no remote CI had observed it are superseded here - the branch was
+  pushed and its CI history is recorded above. The review and repair records
+  under docs/reviews/ are now tracked, because README and this plan cite them.
+Broad verification at a108bee plus this entry: fmt --check clean; clippy
+  --workspace --all-targets --all-features -D warnings clean; test --workspace
+  --all-features 346 passed / 0 failed (52 binaries); cargo +1.85 test
+  --workspace --all-features 346 passed / 0 failed; cargo +1.85 clippy
+  -D warnings clean; doc --workspace --no-deps clean; graph-lab and the
+  r2_host example complete; the host fixture checks and its MSRV check exit 0.
+Independent review: the second review's finding (R2-03 only partly closed) was
+  answered by implementer fixes, and the three commits after it have not been
+  reviewed. A third independent review over d3818f5..HEAD is required before
+  integration; this entry is not that review and claims no verdict.
+Remaining risks and non-goals: unchanged from the 2026-09-28 record, except
+  that the 1.85 clippy gap is closed and the check has moved into CI. The v1
+  durable migration gap and the non-resumable RuntimeAssembly::shutdown stay
+  out of scope for this repair; no new subsystem, no second authority, no
+  unsafe.
+```
+
 ## Stage 3 entry gate
 
 Stage 3 planning starts only after K6 closes Stage 2. Declarative meta-framework

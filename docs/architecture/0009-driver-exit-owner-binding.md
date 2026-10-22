@@ -126,9 +126,24 @@ pub enum CompositionReleaseRejection<S = InMemoryDurableStore> {
   outstanding. `AlreadyReleased` now means exactly one thing: the entire cleanup flow for this
   handle completed once. A re-entry resumes the parked step instead of re-calling a started
   non-idempotent hook, and the eventual report keeps the earlier failures.
-- Registry removals cannot be parked (`registry.remove` borrows the runtime's registry), so an
-  interruption inside a removal is recorded as an interrupted step with its registration still
-  outstanding, and is never retried blindly.
+- Registry removals are parkable, and the sweep parks them. The one-shot
+  `CapabilityRegistry::remove` is now the composition of a synchronous `take` and a parkable
+  `dispose_taken`; the sweep takes the registration synchronously (the entry leaves the registry
+  with the take, which never awaits) and parks the taken runtime's disposal as its own in-flight
+  step, exactly like a dispose hook or a fiber. A cancellation between the map removal and the
+  disposal completing therefore loses neither the outstanding runtime nor the truth about what
+  already happened: the resume completes the parked disposal instead of reporting a removal that
+  already happened as impossible. `remove` keeps its one-shot behaviour and the same
+  `RegistryError::Dispose` shape on top of the two halves.
+- That step is defensive rather than currently reachable, and the reason is structural: every
+  plugin fiber is instantiated by the activating module and recorded in that module's fiber list
+  (`crates/runtime-composition/src/plan.rs`), the ledger disposes those fibers before it reaches
+  the registrations, and `CapabilityFiber::dispose` returns immediately for a fiber that is
+  already `Disposed` (`crates/capability-graph/src/semantic.rs`), so
+  `PluginRuntime::dispose_fibers` has nothing left to await and the registration disposal
+  completes within a single poll. Parking becomes load-bearing only if a plugin runtime ever
+  holds a fiber the activating module did not instantiate; the step is kept so that such a
+  runtime cannot quietly reintroduce the drop window.
 - Accepting the orderly release also proves the registry authority can become unreachable: the
   accepted call takes the `Runtime` the sweep cleans through, and the acceptance is recorded
   when `dispose_after_driver` is called with an exit this handle accepts, not when the returned
@@ -196,9 +211,10 @@ repository-wide search proving no supported path keeps needing the old form:
   pre-existing contract: that path consumes the assembly, so cancelling its future drops the
   runtime with the future and no ledger survives to resume. It is documented as a limitation,
   not silently redefined; the handle paths are the supported driver lifecycle.
-- `capability-graph` is unchanged: fiber disposal is driven through the existing
-  `CapabilityFiber::dispose`, wrapped by an owned future in the composition ledger, so no
-  second lifecycle authority appears.
+- `capability-graph` gains one additive split and no second lifecycle authority: fiber disposal
+  still runs through the existing `CapabilityFiber::dispose`, and the composition ledger wraps it
+  in an owned future. The registry now offers `take` plus `dispose_taken`, with the one-shot
+  `remove` kept as their composition so every existing caller and failure message is unchanged.
 
 ## Rejected alternatives
 
@@ -247,10 +263,17 @@ dropping the release future before it is ever polled (nothing has started, so re
 the whole cleanup), cancellation while a dispose hook is pending, and cancellation while fiber
 disposal is pending; each re-entry continues the untouched modules, never starts a second hook
 run, keeps earlier failures in the final `RollbackReport`, and only after real completion does a
-further call resolve `AlreadyReleased`. A fourth case covers the interrupted orderly sweep: the
-full-authority release is refused, the best-effort release finishes what remains, and the
-registration that can no longer be unregistered is reported as a failure rather than claimed
-clean.
+further call resolve `AlreadyReleased`. A fifth case covers the strictest drop point of the orderly path: a release accepted by
+`dispose_after_driver` but dropped before its first poll starts nothing, stays recoverable
+best-effort, and ends `AlreadyReleased` only after the flow really completed.
+
+Registration-disposal parking, in `crates/capability-graph/tests/semantic.rs`
+(`take_plus_dispose_taken_matches_one_shot_removal`): an absent `take` is the same no-op as an
+absent removal, a successful take removes only the registration while the fibers are disposed by
+the parked step, and a failing fiber cleanup produces exactly the failure the one-shot `remove`
+produces. The reachability boundary stated in §3 was checked over the composition path with a
+review probe: cancellation lands in the fiber step, and a registration that can no longer be
+unregistered is reported through the documented best-effort owner-loss path, not lost.
 
 End-to-end lifecycle through the loader: `crates/runtime-loader/tests/k6_r2_end_to_end.rs`
 and `crates/runtime-loader/examples/r2_host.rs`.

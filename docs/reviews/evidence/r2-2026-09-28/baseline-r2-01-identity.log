@@ -1,0 +1,25 @@
+
+
+
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running tests\review_r2_identity.rs (target\debug\deps\review_r2_identity-7cbabfe8ffda19b4.exe)
+
+running 1 test
+A=kernis-run-definition-v1:12:capabilities:10:capability:1:x:4:kind:7:service:10:definition:12:capabilities:12:dependencies:5:tasks:4:task:12:capabilities:12:dependencies:12:capabilities:6:effect:6:absent:4:task:1:x:12:dependencies:12:capabilities:6:effect:6:absent:4:task:1:z:12:dependencies:12:capabilities:1:x:12:capabilities:6:effect:6:absent
+B=kernis-run-definition-v1:12:capabilities:10:capability:1:x:4:kind:7:service:10:definition:12:capabilities:12:dependencies:5:tasks:4:task:12:capabilities:12:dependencies:12:capabilities:6:effect:6:absent:4:task:1:x:12:dependencies:12:capabilities:6:effect:6:absent:4:task:1:z:12:dependencies:12:capabilities:1:x:12:capabilities:6:effect:6:absent
+restore under different semantics accepted=true
+
+thread 'review_semantically_distinct_definitions_must_not_share_identity' (35516) panicked at crates\runtime-core\tests\review_r2_identity.rs:32:5:
+restore must reject a changed prerequisite/capability contract
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test review_semantically_distinct_definitions_must_not_share_identity ... FAILED
+
+failures:
+
+failures:
+    review_semantically_distinct_definitions_must_not_share_identity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p runtime-core --test review_r2_identity`

@@ -71,9 +71,14 @@ is not Closed. It adds ADR 0008 (`kernis-run-definition-v2`, with v1 frozen
 and a durable v1 identity refused fail-closed) and ADR 0009 (owner-bound
 release through a cancellation-safe cleanup ledger), and it changes how API
 closure is proved (a loader-only compile-only fixture crate with explicit
-types, checked on stable and MSRV). Stage 3 stays unopened: its entry gate
-requires the independent re-review and the integration evidence this repair
-does not yet have.
+types, checked on stable and MSRV). A second independent review of the repair
+found R2-03 only partly closed; the branch fixes that (acceptance now happens
+when the release is called, not at the future's first poll) and the review's
+medium/low items, but those fixes, the parkable registration disposal, and the
+CI repair that followed have not been independently reviewed, and the branch's
+CI only became green on `a108bee` (run 39719852556). Stage 3 stays unopened:
+its entry gate requires the independent re-review and the integration evidence
+this repair does not yet have.
 
 The milestone is the delivery unit. Slice boundaries are introduced only when
 current implementation risk, ownership, verification, or context quality makes

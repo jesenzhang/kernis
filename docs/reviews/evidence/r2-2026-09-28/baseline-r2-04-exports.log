@@ -1,0 +1,34 @@
+[rtk] /!\ No hook installed — run `rtk init -g` for automatic token savings
+cargo test: 1 errors, 5 warnings (1 crates)
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\capability_graph-14g6wdct9f12y\s-hm61iskdde-0i7cue2-working`
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\workflow_recovery-2ljrwte04x93s\s-hm61iskdd3-0ckw1ue-working`
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\runtime_core-2abuf8rdc631q\s-hmpfmkfaux-13lc8fd-working`
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\runtime_composition-2ueverm7w6e53\s-hmpfmn0yb2-0mdvmzp-working`
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\runtime_loader-2p8s99kznfuq7\s-hmpfmp8429-072awa6-working`
+
+
+error[E0432]: unresolved imports `runtime_loader::FactoryRegistry`, `runtime_loader::RUN_DEFINITION_FORMAT`, `runtime_loader::RuntimeAssembly`, `runtime_loader::RecoveryReason`, `runtime_loader::StoreInvariant`
+ --> crates\runtime-loader\tests\review_r2_exports.rs:5:5
+  |
+5 |     FactoryRegistry, RUN_DEFINITION_FORMAT, RuntimeAssembly, RecoveryReason, StoreInvariant,
+  |     ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^ no `StoreInvariant` in the root
+  |     |                |                      |                |
+  |     |                |                      |                no `RecoveryReason` in the root
+  |     |                |                      no `RuntimeAssembly` in the root
+  |     |                no `RUN_DEFINITION_FORMAT` in the root
+  |     no `FactoryRegistry` in the root
+  |
+help: a similar name exists in the module
+  |
+5 -     FactoryRegistry, RUN_DEFINITION_FORMAT, RuntimeAssembly, RecoveryReason, StoreInvariant,
+5 +     FactoryRegistry, RUN_DEFINITION_FORMAT, RuntimeAssembly, RecoveryAction, StoreInvariant,
+  |
+[full output: "$HOME/AppData/Local/rtk/tee/1790610722_cargo_test.log"]

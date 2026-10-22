@@ -97,6 +97,15 @@ removals, no renames):
   (returned by `Id::new`, the host's entry point for every identifier).
   `RuntimeAssembly` was already re-exported by `runtime-composition`; the
   review proved the loader mirror omitted it, and it is now present.
+- The repair-branch reconciliation is a fifth wave, and it adds no
+  host-facing name. Its only API change is in the subsystem tier:
+  `CapabilityRegistry::take` and the associated `dispose_taken` let the
+  composition sweep remove a registration synchronously and park its fiber
+  disposal (ADR 0009 §3), with the one-shot `remove` kept as their
+  composition so every existing caller keeps its behaviour and failure
+  shape. `CapabilityRegistry` is a subsystem-supported type, so the change
+  is additive under `COMPATIBILITY.md` §1 and needs no loader re-export;
+  the closure fixture is unchanged.
 - Deliberate exclusions, restated with the evidence that produced them. The
   store seam is exercised in the fixture through a generic
   `S: DurableStore` parameter, and the pass-through vocabulary is bound by

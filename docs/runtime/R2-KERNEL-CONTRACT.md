@@ -287,8 +287,12 @@ bijectivity (K5 repair `a4bc425`), exact-version semantics, K4
 ## MSRV
 
 The workspace declares `rust-version = "1.85"` and treats it as a contract:
-CI contains a `msrv` job running `cargo check --workspace --all-features` on
-1.85, and K6 verified `cargo +1.85 test --workspace --all-features`.
+CI contains a `msrv` job that runs `cargo check --workspace --all-features`
+and `cargo clippy --workspace --all-targets --all-features -- -D warnings` on
+1.85, and K6 verified `cargo +1.85 test --workspace --all-features`. The job
+selects 1.85 through `RUSTUP_TOOLCHAIN` because `rust-toolchain.toml` pins the
+working directory to `stable`; before the R2 repair reconciliation the job ran
+plain `cargo check` and therefore exercised stable.
 
 ## Non-goals (unsupported by design in R2)
 

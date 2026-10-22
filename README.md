@@ -154,9 +154,16 @@ Stage 2 milestones use the status vocabulary defined in the
   neither merged to `main` nor declared Reviewed, and R2 remains not
   Closed. The repair changes the run-definition format tag to
   `kernis-run-definition-v2` (ADR 0008) and the composition release
-  contract (ADR 0009). See
+  contract (ADR 0009). A second independent review of the repair found
+  R2-03 only partly closed — an accepted orderly release could still be
+  stranded when its future was dropped before the first poll — and the
+  branch fixes that together with the review's other items; that fix and
+  the two commits after it have not themselves been reviewed. The branch's
+  CI passed for the first time on `a108bee` (GitHub Actions run
+  39719852556, whose `msrv` job now really runs 1.85 and includes the 1.85
+  clippy pass). See
   [R2-KERNEL-CONTRACT.md](docs/runtime/R2-KERNEL-CONTRACT.md) and
-  `docs/reviews/` for the review and repair records.
+  [docs/reviews/](docs/reviews/) for the review and repair records.
 - M2-C1: Integrated / Closed at
   `589827af0156fa0d3f25f5bb6f4044f2be61b527`.
 - M2-C2: Integrated / Closed at
