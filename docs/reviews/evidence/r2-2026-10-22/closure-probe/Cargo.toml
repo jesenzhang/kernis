@@ -1,0 +1,9 @@
+[package]
+name = "closure-probe"
+version = "0.0.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+runtime-loader = { path = "F:/Workspace/kernis/crates/runtime-loader" }

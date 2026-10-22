@@ -1176,6 +1176,42 @@ Remaining risks and non-goals: unchanged from the 2026-09-28 record, except
   unsafe.
 ```
 
+### Third independent review verdict (2026-10-22)
+
+The third independent review covered `d3818f5..3ad6fba` (21 commits, 58
+changed files; 30 reviewable files at 100% coverage, 28 documentation files
+read separately) and returned **CHANGES REQUIRED / R2 NOT CLOSED**: three
+blockers, ten medium findings, twelve low findings, and one finding rejected
+after verification. The record is
+`docs/reviews/2026-10-22-K6-R2-third-review.md`, with its probes under
+`docs/reviews/evidence/r2-2026-10-22/`.
+
+The blockers:
+
+1. R2-04's closure claim does not hold. `CapabilityGraphError`,
+   `CapabilityId`, `JournalInvariant`, `IdempotencyKey`, `Generation`,
+   `EntryId`, `WorkflowGraph` and `DurableJournal` cannot be named through
+   `runtime-loader`, and the fixture is a whitelist: three of its own
+   `pub use` names are never exercised, so deleting them would stay green.
+2. A module that registers only `on_dispose` never runs that hook, yet the
+   ledger records it as `cleaned`. The root cause is in the unchanged
+   `plan.rs` arming condition, but the completion contract being violated is
+   this branch's.
+3. Panic semantics are undefined: a panicking `hook()` loses the step and a
+   later re-entry reports the module cleaned, and a parked future that
+   panicked poisons `in_flight` so re-entry panics again instead of
+   resuming.
+
+This entry also supersedes two statements in the 2026-10-22 reconciliation
+above. The "defensive rather than currently reachable" classification is
+wrong: a host that instantiates an extra fiber through the public registry
+accessor reproduces the drop window, and the probe passes at `3ad6fba` while
+failing at `0ec8096`. The figure "346 passed / 52 binaries" is a
+test-result-line count (39 test binaries, 8 doc-test targets, 5 nested
+re-executions), not a binary count. Correcting the wording and the evidence
+belongs to the repair round; this record is not an approval, and the branch
+stays unmerged.
+
 ## Stage 3 entry gate
 
 Stage 3 planning starts only after K6 closes Stage 2. Declarative meta-framework
