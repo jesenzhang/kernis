@@ -612,7 +612,7 @@ impl fmt::Display for OwnerLossReleaseError {
                  release through dispose_after_driver with the returned DriverExit",
             ),
             Self::AlreadyReleased => f.write_str(
-                "the composition's owner-loss release already ran exactly once; \
+                "the composition's cleanup flow already completed exactly once; \
                  nothing remains to release",
             ),
         }

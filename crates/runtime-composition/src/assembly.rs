@@ -218,8 +218,8 @@ async fn dispose_fiber(fiber: Arc<CapabilityFiber>) -> Result<(), String> {
 
 /// Owns the taken runtime for the duration of its fiber disposal so the
 /// started step can be parked in the ledger as a `'static` future.
-async fn dispose_registration(plugin_id: Id, runtime: Arc<PluginRuntime>) -> Result<(), String> {
-    CapabilityRegistry::dispose_taken(plugin_id, &runtime)
+async fn dispose_registration(runtime: Arc<PluginRuntime>) -> Result<(), String> {
+    CapabilityRegistry::dispose_taken(&runtime)
         .await
         .map_err(|source| source.to_string())
 }
@@ -291,11 +291,18 @@ async fn run_sweep(ledger: &mut CleanupLedger, authority: CleanupAuthority<'_>) 
             .clone()
             .expect("a module is current once the queue has yielded one");
 
-        if let Some(hook) = ledger.current_hook.take() {
-            ledger.in_flight = Some(InFlight::DisposeHook {
-                module_id,
-                future: hook(),
-            });
+        if ledger.current_hook.is_some() {
+            // Build the hook future *before* the ledger gives up its handle on
+            // the hook. `hook()` is host code and may panic; taking the hook
+            // first would drop the step on the floor, and a later re-entry would
+            // report the module clean without ever running it (third review,
+            // B3).
+            let future = {
+                let hook = ledger.current_hook.as_ref().expect("checked above");
+                hook()
+            };
+            ledger.current_hook = None;
+            ledger.in_flight = Some(InFlight::DisposeHook { module_id, future });
             continue;
         }
 
@@ -320,7 +327,7 @@ async fn run_sweep(ledger: &mut CleanupLedger, authority: CleanupAuthority<'_>) 
                     // removal that already happened as impossible.
                     match registry.take(&plugin_id) {
                         Some(runtime) => {
-                            let future = Box::pin(dispose_registration(plugin_id.clone(), runtime));
+                            let future = Box::pin(dispose_registration(runtime));
                             ledger.current_plugins.pop();
                             ledger.in_flight = Some(InFlight::RegistrationRemoval {
                                 module_id,
@@ -562,6 +569,17 @@ where
 /// through [`Self::release_after_owner_loss`] and is reported as such. Dropping
 /// the handle without either call only drops the bound handle clone and the
 /// fiber references.
+///
+/// # Panics
+///
+/// Cancellation is recoverable; a panic is not, and this type does not pretend
+/// otherwise. If a host `dispose` hook panics, the hook future is dropped and
+/// the step stays in the ledger, so a re-entry retries the hook instead of
+/// reporting the module clean. If a step is already in flight when it panics,
+/// the ledger keeps that future: a later release re-polls it, which the
+/// standard library turns into an immediate `resumed after panicking` panic.
+/// Both are programming errors in the host, not cancellation; the ledger never
+/// reports a panicked step as completed.
 pub struct CompositionHandle {
     order: Vec<Id>,
     /// Outstanding composition cleanup. `None` only after a release flow ran to

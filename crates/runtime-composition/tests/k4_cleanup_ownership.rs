@@ -768,3 +768,54 @@ async fn another_drivers_owner_loss_cannot_release_this_composition() {
         "each composition disposed its own fiber exactly once"
     );
 }
+
+/// J (third review, B2): a module that registers only `on_dispose` still runs
+/// that hook when its resources are released, and only then is it clean.
+///
+/// The hook is armed by a successful activation, not by the presence of an
+/// `activate` hook; arming it on `on_activate` alone skipped the dispose of a
+/// dispose-only module while reporting the module as cleaned.
+#[tokio::test(flavor = "current_thread")]
+async fn dispose_only_module_runs_its_hook_and_is_reported_clean() {
+    let recorder = Recorder::new();
+    let plan = CompositionBuilder::new()
+        .register(
+            ModuleRegistration::new(ModuleDefinition::new(id("dispose-only")))
+                .on_dispose(recorder.hook("dispose:dispose-only", None)),
+        )
+        .expect("the dispose-only module registers")
+        .build()
+        .expect("the composition validates");
+    let assembly = plan
+        .start(run_id("b2-dispose-only"), &HostConfig::new())
+        .await
+        .expect("the composition activates");
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
+    let driver_task = tokio::spawn(async move { driver.run().await });
+    handle
+        .shutdown()
+        .await
+        .expect("the driver shuts down cleanly");
+    let exit = driver_task.await.expect("the driver task joins");
+
+    let shutdown = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("this handle's own exit releases the composition");
+    assert_eq!(
+        recorder.count("dispose:dispose-only"),
+        1,
+        "a module with only on_dispose must still run that hook"
+    );
+    assert!(
+        shutdown.rollback.is_success(),
+        "the release reports no failure: {:?}",
+        shutdown.rollback.failures
+    );
+    assert_eq!(
+        shutdown.rollback.cleaned,
+        vec![id("dispose-only")],
+        "the module is clean because its dispose hook ran"
+    );
+}

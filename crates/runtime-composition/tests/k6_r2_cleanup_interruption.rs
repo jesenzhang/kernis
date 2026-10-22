@@ -544,3 +544,63 @@ async fn dropping_a_release_future_before_its_first_poll_starts_nothing() {
         "only a completed flow clears the ledger"
     );
 }
+
+/// B3: a `dispose` hook whose *construction* panics keeps its step in the
+/// ledger. Losing it there would let the next attempt skip the hook and report
+/// the module clean; with the step retained, the retry reaches the same host
+/// code again and still never produces a "clean" report.
+#[tokio::test(flavor = "current_thread")]
+async fn a_panicking_hook_constructor_is_retried_never_reported_clean() {
+    let starts = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&starts);
+    let hook = lifecycle_hook(move || -> runtime_composition::HookFuture {
+        counter.fetch_add(1, Ordering::SeqCst);
+        panic!("the dispose hook constructor panicked")
+    });
+    let plan = CompositionBuilder::new()
+        .register(
+            ModuleRegistration::new(ModuleDefinition::new(id("panicky")))
+                .on_activate(lifecycle_hook(|| async { Ok(()) }))
+                .on_dispose(hook),
+        )
+        .expect("the panicking module registers")
+        .build()
+        .expect("the composition validates");
+    let assembly = plan
+        .start(run_id("b3-panicky"), &HostConfig::new())
+        .await
+        .expect("the composition activates");
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
+    let driver_task = tokio::spawn(async move { driver.run().await });
+    handle
+        .shutdown()
+        .await
+        .expect("the driver shuts down cleanly");
+    let exit = driver_task.await.expect("the driver task joins");
+
+    let mut release = Box::pin(composition.dispose_after_driver(exit));
+    let first = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut context = Context::from_waker(Waker::noop());
+        let _ = release.as_mut().poll(&mut context);
+    }));
+    assert!(first.is_err(), "the panicking hook construction propagates");
+    assert_eq!(starts.load(Ordering::SeqCst), 1);
+    drop(release);
+
+    // The step survived the panic: the continuation reaches the same host
+    // code again instead of returning a report that calls the module clean.
+    let mut retry = Box::pin(composition.release_after_owner_loss());
+    let second = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut context = Context::from_waker(Waker::noop());
+        let _ = retry.as_mut().poll(&mut context);
+    }));
+    assert!(
+        second.is_err(),
+        "a panicked step is retried (and panics again), never reported as completed"
+    );
+    assert_eq!(
+        starts.load(Ordering::SeqCst),
+        2,
+        "the ledger kept the armed hook across the panic"
+    );
+}

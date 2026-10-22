@@ -29,14 +29,15 @@
 
 use runtime_loader::{
     lifecycle_hook, ActivationStage, AttemptId, Cancellation, CapabilityConflictReason,
-    CapabilityDeclaration, CapabilityDefinition, CapabilityHandle, CapabilityPin,
+    CapabilityDeclaration, CapabilityDefinition, CapabilityHandle, CapabilityId, CapabilityPin,
     CapabilityReplayIdentity, CapabilityRequirement, CapabilitySlot, CapabilityValue, CatalogEntry,
     CleanupResource, CompletionRecord, CompositionBuilder, CompositionDriverShutdown,
     CompositionError, CompositionHandle, CompositionPlan, CompositionReleaseFuture,
     CompositionReleaseOutcome, CompositionReleaseRejection, CompositionShutdownFailure,
     ConfigRequirement, ConstructionStage, DefinitionError, DefinitionIdentity, DispatchRecord,
     DriveResult, DriverError, DriverExit, DriverFuture, DriverOwner, DriverOwnerState,
-    DurableRunState, DurableStore, EffectDispatchError, EffectDispatchFuture,
+    DurableRunState, DurableStore, EffectDispatchError, EffectDispatchFuture, EntryId,
+    Generation,
     EffectDispatchRequest, EffectDispatcher, EffectSemantics, FactoryConflictReason,
     FactoryRegistry, FactoryResolutionError, FiberState, FileDurableStore, HookFuture, HostConfig,
     Id, InMemoryDurableStore, IncompatibleEntryReason, InvalidId, InvalidReferenceReason,
@@ -256,18 +257,10 @@ pub async fn orderly_lifecycle(
     match release.await {
         CompositionReleaseOutcome::Released(shutdown) => Ok(*shutdown),
         CompositionReleaseOutcome::Rejected(rejection) => {
-            // A refused exit is handed back untouched for its own composition.
-            let preserved: Option<DriverExit<InMemoryDurableStore>> = rejection.into_exit();
-            match preserved {
-                Some(exit) => Err(LifecycleFailure::Refused(
-                    CompositionReleaseRejection::AlreadyReleased {
-                        exit: Box::new(exit),
-                    },
-                )),
-                None => Err(LifecycleFailure::Refused(
-                    CompositionReleaseRejection::OrderlySweepInterrupted,
-                )),
-            }
+            // A refusal keeps its own variant and its own exit: the host hands
+            // the rejection (with the exit inside it) back to the composition
+            // that produced the exit.
+            Err(LifecycleFailure::Refused(rejection))
         }
     }
 }
@@ -434,7 +427,12 @@ pub fn pass_through(
     catalog: &ModuleCatalog,
 ) -> bool {
     // Naming these types is the assertion. Deep inspection of them is the
-    // documented subsystem tier, so no accessor is called here.
+    // documented subsystem tier, so no accessor is called here — except the
+    // coordinate types a host that records an observation has to bind, which
+    // are host tier since the third review (2026-10-22, B1).
+    let _generation: &Generation = &pin.generation;
+    let _entry: &EntryId = &pin.entry_id;
+    let _capability: &CapabilityId = handle.id();
     let _ = (
         pin,
         attempt,

@@ -105,9 +105,9 @@ pub use runtime_composition::{
     WorkflowReplayIdentity,
 };
 pub use runtime_composition::{
-    CapabilityDefinition, CapabilityFiber, CapabilityValue, FiberState, PluginConfig,
-    PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime, ResolvedDependencies,
-    ScopedEffect,
+    CapabilityDefinition, CapabilityFiber, CapabilityId, CapabilityValue, EntryId, FiberState,
+    Generation, PluginConfig, PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime,
+    ResolvedDependencies, ScopedEffect,
 };
 pub use runtime_composition::{
     DurableStore, EffectSemantics, FileDurableStore, InMemoryDurableStore, KnownEffectOutcome,

@@ -18,11 +18,13 @@ use workflow_recovery::{EffectSemantics, OperationId, WorkflowReplayIdentity};
 
 /// Canonical format/version prefix for declarative run definitions.
 ///
-/// The v2 canonical representation is structurally unambiguous: every field
-/// carries a structural tag, every collection carries an element count and an
-/// explicit end tag, and every string is a length-delimited data token that
+/// The v2 canonical representation is structurally unambiguous: every group and
+/// enum field carries a structural tag, every collection carries an element
+/// count and an explicit end tag, and every scalar value — including the scalars
+/// that follow a group tag by position — is a length-delimited data token that
 /// cannot imitate structure. `docs/architecture/0008-run-definition-identity-v2.md`
-/// specifies the grammar and the rules this encoding is tested against.
+/// specifies the grammar, the field order, and the rules this encoding is tested
+/// against.
 pub const RUN_DEFINITION_FORMAT: &str = "kernis-run-definition-v2";
 
 /// Historical format tag of the K2 `kernis-run-definition-v1` canonicalization.
@@ -1261,6 +1263,28 @@ mod tests {
         };
         let frame = skeleton(&canonical_v2(&shaped("plain")));
         assert!(!frame.contains('%'), "the frame itself carries no data");
+
+        // The identifiers are framed too. A canonicalizer that concatenated an
+        // id raw would leave its text in the frame, so renaming the capability
+        // (the requirement follows it) must not move a structural boundary.
+        let renamed = |capability: &str| {
+            RunDefinition::new()
+                .with_capability(CapabilityDeclaration::new(id(capability), "plain", "plain"))
+                .with_task(
+                    TaskDefinition::new(id("tasks"), "plain")
+                        .depends_on(id("effect"))
+                        .require_capability(requirement(capability, "plain")),
+                )
+                .with_task(task("effect"))
+        };
+        for capability in ["capabilities", "cap", "capabilities-long"] {
+            assert_eq!(
+                skeleton(&canonical_v2(&renamed(capability))),
+                frame,
+                "the capability id {capability:?} moved a structural boundary"
+            );
+        }
+
         for value in [
             "任务",
             "🔐",
@@ -1274,7 +1298,10 @@ mod tests {
             "#capability%0:#end",
         ] {
             let identity = canonical_v2(&shaped(value));
-            assert!(identity.contains(value), "{value:?} is present as data");
+            assert!(
+                identity.contains(&format!("%{}:{value}", value.len())),
+                "{value:?} is framed by its byte length in {identity}"
+            );
             assert_eq!(
                 skeleton(&identity),
                 frame,

@@ -62,9 +62,9 @@ pub use registration::{
 // Upstream types the host passes through or receives from the composition
 // API, re-exported so a host depends on this crate alone for composition.
 pub use capability_graph::{
-    CapabilityDefinition, CapabilityFiber, CapabilityValue, FiberState, PluginConfig,
-    PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime, ResolvedDependencies,
-    ScopedEffect,
+    CapabilityDefinition, CapabilityFiber, CapabilityId, CapabilityValue, EntryId, FiberState,
+    Generation, PluginConfig, PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime,
+    ResolvedDependencies, ScopedEffect,
 };
 pub use kernis_core::Id;
 pub use runtime_core::{

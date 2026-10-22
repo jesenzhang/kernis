@@ -847,7 +847,7 @@ async fn take_plus_dispose_taken_matches_one_shot_removal() {
         1,
         "taking the registration does not dispose the fibers"
     );
-    CapabilityRegistry::dispose_taken(id("plugin"), &taken)
+    CapabilityRegistry::dispose_taken(&taken)
         .await
         .expect("the taken runtime disposes");
     assert_eq!(fiber.state(), FiberState::Disposed);
@@ -878,7 +878,7 @@ async fn take_plus_dispose_taken_matches_one_shot_removal() {
     let split_taken = split_registry
         .take(&id("plugin"))
         .expect("the failing registration is taken");
-    let split_error = match CapabilityRegistry::dispose_taken(id("plugin"), &split_taken).await {
+    let split_error = match CapabilityRegistry::dispose_taken(&split_taken).await {
         Ok(()) => panic!("a failing fiber cleanup is reported, not swallowed"),
         Err(error) => error,
     };

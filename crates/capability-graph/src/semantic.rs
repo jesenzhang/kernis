@@ -575,14 +575,15 @@ impl CapabilityRegistry {
 
     /// Removes a runtime and disposes all associated fibers.
     ///
-    /// This is the one-shot form of [`Self::take`] followed by
-    /// [`Self::dispose_taken`], kept for callers that cannot lose the started
-    /// disposal by being cancelled.
+    /// This is the one-shot convenience form of [`Self::take`] followed by
+    /// [`Self::dispose_taken`]. It awaits inline, so a caller whose future is
+    /// cancelled mid-disposal loses the started disposal with the future; use
+    /// the two halves when the disposal must survive cancellation.
     pub async fn remove(&self, id: &Id) -> Result<Option<Arc<PluginRuntime>>, RegistryError> {
         let Some(runtime) = self.take(id) else {
             return Ok(None);
         };
-        match Self::dispose_taken(id.clone(), &runtime).await {
+        match Self::dispose_taken(&runtime).await {
             Ok(()) => Ok(Some(runtime)),
             Err(error) => Err(error),
         }
@@ -597,7 +598,7 @@ impl CapabilityRegistry {
     /// a drop between the map removal and the disposal completing the removal
     /// while stranding a runtime that is no longer reachable through the
     /// registry.
-    #[must_use = "the taken runtime is the only handle left once it leaves the registry"]
+    #[must_use = "the caller now owns the only registry-held reference and must dispose it"]
     pub fn take(&self, id: &Id) -> Option<Arc<PluginRuntime>> {
         self.runtimes
             .lock()
@@ -609,14 +610,21 @@ impl CapabilityRegistry {
     /// [`Self::take`], reporting the same [`RegistryError::Dispose`] that
     /// [`Self::remove`] reports for a failed cleanup.
     ///
-    /// The caller owns the runtime for the duration of this future, so
-    /// cancelling it loses the started disposal but never the runtime.
-    pub async fn dispose_taken(plugin: Id, runtime: &PluginRuntime) -> Result<(), RegistryError> {
+    /// The future only borrows the runtime: the caller must keep it alive (the
+    /// composition ledger owns the taken runtime for exactly this reason), so
+    /// cancelling the future loses the started disposal but never drops a
+    /// runtime the caller still owns. Disposing a runtime that is still
+    /// registered is possible — this is a subsystem-tier primitive, not an
+    /// authority gate — so only a caller that has just taken it should use it.
+    pub async fn dispose_taken(runtime: &PluginRuntime) -> Result<(), RegistryError> {
         let errors = runtime.dispose_fibers().await;
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(RegistryError::Dispose { plugin, errors })
+            Err(RegistryError::Dispose {
+                plugin: runtime.id().clone(),
+                errors,
+            })
         }
     }
 }

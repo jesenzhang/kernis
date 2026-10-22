@@ -753,6 +753,13 @@ where
     /// current-format identity keeps failing closed with
     /// [`RuntimeError::DefinitionMismatch`]. Both rejections happen with zero
     /// factory invocations and zero durable writes.
+    ///
+    /// Order matters for diagnosis: the factory registry is validated first, so
+    /// a host that is missing a factory sees
+    /// [`RuntimeError::FactoryResolution`] before the durable identity is read.
+    /// The identity gate then runs before any construction and before any write;
+    /// a host that wants the legacy refusal specifically must supply a complete
+    /// factory registry.
     pub fn restore_from_definition(
         run_id: RunId,
         definition: RunDefinition,

@@ -54,13 +54,38 @@
 //! `docs/runtime/K6-supported-api-inventory.md`.
 
 use runtime_loader::{
-    CapabilityConflictReason, CompositionReleaseFuture, CompositionReleaseOutcome,
-    CompositionReleaseRejection, DriverOwner, DurableRunState, FactoryRegistry, Id, InvalidId,
-    LEGACY_RUN_DEFINITION_FORMAT_V1, LoaderError, RUN_DEFINITION_FORMAT, RecoveryDecision,
-    RecoveryReason, RollbackFailure, RollbackReport, RunDefinition, RunId, Runtime,
-    RuntimeAssembly, RuntimeError, RuntimeHandle, StoreError, StoreErrorKind, StoreInvariant,
-    StoreRevision,
+    CapabilityConflictReason, CapabilityContribution, CapabilityFactoryFn, CapabilityFiber,
+    CapabilityId, CapabilityOwnership, CompositionReleaseFuture, CompositionReleaseOutcome,
+    CompositionReleaseRejection, DriverOwner, DurableRunState, EntryId, FactoryRegistry,
+    Generation, Id, InvalidId, LEGACY_RUN_DEFINITION_FORMAT_V1, LoaderError,
+    ModuleRegistrationFactory, RUN_DEFINITION_FORMAT, RecoveryDecision, RecoveryReason,
+    RollbackFailure, RollbackReport, RunDefinition, RunId, Runtime, RuntimeAssembly, RuntimeError,
+    RuntimeHandle, StoreError, StoreErrorKind, StoreInvariant, StoreRevision,
 };
+
+/// Umbrella names the vocabulary regression does not otherwise exercise.
+///
+/// The closure fixture is a whitelist, so a re-export that nothing names could
+/// be deleted with every proof staying green. Listing the remaining names in one
+/// alias closes that hole: `tests/export_coverage.rs` fails if any `pub use`
+/// name of the umbrella is absent from the closure evidence, and deleting one
+/// here is what makes the export visible as covered.
+///
+/// `CapabilityId`, `Generation` and `EntryId` are here for a different reason:
+/// the third review (2026-10-22, B1) showed a host that binds
+/// `CapabilityPin::generation` or `CapabilityHandle::id()` has to name them, so
+/// they were promoted to the host tier additively rather than documented away.
+#[allow(dead_code)]
+type UmbrellaNamesWithoutAnExercisingCall = (
+    CapabilityContribution,
+    CapabilityOwnership,
+    CapabilityFactoryFn,
+    ModuleRegistrationFactory,
+    CapabilityFiber,
+    CapabilityId,
+    Generation,
+    EntryId,
+);
 
 /// The five gaps the review proved, plus the ones the repair's own audit added,
 /// in one import-closure statement. `RuntimeAssembly` also has to be nameable
