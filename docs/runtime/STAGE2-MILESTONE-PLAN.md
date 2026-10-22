@@ -1130,8 +1130,12 @@ CI history on the branch - the branch had never been green before:
     failure was the format gate on the hand-inserted regression block; the
     code was formatted and the two documentation commits rebuilt, so that
     commit is not part of this branch's history.
-  * 39720900106 (9a92cea) and 39721053131 (f8283aa, the documentation head
-    that appends this entry): both passed rust, msrv, and r2-host-fixture.
+  * 39720900106 (9a92cea), 39721053131 (f8283aa), 39721218218 (3e03811) and
+    39721414298 (9ea1869) - the documentation heads that carry this entry and
+    its corrections: all passed rust, msrv, and r2-host-fixture. A later
+    documentation-only amendment is expected to pass the same three jobs; its
+    run is deliberately not appended here, because this record is dated
+    evidence rather than a live status board.
 MSRV: the `msrv` job previously ran plain `cargo check`, while the
   repository's rust-toolchain.toml selects `stable` for the working directory
   and outranks an installed default - so the job was testing stable and the
