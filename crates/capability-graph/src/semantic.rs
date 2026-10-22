@@ -4,6 +4,7 @@
 //! machinery. Context lookup, plugin identity, dependency epochs, and effect
 //! ownership are represented by ordinary Rust values and owned handles.
 
+use crate::runtime::allocate_monotonic;
 use crate::{
     CapabilityDefinition, CapabilityHandle, CapabilityId, CapabilityValue, Generation,
     ResolvedDependencies, Scope, ScopeError,
@@ -453,11 +454,7 @@ impl PluginRuntime {
             plugin: self.id().clone(),
             reason,
         })?;
-        let raw_id = NEXT_FIBER_ID
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                value.checked_add(1)
-            })
-            .map_err(|_| FiberError::FiberIdExhausted)?;
+        let raw_id = allocate_monotonic(&NEXT_FIBER_ID).ok_or(FiberError::FiberIdExhausted)?;
         let fiber = Arc::new(CapabilityFiber::new(
             FiberId(raw_id),
             Arc::downgrade(self),
