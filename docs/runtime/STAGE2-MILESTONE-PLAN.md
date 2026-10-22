@@ -1126,6 +1126,12 @@ CI history on the branch - the branch had never been green before:
     try_update does not exist on MSRV 1.85, so both identifier counters moved
     to a relaxed compare-and-swap loop that is warning-free on both.
   * 39719852556 (a108bee): passed rust, msrv, and r2-host-fixture.
+  * 39720735642 (9b559c6, an intermediate documentation head): the only
+    failure was the format gate on the hand-inserted regression block; the
+    code was formatted and the two documentation commits rebuilt, so that
+    commit is not part of this branch's history.
+  * 39720900106 (9a92cea, this entry's head): passed rust, msrv, and
+    r2-host-fixture.
 MSRV: the `msrv` job previously ran plain `cargo check`, while the
   repository's rust-toolchain.toml selects `stable` for the working directory
   and outranks an installed default - so the job was testing stable and the
