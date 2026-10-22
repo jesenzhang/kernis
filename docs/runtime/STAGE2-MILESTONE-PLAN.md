@@ -1097,10 +1097,10 @@ replaced by the fixture as closure evidence.
 
 ### R2 repair branch reconciliation (2026-10-22)
 
-The 2026-09-28/29 record above describes the branch at `0ec8096`. Four
-commits it does not cover landed after it, and the branch has since been
-re-verified end to end. This entry records the current branch state; it is not
-a review verdict, and no independent review has been performed on this head.
+The 2026-09-28/29 record above describes the branch at `0ec8096`. Commits it
+does not cover landed after it, and the branch has since been re-verified end
+to end. This entry records the current branch state; it is not a review
+verdict, and no independent review has been performed on this head.
 
 ```text
 Result: READY FOR REVIEW / NOT INTEGRATED. K6 stays Integrated, R2 stays not
@@ -1112,7 +1112,7 @@ Commits after the 2026-09-28 record: fdc8e5e (parkable registration disposal
   through a take/dispose_taken split), eeb44b5 (one action pin per toolchain,
   MSRV forced onto 1.85 through RUSTUP_TOOLCHAIN, 1.85 clippy added), a108bee
   (identifier reservation by relaxed compare-and-swap instead of the
-  deprecated fetch_update), 281d293 (the take/dispose_taken equivalence
+  deprecated fetch_update), c2870a8 (the take/dispose_taken equivalence
   regression), and the documentation commit that appends this entry.
 CI history on the branch - the branch had never been green before:
   * 36699645785 (63b443d): all three jobs failed within five seconds. The

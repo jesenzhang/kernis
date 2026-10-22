@@ -13,7 +13,7 @@
 ## 2. 基线与分支
 
 - 被审基线（第一次复审的 HEAD）：`d3818f5d2a77030f353e1a2a6c1744d494cae0c4`。
-- 被审分支：`codex/k6-r2-repair`，HEAD 为本文件所在提交（相对基线共 17 个提交：13 个修复提交 + CI 修复、弃用修复、等价性回归、文档对账 4 个）。
+- 被审分支：`codex/k6-r2-repair`，HEAD 为本文件所在提交。相对基线的完整序列以 `git log --oneline d3818f5..HEAD` 为准：13 个修复提交，加上 CI 修复、弃用修复、等价性回归与文档对账。
 - 与 `main` 的关系：`main` 仍是 `d3818f5`，是其祖先，合并可取 fast-forward；本仓库对里程碑集成使用 `--no-ff`。
 - 工作树：`.workbuddy/` 已被忽略；`docs/reviews/` 已入库（README 与 Stage 2 计划都引用它）。
 
