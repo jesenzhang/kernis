@@ -3,7 +3,8 @@
 use capability_graph::{
     CapabilityContext, CapabilityDefinition, CapabilityFiber, CapabilityId, CapabilityRegistry,
     CapabilityValue, EffectError, EffectScope, EffectStack, FiberError, FiberState,
-    PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime, Scope, ScopedEffect,
+    PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime, RegistryError, Scope,
+    ScopedEffect,
 };
 use kernis_core::Id;
 use std::future::Future;
@@ -791,5 +792,118 @@ async fn update_restarts_the_same_fiber_and_failed_restart_can_recover() {
     assert_eq!(
         recovering.restart().await.expect("restart recovery"),
         FiberState::Active
+    );
+}
+
+/// `remove` is now `take` + `dispose_taken`: the split must not drift.
+///
+/// The cancellation-safe composition sweep relies on both halves — `take`
+/// removes the registration synchronously, before any await, so a dropped
+/// caller can still see what is outstanding, and `dispose_taken` reports the
+/// same cleanup failure the one-shot `remove` reports for the same fibers.
+/// This pins that equivalence on the absent, successful, and failing cases
+/// instead of trusting the refactor.
+#[tokio::test(flavor = "current_thread")]
+async fn take_plus_dispose_taken_matches_one_shot_removal() {
+    let absent = CapabilityRegistry::new();
+    assert!(
+        absent.take(&id("plugin")).is_none(),
+        "an absent take is the same no-op as an absent removal"
+    );
+    assert!(
+        absent
+            .remove(&id("plugin"))
+            .await
+            .expect("removing an absent registration never fails")
+            .is_none()
+    );
+
+    let success = runtime(
+        definition("instance"),
+        factory(|context| async move {
+            context
+                .effect(ScopedEffect::sync("cleanup", || Ok(())))
+                .map_err(|error| error.to_string())?;
+            Ok(value("instance"))
+        }),
+    );
+    let registry = CapabilityRegistry::new();
+    registry
+        .register(Arc::clone(&success))
+        .expect("the test runtime registers");
+    let fiber = registry
+        .instantiate(&id("plugin"), CapabilityContext::root(), String::new())
+        .expect("the fiber instantiates");
+    start(&fiber).await;
+    let taken = registry
+        .take(&id("plugin"))
+        .expect("the registration is taken");
+    assert!(
+        registry.take(&id("plugin")).is_none(),
+        "the take is one-shot"
+    );
+    assert_eq!(
+        success.fiber_count(),
+        1,
+        "taking the registration does not dispose the fibers"
+    );
+    CapabilityRegistry::dispose_taken(id("plugin"), &taken)
+        .await
+        .expect("the taken runtime disposes");
+    assert_eq!(fiber.state(), FiberState::Disposed);
+    assert_eq!(success.fiber_count(), 0);
+
+    let failing = || {
+        runtime(
+            definition("instance"),
+            factory(|context| async move {
+                context
+                    .effect(ScopedEffect::sync("cleanup", || {
+                        Err("cleanup failed".to_owned())
+                    }))
+                    .map_err(|error| error.to_string())?;
+                Ok(value("instance"))
+            }),
+        )
+    };
+    let split_runtime = failing();
+    let split_registry = CapabilityRegistry::new();
+    split_registry
+        .register(Arc::clone(&split_runtime))
+        .expect("the failing runtime registers");
+    let split_fiber = split_registry
+        .instantiate(&id("plugin"), CapabilityContext::root(), String::new())
+        .expect("the failing fiber instantiates");
+    start(&split_fiber).await;
+    let split_taken = split_registry
+        .take(&id("plugin"))
+        .expect("the failing registration is taken");
+    let split_error = match CapabilityRegistry::dispose_taken(id("plugin"), &split_taken).await {
+        Ok(()) => panic!("a failing fiber cleanup is reported, not swallowed"),
+        Err(error) => error,
+    };
+
+    let one_shot_runtime = failing();
+    let one_shot_registry = CapabilityRegistry::new();
+    one_shot_registry
+        .register(Arc::clone(&one_shot_runtime))
+        .expect("the one-shot runtime registers");
+    let one_shot_fiber = one_shot_registry
+        .instantiate(&id("plugin"), CapabilityContext::root(), String::new())
+        .expect("the one-shot fiber instantiates");
+    start(&one_shot_fiber).await;
+    let one_shot_error = match one_shot_registry.remove(&id("plugin")).await {
+        Ok(_) => panic!("a failing fiber cleanup is reported, not swallowed"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(
+        split_error,
+        RegistryError::Dispose { ref plugin, .. } if plugin == &id("plugin")
+    ));
+    assert_eq!(
+        split_error.to_string(),
+        one_shot_error.to_string(),
+        "the split reports exactly the failure the one-shot removal reports"
     );
 }
