@@ -48,10 +48,15 @@ surface.
 
 ### 2. Re-export closure rule
 
-Supported host code must be able to **name** every type it receives on a
-supported path: enum payloads it matches on and values it binds. Types
-reachable only through method-call inference (inspection accessors) are
-subsystem tier. The K6 audit found 19 host-reachable types that violated
+Supported host code must be able to **name** every type it must bind to a
+named value: a value it stores in its own struct or field, names in a helper
+signature, or returns from its own function. A type that a host only *matches*
+inside an exported enum payload — `match error { ScopeError::GraphAdmission(..) => .. }`
+— is bound by inference and does not have to be nameable; those payload types
+stay at the subsystem tier, and a host that wants to store one depends on the
+subsystem crate directly. Types reachable only through method-call inference
+(inspection accessors) are subsystem tier as well. The K6 audit found 19
+host-reachable types that violated
 this at base `3ee011b` (e.g. `RuntimeEvent`, `StreamItem`,
 `Cancellation`, `RecoveryDecision`, `DurableRunState`, `StoreError`,
 `AttemptId`); K6 closes the gaps with additive `pub use` only — nothing
@@ -74,6 +79,30 @@ found three further gaps of the same kind, closed additively as well
 `LEGACY_RUN_DEFINITION_FORMAT_V1` once ADR 0008 made the refused legacy tag
 a fact a host must recognize). Inventory waves are listed in
 `docs/runtime/K6-supported-api-inventory.md`.
+
+That proof is a whitelist and was treated as stronger than it is. The third
+review (2026-10-22, B1) showed two things: eight host-path names were still
+unnameable, and three umbrella re-exports were never named by the fixture at
+all, so deleting them would have kept both "proofs" green. The repair resolves
+this by kind rather than by widening the surface:
+
+- **Bound values are promoted.** `CapabilityId`, `Generation` and `EntryId`
+  are the coordinate types a host binds from `CapabilityPin::generation`,
+  `CapabilityPin::entry_id` and `CapabilityHandle::id()`; they are now
+  re-exported along core → composition → loader and named by the fixture.
+- **Match-only payloads stay subsystem tier.** `CapabilityGraphError`,
+  `JournalInvariant` and `IdempotencyKey` are payloads a host matches without
+  naming; the inventory lists each one with that tier.
+- **Inspection accessors stay subsystem tier.** `Runtime::workflow()` and
+  `Runtime::journal()` return `WorkflowGraph` and `DurableJournal`, which the
+  inventory now names alongside `Scope`, `CapabilityRegistry` and
+  `CapabilityContext`.
+- **The proof can fail.** `crates/runtime-loader/tests/export_coverage.rs`
+  extracts every `pub use` name from the umbrella and fails when one is absent
+  from the closure evidence, which is what makes the whitelist safe.
+
+Promoting any of the remaining names to host tier is a separate, recorded
+decision, not a drive-by export.
 
 ### 3. Four public API tiers
 

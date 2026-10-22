@@ -218,10 +218,13 @@ checks the exit owner and this ledger synchronously, and a call this handle
 accepts marks its ledger before returning the `CompositionReleaseFuture`. One
 consequence follows and is stated rather than hidden: an accepted orderly
 release takes the `DriverExit`, and with it the capability registry, so if the
-returned future is dropped before it completes that authority is gone. A later
-`dispose_after_driver` on the same handle is then refused with
-`CompositionReleaseRejection::OrderlySweepInterrupted`, and
-`release_after_owner_loss` — the only authority left — finishes the remaining
+returned future is dropped before it completes that authority is gone. A second
+`dispose_after_driver` cannot then be made at all: one driver mints exactly one
+`DriverExit`, and the accepted call consumed it, so
+`CompositionReleaseRejection::OrderlySweepInterrupted` is a defensive variant
+(it carries no exit, and a host that somehow reached it would lose the exit it
+passed) rather than a reachable answer. `release_after_owner_loss` — the only
+authority left — finishes the remaining
 cleanup and reports every registration it can no longer unregister as a
 failure. This holds for a future dropped before its first poll exactly as for
 one cancelled mid-await: nothing is stranded behind an

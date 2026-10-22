@@ -28,7 +28,7 @@
 ## 4. 证据与门禁
 
 - CI：run `39719852556`（head `a108bee`）三个 job 全绿；`msrv` job 日志可见 `cargo 1.85.1`。此前两次失败 run 为 `36699645785`（toolchain pin）与 `39719615044`（`fetch_update` 弃用）。
-- 本地（`a108bee` 之上、仅文档变更）：`cargo fmt --all -- --check`；`cargo clippy --workspace --all-targets --all-features -- -D warnings`；`cargo test --workspace --all-features` = 346 passed / 0 failed（52 个二进制）；`cargo +1.85 test --workspace --all-features` 同；`cargo +1.85 clippy ... -D warnings`；`cargo doc --workspace --no-deps`；`cargo run -p graph-lab`；`cargo run -p runtime-loader --example r2_host`；`fixtures/r2-host-fixture` 的 check / clippy / MSRV check。
+- 本地（`a108bee` 加上 `c2870a8` 的等价性回归与后续文档变更）：`cargo fmt --all -- --check`；`cargo clippy --workspace --all-targets --all-features -- -D warnings`；`cargo test --workspace --all-features` = 346 条 test-result 行通过 / 0 failed（39 个测试二进制 + 8 个 doc-test 目标 + 5 条子进程重跑；独立父级用例 341）；`cargo +1.85 test --workspace --all-features` 同；`cargo +1.85 clippy ... -D warnings`；`cargo doc --workspace --no-deps`；`cargo run -p graph-lab`；`cargo run -p runtime-loader --example r2_host`；`fixtures/r2-host-fixture` 的 check / clippy / MSRV check。
 - 第一次复审的反例与日志在 [evidence/r2-2026-09-28/](evidence/r2-2026-09-28/)；本次新增的等价性回归是 `crates/capability-graph/tests/semantic.rs::take_plus_dispose_taken_matches_one_shot_removal`。
 - 实现方的自测绿灯不作为复审证据；上面的数字只是"这些命令跑过了"的记录。
 

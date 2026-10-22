@@ -10,7 +10,7 @@ The K2 implementation range (`017e2af`, the review-feedback compatibility fix
 `5fe0ea4`, and the closeout record `684ae84`) is integrated on `main`, and
 `origin/main` matches. GitHub Actions CI passed on the current `main` HEAD
 `ebfc7d3` (run 34446922406). No independent-review APPROVE is recorded for
-K2, so K2 remains unmarked as Integrated.
+K2, so K2 remains unmarked as Reviewed.
 
 K2 adds a stable declaration boundary around the existing deterministic
 Runtime Core. The declaration is an input to reconstruction; it is not a new

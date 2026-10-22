@@ -90,8 +90,14 @@ Properties, each of which is a test obligation rather than an aspiration:
   instead of forcing it to be relaxed.
 - **Collections carry an element count and an explicit end tag**, so an empty list and a
   missing field are distinct, and a list of the wrong arity cannot re-read as its neighbour.
-- **Every field is tagged**, so reordering canonicalizer fields cannot silently redefine what
-  a byte sequence means.
+- **Every group and enum field is tagged, and every scalar is length-delimited**, so
+  reordering a tagged field cannot silently redefine what a byte sequence means. Scalars that
+  follow a group tag by position (`#capability` then id/kind/definition identity, a
+  requirement's pair, a task id) carry no individual tag: swapping two of them changes every
+  identity while the format tag stays v2, which is a property of the format, not of the
+  canonicalizer's order. The skeleton test pins the framing of the data slots; the order
+  itself is pinned by the golden bytes and must not be changed without a new format tag
+  (third review, 2026-10-22, M10).
 - **Semantic equivalence rules are unchanged from K2:** declarations, prerequisites,
   requirements, and dependencies are ordered by logical identity, task display labels stay
   excluded, and meaningful topology / capability / effect-semantics changes must change the
@@ -112,7 +118,11 @@ fixture.
 ### 3. Legacy v1 declarative identities are read fail-closed with a typed error
 
 `Runtime::restore_from_definition` classifies the durable identity **before** any factory
-construction, reconstruction, or store write:
+construction, reconstruction, or store write. The preflight that resolves the host's factory
+registry runs before the durable read, so a host that is missing a factory sees
+`RuntimeError::FactoryResolution` first; the identity gate itself still runs before any
+construction and before any write, and a host that wants the legacy refusal specifically must
+supply a complete factory registry (third review, 2026-10-22, M9).
 
 - v2 durable identity -> require exact equality with the recomputed v2 identity, else the
   existing `RuntimeError::DefinitionMismatch`.

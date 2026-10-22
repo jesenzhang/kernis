@@ -106,6 +106,26 @@ removals, no renames):
   shape. `CapabilityRegistry` is a subsystem-supported type, so the change
   is additive under `COMPATIBILITY.md` §1 and needs no loader re-export;
   the closure fixture is unchanged.
+- The third-review correction is a sixth wave, and it changes the host tier by
+  kind rather than by widening it. **Promoted to host tier** (a host binds
+  them): `CapabilityId` (from `CapabilityHandle::id()` and the `ScopeError`
+  variants), `Generation` and `EntryId` (public fields of `CapabilityPin`).
+  They are re-exported core → composition → loader and named by the fixture.
+  **Kept at subsystem tier**: `CapabilityGraphError` (payload of
+  `ScopeError::GraphAdmission`, `DefinitionError::CapabilityGraph`,
+  `ReconstructionError::CapabilityGraph`), `JournalInvariant` (payload of
+  `JournalError::InvariantViolation`) and `IdempotencyKey` (payload of
+  `StoreError::IdempotencyConflict`) are match-only payloads — a host matches
+  them by inference and reaches for the subsystem crate only to store one;
+  `WorkflowGraph` and `DurableJournal` are inspection-accessor returns
+  (`Runtime::workflow()`, `Runtime::journal()`) and join `Scope`,
+  `CapabilityRegistry` and `CapabilityContext` in that tier. ADR 0007 §2 states
+  the rule that separates the two cases.
+  This wave also adds `crates/runtime-loader/tests/export_coverage.rs`, which
+  extracts every umbrella `pub use` name and fails when one is missing from the
+  closure evidence. The fixture is a whitelist; this is what makes a whitelist
+  safe, and it is the direct answer to the review's observation that three
+  exports were never named by either proof.
 - Deliberate exclusions, restated with the evidence that produced them. The
   store seam is exercised in the fixture through a generic
   `S: DurableStore` parameter, and the pass-through vocabulary is bound by

@@ -9,8 +9,9 @@ on:
 permissions:
   contents: read
 
-# Supersede queued runs of the same branch or PR; a push run is never
-# cancelled, so main's CI history stays complete.
+# Supersede queued runs of the same branch or PR; a running push run is never
+# cancelled, while a queued push run can still be superseded by a newer push in
+# the same group.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

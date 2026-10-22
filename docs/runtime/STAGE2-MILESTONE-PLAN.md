@@ -1142,29 +1142,31 @@ MSRV: the `msrv` job previously ran plain `cargo check`, while the
   "MSRV gate" never observed 1.85. It now sets RUSTUP_TOOLCHAIN=1.85.1, the
   run log for 39719852556 shows `cargo 1.85.1`, and the 1.85 clippy pass that
   the 2026-09-28 record listed as unrunnable now runs in CI and locally.
-Classification of fdc8e5e: defensive, not a reproducible leak on the current
-  wiring. Every plugin fiber is instantiated by the activating module and
-  recorded in that module's fiber list (`plan.rs`), the ledger disposes those
-  fibers before it reaches the registrations (`assembly.rs`, `run_sweep`), and
-  `CapabilityFiber::dispose` returns immediately for an already-Disposed fiber
-  (`semantic.rs`), so `PluginRuntime::dispose_fibers` has nothing left to
-  await and the registration disposal completes within one poll. Parking is
-  kept because it makes the step safe if a plugin runtime ever holds a fiber
-  the activating module did not instantiate. ADR 0009 §3 now states that
-  boundary instead of claiming removals cannot be parked, and
-  `take_plus_dispose_taken_matches_one_shot_removal` pins the split as
-  behaviourally identical to the one-shot removal on the absent, successful,
-  and failing cases.
+Classification of fdc8e5e: load-bearing, and corrected here after the third
+  review reproduced the window. The composition's own activation records every
+  plugin fiber in the module's fiber list (`plan.rs`), so that path never
+  blocks at the registration; but the public registry accessor lets a
+  subsystem host instantiate an additional fiber for an already-registered
+  plugin, and that fiber belongs to no module's list, so the registration
+  disposal really awaits its disposer. With an extra gated fiber installed
+  through `RuntimeAssembly::runtime().capability_registry().instantiate(..)`,
+  the same sequence passes at the repaired head and fails at `0ec8096` with
+  "the registration could not be unregistered". ADR 0009 §3 states this
+  boundary, and `take_plus_dispose_taken_matches_one_shot_removal` pins the
+  split as behaviourally identical to the one-shot removal on the absent,
+  successful, and failing cases.
 Documentation: the earlier record's statements that the branch was not pushed
   and that no remote CI had observed it are superseded here - the branch was
   pushed and its CI history is recorded above. The review and repair records
   under docs/reviews/ are now tracked, because README and this plan cite them.
 Broad verification at a108bee plus this entry: fmt --check clean; clippy
   --workspace --all-targets --all-features -D warnings clean; test --workspace
-  --all-features 346 passed / 0 failed (52 binaries); cargo +1.85 test
-  --workspace --all-features 346 passed / 0 failed; cargo +1.85 clippy
-  -D warnings clean; doc --workspace --no-deps clean; graph-lab and the
-  r2_host example complete; the host fixture checks and its MSRV check exit 0.
+  --all-features 346 test-result lines passed / 0 failed (39 test binaries,
+  8 doc-test targets, and 5 nested child-process re-executions; 341 distinct
+  parent test cases); cargo +1.85 test --workspace --all-features the same;
+  cargo +1.85 clippy -D warnings clean; doc --workspace --no-deps clean;
+  graph-lab and the r2_host example complete; the host fixture checks and its
+  MSRV check exit 0.
 Independent review: the second review's finding (R2-03 only partly closed) was
   answered by implementer fixes, and the three commits after it have not been
   reviewed. A third independent review over d3818f5..HEAD is required before
@@ -1211,6 +1213,55 @@ test-result-line count (39 test binaries, 8 doc-test targets, 5 nested
 re-executions), not a binary count. Correcting the wording and the evidence
 belongs to the repair round; this record is not an approval, and the branch
 stays unmerged.
+
+### Repair round 3 (2026-10-22)
+
+The repair answers the third review's blockers and the findings that could be
+fixed without a design decision. It is not itself reviewed; the fourth review is
+scoped to `3ad6fba..HEAD` plus the contract paragraphs touched here.
+
+- **B1** — `CapabilityId`, `Generation` and `EntryId` are promoted to the host
+  tier (a host binds them from `CapabilityPin` fields and
+  `CapabilityHandle::id()`), the five match-only or inspection-return types stay
+  subsystem tier with their reasons in the inventory, ADR 0007 §2 states the
+  naming-versus-matching rule, and
+  `crates/runtime-loader/tests/export_coverage.rs` now fails when any umbrella
+  `pub use` name is absent from the closure evidence. The test was verified by
+  removing a name and watching it fail.
+- **B2** — the dispose hook is armed by a successful activation instead of by
+  the presence of an `activate` hook.
+  `dispose_only_module_runs_its_hook_and_is_reported_clean` fails on the
+  pre-repair shape (hook starts 0) and passes now.
+- **B3** — the hook future is built before the ledger gives up its hook, so a
+  panicking constructor keeps the step;
+  `a_panicking_hook_constructor_is_retried_never_reported_clean` fails on the
+  pre-repair shape (the retry completes) and passes now. A panic inside an
+  already-parked step stays unrecoverable, and `CompositionHandle` now documents
+  that instead of implying resumability.
+- **M4** — `dispose_taken` takes the runtime alone and derives the failing
+  plugin id from it, so a caller cannot misattribute the failure; its docs state
+  the borrow and the subsystem-tier caveat.
+- **M7/M8/M9/M10** and **L3/L4/L11/L12** are corrected in the same round: the
+  verification figure is stated as test-result lines, the registration parking is
+  recorded as load-bearing with its reproduction, the factory-preflight ordering
+  is documented, the v2 format comment and ADR 0008 §1 now describe the tagged
+  groups and length-delimited scalars accurately, the defensive
+  `OrderlySweepInterrupted` wording is fixed, `AlreadyReleased`'s Display is
+  neutral, the fixture preserves the original rejection, and the README/K2/CI
+  wording is corrected.
+- **Deferred with reasons**: M3 (a synchronous rejection would break the release
+  signature; the pre-poll-drop hazard is documented instead), M5/M6 (test-harness
+  robustness — the Gate protocol and the hang-instead-of-fail signal), L1/L2
+  (token Debug opacity and the same-RunId unit test), and the `catch_unwind`
+  half of B3 (it would add a dependency, and the documented panic contract is
+  the honest minimum).
+
+Broad verification for this round: fmt --check clean; clippy --workspace
+--all-targets --all-features -D warnings clean; test --workspace --all-features
+350 passed / 0 failed (53 test-result lines: 40 test binaries, 8 doc-test
+targets, 5 nested child-process re-executions); cargo +1.85 test the same 350;
+cargo +1.85 clippy clean; doc --no-deps clean; graph-lab and the r2_host example
+complete; the host fixture checks pass.
 
 ## Stage 3 entry gate
 

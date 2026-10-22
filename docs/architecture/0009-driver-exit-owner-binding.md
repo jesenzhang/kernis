@@ -135,15 +135,16 @@ pub enum CompositionReleaseRejection<S = InMemoryDurableStore> {
   already happened: the resume completes the parked disposal instead of reporting a removal that
   already happened as impossible. `remove` keeps its one-shot behaviour and the same
   `RegistryError::Dispose` shape on top of the two halves.
-- That step is defensive rather than currently reachable, and the reason is structural: every
-  plugin fiber is instantiated by the activating module and recorded in that module's fiber list
-  (`crates/runtime-composition/src/plan.rs`), the ledger disposes those fibers before it reaches
-  the registrations, and `CapabilityFiber::dispose` returns immediately for a fiber that is
-  already `Disposed` (`crates/capability-graph/src/semantic.rs`), so
-  `PluginRuntime::dispose_fibers` has nothing left to await and the registration disposal
-  completes within a single poll. Parking becomes load-bearing only if a plugin runtime ever
-  holds a fiber the activating module did not instantiate; the step is kept so that such a
-  runtime cannot quietly reintroduce the drop window.
+- The step is load-bearing, not merely defensive. The composition's own activation records every
+  plugin fiber in the module's fiber list, so the composition-created path never blocks at the
+  registration. But the public registry accessor lets a subsystem host instantiate an additional
+  fiber for an already-registered plugin, and that fiber belongs to no module's list: the
+  registration disposal then really awaits its disposer. The third review reproduced exactly
+  that (2026-10-22, M8): with an extra gated fiber installed through
+  `RuntimeAssembly::runtime().capability_registry().instantiate(..)`, the same sequence passes at
+  the repaired head and fails at `0ec8096` with "the registration could not be unregistered".
+  Parking is therefore required, and the module-fiber path is only the narrower case that never
+  blocks.
 - Accepting the orderly release also proves the registry authority can become unreachable: the
   accepted call takes the `Runtime` the sweep cleans through, and the acceptance is recorded
   when `dispose_after_driver` is called with an exit this handle accepts, not when the returned

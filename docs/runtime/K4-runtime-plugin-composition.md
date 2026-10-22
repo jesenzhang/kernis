@@ -71,10 +71,11 @@ product:
   `CompositionReleaseRejection::ForeignDriverExit` hands the exit back
   untouched for the composition it does belong to, and
   `AlreadyReleased` means this handle's cleanup already completed exactly
-  once. `OrderlySweepInterrupted` is the documented consequence of an orderly
-  release that was accepted — the accepted call took its `DriverExit`, and with
-  it the registry authority — and never completed; only
-  `release_after_owner_loss` can finish what is left.
+  once. `OrderlySweepInterrupted` is a defensive variant rather than a
+  reachable answer: a release that was accepted took its `DriverExit`, and with
+  it the registry authority, and one driver mints exactly one exit, so a second
+  `dispose_after_driver` cannot be made; only `release_after_owner_loss` can
+  finish what is left.
   `release_after_owner_loss` is bound-guarded: the handle carries a private
   observation of the owner state of the exact driver separated by the same
   `into_driver` call, and only its own `DriverOwnerState::OwnerDropped`

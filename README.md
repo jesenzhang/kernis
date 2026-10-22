@@ -158,7 +158,7 @@ Stage 2 milestones use the status vocabulary defined in the
   R2-03 only partly closed — an accepted orderly release could still be
   stranded when its future was dropped before the first poll — and the
   branch fixes that together with the review's other items; that fix and
-  the two commits after it have not themselves been reviewed. The branch's
+  the three commits after it have not themselves been reviewed. The branch's
   CI passed for the first time on `a108bee` (GitHub Actions run
   39719852556, whose `msrv` job now really runs 1.85 and includes the 1.85
   clippy pass). See
@@ -170,7 +170,7 @@ Stage 2 milestones use the status vocabulary defined in the
   `60066dcfb7d7038d64da441f3ee852893fbd9119`.
 
 The current implementation deliberately makes no unqualified fsync/power-loss
-claim and does not include a plugin loader, HMR watcher, provider SDK,
+claim and does not include a dynamic plugin loader, HMR watcher, provider SDK,
 WASM/dynamic-library ABI, MCP integration, agent loop, distributed runtime, or
 durable fiber serialization.
 
