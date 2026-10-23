@@ -161,9 +161,9 @@ Stage 2 milestones use the status vocabulary defined in the
   independent review then returned CHANGES REQUIRED (R2-04's closure claim
   and two cleanup-contract defects). The repair round that answers it went
   through a fourth review, which found no code blockers and returned
-  documentation-level changes; those were corrected on the branch. K6 is not
-  Reviewed and R2 is not Closed until the final scoped confirmation of that
-  correction is recorded. See
+  documentation-level changes; those were corrected on the branch. The final
+  scoped confirmation returned PASS, so K6 is Integrated and Reviewed and R2 is
+  Closed; Stage 2 is complete. See
   [R2-KERNEL-CONTRACT.md](docs/runtime/R2-KERNEL-CONTRACT.md) and
   [docs/reviews/](docs/reviews/) for the review and repair records.
 - M2-C1: Integrated / Closed at

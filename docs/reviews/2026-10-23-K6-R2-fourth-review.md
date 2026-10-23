@@ -54,8 +54,9 @@
 ## 7. 判定与下一步
 
 - 对 `cb00662` 的判定：**CHANGES REQUIRED**（文档/证据层面，无代码阻断）。
-- `45d38f3` 已修正；建议对它做一次**限定范围确认**（只读，核对 diff 与文档一致性），确认后即可 `--no-ff` 合并、观测 `main` CI、写集成证据，并把 K6 转 Reviewed、R2 转 Closed。
-- 合并前不再改动生产代码；若确认发现新问题，按第五次小范围复审处理。
+- 修正后已 `--no-ff` 合并到 `main`（`53bd0cc`，CI run 39888844869 绿）。
+- 最终限定范围确认（对 `13f5f6c`）以一条 low 文档描述为条件返回 PASS；该条已在 closeout 提交中按确认者的建议修正。
+- K6 转 Reviewed、R2 转 Closed；合并后不再改动生产代码。
 
 ## 8. 限定范围确认（2026-10-23）
 
@@ -65,3 +66,9 @@
 - low：ADR 0007 对"注释/glob"的描述与实现不符；花括号内的 glob 未被拒绝；2026-09-28 报告残留 `EntryId`/`Generation` 的 subsystem 表述；等价性测试仍比较 `Display` 而非 payload。
 
 以上已在紧随本记录的修正提交中处理，门禁复跑保持绿色。至此第四次复审的全部 finding 均已关闭；下一步是 `--no-ff` 合并、观测 `main` CI、写集成证据并完成 K6/R2 closeout。
+
+## 9. 最终确认与结论（2026-10-23）
+
+对 `13f5f6c` 的只读最终确认：状态文本（README/ROADMAP/契约/计划）、第四复审记录、export gate（`//` 与 `/* */` 注释剥离、bare 与花括号内 glob 均拒绝）、350/53 与 346/52 的计数、`dispose_taken` 最终签名均核对通过。唯一未闭合项是 ADR 0007 §2 对注释处理的描述（low）；确认者明确"改掉后即可 PASS"，并建议在记录 PASS 的 closeout 提交中一并修正——该修正已按原文执行。
+
+**最终结论：PASS（0 blocker）。** 第三次复审的三个阻断项、第四次复审的 6 项 medium 与全部 low 均已关闭；K6 记为 Integrated / Reviewed，R2 记为 Closed，Stage 2 完成。closeout 的状态更新是对本结论的转录，不是一次新的复审。

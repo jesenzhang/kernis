@@ -78,9 +78,9 @@ when the release is called, not at the future's first poll) and the review's
 medium/low items. A third independent review then returned CHANGES REQUIRED
 (R2-04's closure claim and two cleanup-contract defects). The repair round that
 answers it went through a fourth review, which found no code blockers and
-returned documentation-level changes; those were corrected on the branch. K6 is
-not yet Reviewed and R2 is not Closed: the final scoped confirmation of that
-correction is the remaining gate before Stage 3 opens.
+returned documentation-level changes; those were corrected on the branch. The
+final scoped confirmation returned PASS, so K6 is Reviewed and R2 is Closed;
+Stage 2 is complete and Stage 3 planning may begin.
 
 The milestone is the delivery unit. Slice boundaries are introduced only when
 current implementation risk, ownership, verification, or context quality makes

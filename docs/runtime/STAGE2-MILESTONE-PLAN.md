@@ -62,7 +62,7 @@ checks belong at the milestone boundary rather than after every internal edit.
 | K3 | Explicit asynchronous execution boundary | K2 | Integrated | Independent - pending (absorbed into the K6/R2 review) |
 | K4 | Runtime and plugin composition API | K2, K3 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `e03778d`) |
 | K5 | Minimal loader boundary | K4 | Integrated | Independent - APPROVE (re-review PASS, 0 blockers, after repair `a4bc425`) |
-| K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Integrated | Independent - pending (K6/R2 combined review) |
+| K6 | Runtime Kernel API stabilization and R2 closeout | K1-K5 | Integrated / Closed | Independent - PASS (fourth review, 0 code blockers; final scoped confirmation PASS) |
 
 Status and review columns use the vocabulary defined in
 [R2-KERNEL-CONTRACT.md](R2-KERNEL-CONTRACT.md): Integrated (implementation
@@ -1289,6 +1289,41 @@ in a brace block, a residual subsystem-tier sentence in the 2026-09-28 report,
 and the equivalence test still comparing `Display`). All are corrected in the
 commit that follows this record; the gate set was re-run and stays green.
 
+### Integration and closeout (2026-10-23)
+
+```text
+Result: K6 Closed; R2 Closed; Stage 2 complete.
+Base: d3818f5d2a77030f353e1a2a6c1744d494cae0c4.
+Final integrated HEAD: 13f5f6c (repair branch head 3607506 merged as 53bd0cc).
+Integration: --no-ff merge of codex/k6-r2-repair into main; main CI green on
+  53bd0cc (run 39888844869) and on the status correction 13f5f6c
+  (run 39890569407).
+Material decisions: identity v2 with v1 frozen (ADR 0008); owner-bound release
+  through a cancellation-safe ledger (ADR 0009); the host tier split by "binds a
+  value" versus "matches a payload" (ADR 0007 §2, inventory sixth wave); the
+  registration disposal is parkable and load-bearing rather than defensive;
+  panics are documented as unrecoverable and never reported as completion.
+Focused verification: the probes and mutations recorded in the third and fourth
+  review records (loader-only closure probe, registration-parking probe at HEAD
+  and at 0ec8096, arming/panic/id-framing mutations, export-gate bypass
+  mutations).
+Broad verification on the merged head: fmt clean; clippy clean on stable and
+  1.85; test --workspace --all-features 350 passed / 0 failed (53 result lines:
+  40 test binaries, 8 doc-test targets, 5 nested re-executions); doc clean;
+  fixture check and clippy green.
+Independent review: the fourth review returned CHANGES REQUIRED with no code
+  blockers; the corrections landed; the final scoped confirmation found one low
+  documentation gap and returned PASS on the condition that it be corrected in
+  the closeout commit, which it was.
+Remaining risks and non-goals: v1 durable runs have no migration path;
+  RuntimeAssembly::shutdown is not resumable; String payload text is not a
+  stability promise; crates stay publish = false; no dynamic loading, HMR,
+  provider SDK, scheduler, distributed runtime, or agent loop.
+```
+
+The status lines in README, ROADMAP and the kernel contract are a transcription
+of this verdict, not a new review.
+
 ## Stage 3 entry gate
 
 Stage 3 planning starts only after K6 closes Stage 2. Declarative meta-framework
@@ -1297,6 +1332,10 @@ distributed execution, provider SDKs, and agent-facing facilities remain
 research candidates rather than scheduled commitments. Each requires new
 evidence and its own milestone contract; none should be pulled into K1-K6 by
 default.
+
+The gate is satisfied as of 2026-10-23: K6 is Closed and R2 is Closed (see
+"Integration and closeout" above). Stage 3 planning may begin; nothing in this
+document commits Stage 3 scope.
 
 ## Plan maintenance
 

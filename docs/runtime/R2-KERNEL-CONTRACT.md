@@ -55,9 +55,9 @@ found one finding only partly closed, and a third review (2026-10-22) returned
 CHANGES REQUIRED on the repair. The repair round that answers it was reviewed
 by a fourth review (2026-10-23), which found no code blockers and returned
 documentation-level changes; those corrections are merged into `main` as
-`53bd0cc` (CI run 39888844869 green). K6 is therefore Integrated, not yet
-Reviewed, and R2 is not Closed until the final scoped confirmation of those
-corrections is recorded.
+`53bd0cc` (CI run 39888844869 green), and the final scoped confirmation returned
+PASS after the last documentation gap was corrected. K6 is therefore Integrated
+and Reviewed, and R2 is Closed (closeout recorded in the milestone plan).
 
 ## Crate layering
 

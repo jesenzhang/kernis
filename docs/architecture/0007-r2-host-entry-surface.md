@@ -109,10 +109,10 @@ this by kind rather than by widening the surface:
 - **The proof can fail, within limits.** `crates/runtime-loader/tests/export_coverage.rs`
   extracts every `pub use` name from the umbrella and fails when one is absent
   from the closure evidence. It is a token-presence check, not an
-  exercise check: full-line comments are stripped before the search, so a name
-  mentioned only there does not count, but a trailing comment or a dead
-  vocabulary alias still satisfies it; a bare glob is rejected, and a glob
-  nested in a brace block is rejected too.
+  exercise check: `//` line comments and `/* ... */` block comments are
+  stripped before the search, so a name mentioned only in a comment does not
+  count, while a dead vocabulary alias still satisfies it; a bare glob is
+  rejected, and a glob nested in a brace block is rejected too.
   That is the boundary of what a text-level gate can promise; the fixture
   remains the compile-level proof.
 
