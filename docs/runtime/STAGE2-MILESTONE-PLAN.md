@@ -1263,6 +1263,23 @@ targets, 5 nested child-process re-executions); cargo +1.85 test the same 350;
 cargo +1.85 clippy clean; doc --no-deps clean; graph-lab and the r2_host example
 complete; the host fixture checks pass.
 
+### Fourth independent review (2026-10-23)
+
+The fourth review covered `fe8e5ff..cb00662` and returned **CHANGES REQUIRED
+with no code blockers**: six medium and about twenty low findings, all
+documentation or evidence quality. The three blockers of the third review were
+verified closed — B1 by loader-only probes (the three promoted names compile,
+the five tiered ones still fail to resolve), B2 and B3 by re-running the
+mutations (removing the arming line and restoring take-before-construct both
+turn the new regressions red).
+
+The findings were corrected in `45d38f3`: documentation, code comments, test
+evidence (comment stripping and glob rejection in the export-coverage test,
+payload comparison in the equivalence test) and fixture formatting; no
+production behaviour changed, and the full gate set was re-run (350 passed,
+clippy/fmt/doc clean on stable and 1.85, fixture check and clippy green). The
+remaining gate is a scoped confirmation of `45d38f3`, then integration.
+
 ## Stage 3 entry gate
 
 Stage 3 planning starts only after K6 closes Stage 2. Declarative meta-framework
