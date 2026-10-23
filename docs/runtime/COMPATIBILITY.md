@@ -29,6 +29,12 @@ umbrella and its mirrored `runtime-composition` vocabulary):
 - The **subsystem supported** tier follows the same process per crate;
   because subsystem users depend on crates directly, narrowing that tier
   is cheaper but still requires the same evidence and migration note.
+  `CapabilityRegistry::dispose_taken` changed from
+  `(plugin: Id, runtime: &PluginRuntime)` to `(&PluginRuntime)` on the repair
+  branch; the two-argument form never left that unmerged branch (it is absent
+  from `d3818f5`), so no released version carried it. The final signature, the
+  reason the failing id now comes from `runtime.id()`, and the current call
+  sites are recorded in ADR 0009 §4.
 - **Experimental / compatibility** items (`Capability`, `FiberState`,
   `ReactiveRuntime`, `WorkflowState`, alias methods, the `next()`
   fail-fast pair, `JournalInvariant::Reserved`) may be deprecated or

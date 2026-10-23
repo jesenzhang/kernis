@@ -157,11 +157,12 @@ Stage 2 milestones use the status vocabulary defined in the
   contract (ADR 0009). A second independent review of the repair found
   R2-03 only partly closed — an accepted orderly release could still be
   stranded when its future was dropped before the first poll — and the
-  branch fixes that together with the review's other items; that fix and
-  the three commits after it have not themselves been reviewed. The branch's
-  CI passed for the first time on `a108bee` (GitHub Actions run
-  39719852556, whose `msrv` job now really runs 1.85 and includes the 1.85
-  clippy pass). See
+  branch fixes that together with the review's other items. A third
+  independent review then returned CHANGES REQUIRED (R2-04's closure claim
+  and two cleanup-contract defects); the repair round that answers it has
+  not itself been reviewed, and the branch's CI passed on `a108bee`
+  (GitHub Actions run 39719852556, whose `msrv` job now really runs 1.85
+  and includes the 1.85 clippy pass). See
   [R2-KERNEL-CONTRACT.md](docs/runtime/R2-KERNEL-CONTRACT.md) and
   [docs/reviews/](docs/reviews/) for the review and repair records.
 - M2-C1: Integrated / Closed at

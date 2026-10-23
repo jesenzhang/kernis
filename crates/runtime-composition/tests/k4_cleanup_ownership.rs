@@ -28,6 +28,9 @@
 //!   and never fakes an empty success.
 //! * I — another driver's owner loss proves nothing to this composition:
 //!   the owner-state probe is bound to the exact driver at `into_driver`.
+//! * J — a module that registers only `on_dispose` is still armed by a
+//!   successful activation, runs that hook once, and is reported clean
+//!   (third review, B2).
 
 mod k4_common;
 

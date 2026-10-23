@@ -4,9 +4,11 @@
 //! # What this file proves, and what the fixture proves
 //!
 //! Every item below is *named* through `runtime_loader` alone. Naming is the
-//! closure rule: a type a supported host must name — a value it binds from a
-//! supported-path signature or an enum payload it matches on — has to be
-//! reachable here. This file is the in-workspace regression: it fails to
+//! closure rule for values a supported host must bind: a value it stores, names
+//! in a helper signature, or returns from its own function has to be reachable
+//! here. A payload the host only matches by inference may stay at the subsystem
+//! tier (ADR 0007 §2), which is why this list is a vocabulary regression rather
+//! than the whole closure proof. This file fails to
 //! compile the moment one of these re-exports is dropped or renamed.
 //!
 //! The stronger, structural proof lives in `fixtures/r2-host-fixture`, a

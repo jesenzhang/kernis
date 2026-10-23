@@ -49,9 +49,11 @@ Current Stage 2 state: K1, K4, K5 are Integrated and Reviewed (K5 after the
 `a4bc425` repair and re-review PASS). K2 and K3 are Integrated; their
 independent reviews were never separately recorded and are absorbed into
 the K6/R2 combined review. K6 is Integrated (merged into `main` as
-`c6c3a60`; CI run 34489698724 passed all gates); its independent review
-is still pending, so K6 is not Reviewed and R2 is not Closed until that
-review completes.
+`c6c3a60`; CI run 34489698724 passed all gates). Its combined K6/R2 review
+returned CHANGES REQUIRED on 2026-09-28, a repair followed, and a second
+review found one finding only partly closed; the repair branch now waits for
+the fourth review. K6 is therefore not Reviewed and R2 is not Closed until
+that review passes and the branch is integrated.
 
 ## Crate layering
 
@@ -271,7 +273,10 @@ Release refusals are a separate, inert outcome rather than an error domain:
 `CompositionReleaseRejection` (`ForeignDriverExit` / `AlreadyReleased` /
 `OrderlySweepInterrupted`) and `OwnerLossReleaseError`
 (`OwnerStillRunning` / `OrderlyShutdownCompleted` / `AlreadyReleased`)
-report why cleanup did not run and preserve the resources and the exit.
+report why cleanup did not run and preserve the resources; only
+`ForeignDriverExit` and `AlreadyReleased` carry the exit back (the defensive
+`OrderlySweepInterrupted` carries none), and `OwnerLossReleaseError` never
+carries one.
 
 Audit details and the documented `String`-payload limitations:
 [`K6-supported-api-inventory.md`](K6-supported-api-inventory.md).

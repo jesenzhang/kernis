@@ -1161,7 +1161,7 @@ Documentation: the earlier record's statements that the branch was not pushed
   under docs/reviews/ are now tracked, because README and this plan cite them.
 Broad verification at a108bee plus this entry: fmt --check clean; clippy
   --workspace --all-targets --all-features -D warnings clean; test --workspace
-  --all-features 346 test-result lines passed / 0 failed (39 test binaries,
+  --all-features 346 passed / 0 failed (52 test-result lines: 39 test binaries,
   8 doc-test targets, and 5 nested child-process re-executions; 341 distinct
   parent test cases); cargo +1.85 test --workspace --all-features the same;
   cargo +1.85 clippy -D warnings clean; doc --workspace --no-deps clean;

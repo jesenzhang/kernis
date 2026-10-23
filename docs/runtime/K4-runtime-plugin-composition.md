@@ -145,10 +145,13 @@ ledger records only resources activation actually acquired; there is no
 registry wipe, teardown scope, or Runtime recreation rollback.
 
 On partial startup failure the ledger unwinds in reverse activation order: a
-module's `dispose` hook runs only if its `activate` hook completed, started
+module's `dispose` hook runs iff the module's activation completed — plugin
+registration, fiber start, and the `activate` hook when the module has one —
+which is what arms it; started
 fibers dispose in reverse contribution order, successfully registered plugin
 runtimes unregister in reverse registration order through
-`CapabilityRegistry::remove`, un-armed disposers never run, cleanup continues
+`CapabilityRegistry::remove`, disposers of modules whose activation failed never
+run, cleanup continues
 after an individual failure, and every failure is collected into the
 `RollbackReport` with the structured `CleanupResource` class (`DisposeHook`,
 `Fiber`, or `PluginRegistration`). Pre-existing or sibling registrations the
@@ -225,7 +228,7 @@ structured `PluginRegistration` failure without changing `OwnerDropped`
 classification.
 
 The R2 owner-loss guard regressions (scenario D and the guard scenarios
-F–I of the same suite) pin the guard itself: a running driver rejects with
+F–J of the same suite) pin the guard itself: a running driver rejects with
 `OwnerStillRunning` and zero hook/fiber disposal while its handle, plugin,
 and command service remain intact; an orderly shutdown observes `Shutdown`
 — never `OwnerDropped` — rejects with `OrderlyShutdownCompleted`, and the

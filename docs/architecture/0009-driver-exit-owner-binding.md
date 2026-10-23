@@ -158,6 +158,12 @@ pub enum CompositionReleaseRejection<S = InMemoryDurableStore> {
   best-effort-dispose while its runtime owns the registry. Registrations that can no longer be
   unregistered keep being reported as `CleanupResource::PluginRegistration` failures, so a
   report never claims orderly completion it could not perform.
+- Panics are outside the cancellation contract, and the contract says so. A panic while a
+  `dispose` hook is being constructed leaves no future: the step stays in the ledger and a
+  re-entry calls the hook again, never reporting the module clean. A panic while an already
+  parked step is polled keeps that future in the ledger, so a later release re-polls it and the
+  standard library panics immediately (`resumed after panicking`); the ledger never turns that
+  into a completion. Both are host programming errors; only cancellation is recoverable.
 
 ### 4. Breaking-change and migration note (pre-1.0)
 
@@ -197,6 +203,12 @@ repository-wide search proving no supported path keeps needing the old form:
 - `OwnerLossReleaseError` keeps its variants; `AlreadyReleased` is re-documented to the
   completion-only meaning above, and `OrderlyShutdownCompleted` keeps its guidance except for
   the one new precondition recorded in the ledger.
+- `CapabilityRegistry::dispose_taken` takes only the runtime it disposes
+  (`dispose_taken(&PluginRuntime)`); the earlier two-argument form existed only inside this
+  unmerged branch (`fdc8e5e`), so no released version ever carried it. The current call sites
+  are `semantic.rs` (inside `remove`), `assembly.rs` (`dispose_registration`) and
+  `capability-graph/tests/semantic.rs`. The failing plugin id is derived from `runtime.id()`,
+  which is the only key `register` ever inserts, so a caller cannot misattribute a failure.
 
 ## Consequences
 

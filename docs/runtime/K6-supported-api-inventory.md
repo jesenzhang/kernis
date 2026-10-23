@@ -23,14 +23,19 @@ recorded in ADR 0007.
 
 ## Closure rule for the host entry crate
 
-Every type that supported host code must **name** — enum payloads it
-matches on, and values it binds from a supported-path signature — is
-re-exported through `runtime-loader` (mirrored in
-`runtime-composition`'s host vocabulary block). Types that are only ever
-consumed through method-call inference (inspection accessors such as
+A type belongs to the host tier when supported host code must **name** it: a
+value it binds into its own field or helper signature, or returns from its own
+function. A type that a host only *matches* inside an exported enum payload is
+bound by inference and may stay at the subsystem tier; so may a type reached
+only through method-call inference (inspection accessors such as
 `Runtime::scope`, `Runtime::capability_registry`,
-`Runtime::capability_context`) are reachable without naming; deep
-inspection of them is subsystem tier.
+`Runtime::capability_context`). ADR 0007 §2 states the rule and the reason the
+tier was split this way in the sixth wave; this inventory records the result per
+type. Names that were exported before the split as match payloads
+(`CapabilityConflictReason`, `PluginConflictReason`, `FactoryConflictReason`,
+`ActivationStage`, `ConstructionStage`, `StoreInvariant`, `RecoveryReason`)
+stay exported for convenience and are named here rather than retroactively
+re-tiered.
 
 ### K6 gap fix (this milestone)
 
@@ -71,13 +76,16 @@ removals, no renames):
   loader). Scenario N of `k6_r2_end_to_end.rs` keeps the standing import
   block covering them.
 - The R2 repair review is the fourth wave, and it changed how closure is
-  *proved*. Importing a name list in a test is weak evidence: examples and
+  *checked*. Importing a name list in a test is weak evidence: examples and
   tests compile partly through type inference, so a name a host cannot
-  spell can still go unnoticed. Closure is now proved structurally by a
-  separate compile-only crate, `fixtures/r2-host-fixture`, which declares
+  spell can still go unnoticed. The proof is now two-layered: a
+  separate compile-only crate, `fixtures/r2-host-fixture`, declares
   `runtime-loader` as its only dependency, is not a workspace member (so
   nothing can reach a subsystem crate through workspace unification), and
-  annotates every intermediate value with an explicit type. It is checked
+  annotates every intermediate value with an explicit type; and
+  `crates/runtime-loader/tests/export_coverage.rs` (sixth wave) requires every
+  umbrella `pub use` name to appear in the closure evidence, so deleting a
+  re-export cannot stay green. The fixture is checked
   with `cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml
   --all-targets` on stable and on the MSRV, plus clippy `-D warnings` on
   the same manifest, and `.github/workflows/ci.yml` runs exactly those three
@@ -108,9 +116,11 @@ removals, no renames):
   the closure fixture is unchanged.
 - The third-review correction is a sixth wave, and it changes the host tier by
   kind rather than by widening it. **Promoted to host tier** (a host binds
-  them): `CapabilityId` (from `CapabilityHandle::id()` and the `ScopeError`
-  variants), `Generation` and `EntryId` (public fields of `CapabilityPin`).
-  They are re-exported core → composition → loader and named by the fixture.
+  them): `CapabilityId` (a transparent alias of `Id`, exported for readability
+  and bound from `CapabilityHandle::id()`), `Generation` and `EntryId` (public
+  fields of `CapabilityPin`). They are re-exported
+  capability-graph → runtime-composition → runtime-loader and named by the
+  fixture.
   **Kept at subsystem tier**: `CapabilityGraphError` (payload of
   `ScopeError::GraphAdmission`, `DefinitionError::CapabilityGraph`,
   `ReconstructionError::CapabilityGraph`), `JournalInvariant` (payload of
@@ -132,7 +142,7 @@ removals, no renames):
   name only — that is the boundary. Types reachable only by method-call
   inference from an inspection accessor (`Scope`, `CapabilityRegistry`,
   `CapabilityContext`, and the deep-API types behind them: `RegistryError`,
-  `FiberError`, `EffectError`, `DependencyPin`, `EntryId`, `Generation`,
+  `FiberError`, `EffectError`, `DependencyPin`,
   `PluginFuture`), the legacy configuration vocabulary (`TaskConfig`,
   `EffectSpec`, §runtime-core below), and the store-authoring/conformance
   vocabulary (`DurableMutation`, `CommitRequest`, `CommitResult`,
@@ -265,6 +275,8 @@ store is the only constructor.
 
 Host-facing supported (plugin authoring; umbrella-re-exported):
 `CapabilityValue`, `CapabilityDefinition`, `CapabilityHandle` ★,
+`CapabilityId` ★ (a transparent alias of `Id`, exported for readability),
+`Generation` ★, `EntryId` ★,
 `ResolvedDependencies`, `PluginDefinition`, `PluginRuntime`,
 `PluginFactory`, `PluginConfig`, `PluginLoadContext`,
 `CapabilityFiber`, `FiberState`, `ScopedEffect`, `ScopeError` ★.
@@ -273,8 +285,8 @@ Subsystem supported: `Scope` (hierarchical owning scope),
 `ReactiveCapabilityRuntime` (+ `ReconcileReport`,
 `FiberReconcileError`, `FiberCleanupFailure`, `ReactiveRuntimeError`),
 `CapabilityRegistry`, `CapabilityGraph`, `ResolvedCapabilityGraph`,
-`ValidatedCapabilityDefinition`, `CapabilityGraphError` (surfaces as a
-`ReconstructionError` payload ★), `Generation`, `EntryId`, `FiberId`,
+`ValidatedCapabilityDefinition`, `CapabilityGraphError` (match-only payload of
+`ScopeError`/`DefinitionError`/`ReconstructionError`; not umbrella-exported), `FiberId`,
 `DependencyBinding`, `DependencyPin`, `DependencyEpoch`, `EffectStack`,
 `EffectScope`, `EffectError`, `FiberError`, `RegistryError`,
 `PluginFuture`, `ConfigValidator`, `CapabilityContext`.

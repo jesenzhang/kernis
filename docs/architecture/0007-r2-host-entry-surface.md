@@ -89,17 +89,30 @@ this by kind rather than by widening the surface:
 - **Bound values are promoted.** `CapabilityId`, `Generation` and `EntryId`
   are the coordinate types a host binds from `CapabilityPin::generation`,
   `CapabilityPin::entry_id` and `CapabilityHandle::id()`; they are now
-  re-exported along core → composition → loader and named by the fixture.
+  re-exported along capability-graph → runtime-composition → runtime-loader and
+  named by the fixture.
 - **Match-only payloads stay subsystem tier.** `CapabilityGraphError`,
   `JournalInvariant` and `IdempotencyKey` are payloads a host matches without
   naming; the inventory lists each one with that tier.
+- **The boundary is not retroactive.** Payload types the umbrella already
+  exported before this split (`CapabilityConflictReason`, `PluginConflictReason`,
+  `FactoryConflictReason`, `ActivationStage`, `ConstructionStage`,
+  `StoreInvariant`, `RecoveryReason`) stay exported: they are named for
+  convenience, and removing them would be a breaking change for hosts that
+  already store them. The inventory marks them as grandfathered rather than
+  re-tiering them, so "by kind" describes the *new* decisions, not a rewrite of
+  the old surface.
 - **Inspection accessors stay subsystem tier.** `Runtime::workflow()` and
   `Runtime::journal()` return `WorkflowGraph` and `DurableJournal`, which the
   inventory now names alongside `Scope`, `CapabilityRegistry` and
   `CapabilityContext`.
-- **The proof can fail.** `crates/runtime-loader/tests/export_coverage.rs`
+- **The proof can fail, within limits.** `crates/runtime-loader/tests/export_coverage.rs`
   extracts every `pub use` name from the umbrella and fails when one is absent
-  from the closure evidence, which is what makes the whitelist safe.
+  from the closure evidence. It is a token-presence check, not an
+  exercise check: a name that appears only in a comment or in the vocabulary
+  alias still counts, and a glob re-export is rejected rather than expanded.
+  That is the boundary of what a text-level gate can promise; the fixture
+  remains the compile-level proof.
 
 Promoting any of the remaining names to host tier is a separate, recorded
 decision, not a drive-by export.

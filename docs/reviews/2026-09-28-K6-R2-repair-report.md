@@ -81,8 +81,8 @@
 
 ## 5. 测试计数（原测试与新增测试分开）
 
-- 被审基线 `d3818f5` 实测执行：**324 passed / 0 failed（48 个测试二进制）**（在 `d3818f5` 的独立 worktree 中运行 `cargo test --workspace --all-features` 实测，非引用历史记录）。
-- 修复 HEAD 实测执行：**342 passed / 0 failed**，stable 与 `+1.85` 一致（52 个测试二进制；doc-test 目标贡献 0 项）。差值恰为 +18，与新增断言一一对应；测试二进制 48 → 52 正是新增的 4 个回归文件。
+- 被审基线 `d3818f5` 实测执行：**324 passed / 0 failed（48 条 test-result 行：35 个测试二进制 + 8 个 doc-test 目标 + 5 条子进程重跑）**（在 `d3818f5` 的独立 worktree 中运行 `cargo test --workspace --all-features` 实测，非引用历史记录）。
+- 修复 HEAD 实测执行：**342 passed / 0 failed**，stable 与 `+1.85` 一致（52 条 test-result 行：39 个测试二进制 + 8 个 doc-test 目标 + 5 条子进程重跑）。差值恰为 +18，与新增断言一一对应；测试二进制 35 → 39 正是新增的 4 个回归文件。
 - 声明的 `#[test]`/`#[tokio::test]` 标注数：310（集成 223 + lib 87）→ 328（集成 236 + lib 92），两种口径都列出：执行数高于标注数来自宏生成的用例（如 `crates/workflow-recovery/tests/durable.rs` 的 `test_both_backends!`，3 个标注展开为 12 个执行项），该差异在基线与修复 HEAD 上同量存在，因此 +18 的差值不受口径影响。
 - 新增 18 项：`definition.rs` lib +5、`k6_r2_cleanup_interruption.rs` +4、`review_r2_probes.rs` +3、`k2_declarative.rs` +2、`k3_async.rs` +2、`review_r2_identity.rs` +1、`review_r2_exports.rs` +1。
 - 既有断言：无删除、无 `#[ignore]`、无修改期望；`k4_*`/`k5_*`/`k6_*`/两个 example 只做 `into_released()` 形态迁移；被审的 `@` 分隔符守卫原样保留并通过。历史 K6 记录（`55bb80b` 的 315 项）作为历史事实保留，未被替换或重算。

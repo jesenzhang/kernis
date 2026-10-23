@@ -579,6 +579,13 @@ impl CapabilityRegistry {
     /// [`Self::dispose_taken`]. It awaits inline, so a caller whose future is
     /// cancelled mid-disposal loses the started disposal with the future; use
     /// the two halves when the disposal must survive cancellation.
+    ///
+    /// The registration is taken *before* the first await, so a cancelled call
+    /// has already removed the entry: calling `remove` again returns `Ok(None)`
+    /// and cannot retry the disposal. Unless the caller holds another
+    /// `Arc<PluginRuntime>`, the un-disposed fibers are dropped with the local
+    /// runtime and their disposers never run. Only use this form when losing the
+    /// remaining cleanup on cancellation is acceptable.
     pub async fn remove(&self, id: &Id) -> Result<Option<Arc<PluginRuntime>>, RegistryError> {
         let Some(runtime) = self.take(id) else {
             return Ok(None);

@@ -35,7 +35,8 @@ use workflow_recovery::{DurableStore, InMemoryDurableStore};
 ///
 /// The ledger records only what activation actually acquired: registered
 /// plugin identities, successfully started fibers, and whether the module's
-/// `activate` hook completed (which arms its `dispose` hook). Pre-existing
+/// activation completed (which arms its `dispose` hook — the hook does not
+/// require an `activate` hook to exist). Pre-existing
 /// runtime state and resources a module never acquired are deliberately
 /// absent and are therefore never fake-disposed during rollback.
 pub(crate) struct ActivatedModule {
@@ -259,8 +260,9 @@ async fn await_parked(step: &mut InFlight) -> (Id, CleanupResource, Result<(), S
 
 /// Runs one reverse-order cleanup sweep to completion or to cancellation.
 ///
-/// Each module is disposed as: its `dispose` hook (only when `activate`
-/// completed), then its started fibers in reverse contribution order, then its
+/// Each module is disposed as: its `dispose` hook (when the module's activation
+/// completed, which is what arms it — an `activate` hook is not required), then
+/// its started fibers in reverse contribution order, then its
 /// successfully registered plugin runtimes in reverse registration order through
 /// the registry authority. Cleanup continues after an individual failure and
 /// every failure is collected; a module enters `cleaned` only when all of its
@@ -573,13 +575,15 @@ where
 /// # Panics
 ///
 /// Cancellation is recoverable; a panic is not, and this type does not pretend
-/// otherwise. If a host `dispose` hook panics, the hook future is dropped and
-/// the step stays in the ledger, so a re-entry retries the hook instead of
-/// reporting the module clean. If a step is already in flight when it panics,
-/// the ledger keeps that future: a later release re-polls it, which the
-/// standard library turns into an immediate `resumed after panicking` panic.
-/// Both are programming errors in the host, not cancellation; the ledger never
-/// reports a panicked step as completed.
+/// otherwise. A panic while the `dispose` hook is being *constructed* happens
+/// before a future exists: the step stays in the ledger and a re-entry calls the
+/// hook again instead of reporting the module clean. A panic while an already
+/// parked step is *polled* is different — the ledger keeps that future, so a
+/// later release re-polls it and the standard library turns that into an
+/// immediate `resumed after panicking` panic. Both are programming errors in the
+/// host, not cancellation, and the ledger never reports a panicked step as
+/// completed. On an orderly path the only continuation after the future is gone
+/// is [`Self::release_after_owner_loss`].
 pub struct CompositionHandle {
     order: Vec<Id>,
     /// Outstanding composition cleanup. `None` only after a release flow ran to
@@ -613,7 +617,10 @@ impl CompositionHandle {
     /// composition (same store type, same plugin identities, same run id) cannot
     /// release resources here. A rejection disposes nothing, leaves this ledger
     /// usable, and returns the exit untouched through
-    /// [`CompositionReleaseRejection`].
+    /// [`CompositionReleaseRejection`] — but only once the returned future is
+    /// polled: that future owns the exit, so dropping it before the first poll
+    /// destroys the exit (and its runtime) instead of handing it back. Await the
+    /// rejection and use `into_exit()`.
     ///
     /// The K3 shutdown classification is preserved unchanged. Composition-owned
     /// plugin runtimes are unregistered through the live registry, so a

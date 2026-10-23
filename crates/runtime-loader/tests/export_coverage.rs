@@ -54,7 +54,12 @@ fn exported_names(source: &str) -> Vec<String> {
                 let item = statement["pub use ".len()..semi].trim();
                 let name = item.rsplit(" as ").next().unwrap_or(item);
                 let name = name.rsplit("::").next().unwrap_or(name).trim();
-                if !name.is_empty() {
+                if name.contains('*') {
+                    // A glob would add an unbounded set of names that this
+                    // scanner cannot enumerate. Fail closed instead of matching
+                    // the literal `*` somewhere in the evidence text.
+                    names.push(format!("<glob re-export: {item}>"));
+                } else if !name.is_empty() {
                     names.push(name.to_owned());
                 }
                 rest = &statement[semi..];
@@ -70,6 +75,20 @@ fn is_identifier_char(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
 }
 
+/// Drops full-line comments before the evidence is searched.
+///
+/// A name mentioned only in a comment is not evidence that a host can name it;
+/// without this, adding `// CapabilityFiber` would satisfy the gate. Inline
+/// trailing comments are left alone (they would require a real lexer), which is
+/// documented as the limit of a text-level check in ADR 0007 §2.
+fn without_line_comments(source: &str) -> String {
+    source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Whole-token search, so `Runtime` does not match `RuntimeHandle`.
 fn names(corpus: &str, name: &str) -> bool {
     corpus.match_indices(name).any(|(index, _)| {
@@ -83,17 +102,17 @@ fn names(corpus: &str, name: &str) -> bool {
 #[test]
 fn every_exported_name_is_named_by_the_closure_evidence() {
     let root = manifest_dir();
-    let exports = exported_names(&read(&root.join("src/lib.rs")));
+    let exports = exported_names(&without_line_comments(&read(&root.join("src/lib.rs"))));
     assert!(
         exports.len() > 50,
         "the export parser found only {} names, which cannot be the umbrella: fix the parser before trusting this test",
         exports.len()
     );
 
-    let mut evidence = read(&root.join("tests/review_r2_exports.rs"));
-    evidence.push_str(&read(
+    let mut evidence = without_line_comments(&read(&root.join("tests/review_r2_exports.rs")));
+    evidence.push_str(&without_line_comments(&read(
         &root.join("../../fixtures/r2-host-fixture/src/lib.rs"),
-    ));
+    )));
 
     let missing: Vec<&String> = exports
         .iter()

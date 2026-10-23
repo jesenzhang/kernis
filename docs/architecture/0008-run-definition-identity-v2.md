@@ -95,9 +95,11 @@ Properties, each of which is a test obligation rather than an aspiration:
   follow a group tag by position (`#capability` then id/kind/definition identity, a
   requirement's pair, a task id) carry no individual tag: swapping two of them changes every
   identity while the format tag stays v2, which is a property of the format, not of the
-  canonicalizer's order. The skeleton test pins the framing of the data slots; the order
-  itself is pinned by the golden bytes and must not be changed without a new format tag
-  (third review, 2026-10-22, M10).
+  canonicalizer's order. The skeleton test pins the framing of the data slots it varies
+  (capability kind, definition identity and the capability id); the remaining slots — task id,
+  dependency ids, the effect operation id — are pinned by the golden bytes, which also pin the
+  order, and neither may change without a new format tag
+  (third review, 2026-10-22, M10; fourth review tightened this wording).
 - **Semantic equivalence rules are unchanged from K2:** declarations, prerequisites,
   requirements, and dependencies are ordered by logical identity, task display labels stay
   excluded, and meaningful topology / capability / effect-semantics changes must change the
@@ -120,7 +122,7 @@ fixture.
 `Runtime::restore_from_definition` classifies the durable identity **before** any factory
 construction, reconstruction, or store write. The preflight that resolves the host's factory
 registry runs before the durable read, so a host that is missing a factory sees
-`RuntimeError::FactoryResolution` first; the identity gate itself still runs before any
+`RuntimeError::Factory` (wrapping `FactoryResolutionError::MissingFactory`) first; the identity gate itself still runs before any
 construction and before any write, and a host that wants the legacy refusal specifically must
 supply a complete factory registry (third review, 2026-10-22, M9).
 

@@ -897,13 +897,38 @@ async fn take_plus_dispose_taken_matches_one_shot_removal() {
         Err(error) => error,
     };
 
-    assert!(matches!(
-        split_error,
-        RegistryError::Dispose { ref plugin, .. } if plugin == &id("plugin")
-    ));
+    let split_errors = match split_error {
+        RegistryError::Dispose { plugin, errors } => {
+            assert_eq!(plugin, id("plugin"), "the failing plugin is named");
+            errors
+        }
+        other => panic!("a failing fiber cleanup is reported as Dispose, got {other:?}"),
+    };
+    let one_shot_errors = match one_shot_error {
+        RegistryError::Dispose { plugin, errors } => {
+            assert_eq!(
+                plugin,
+                id("plugin"),
+                "the one-shot failure names the same plugin"
+            );
+            errors
+        }
+        other => panic!("the one-shot removal reports Dispose, got {other:?}"),
+    };
     assert_eq!(
-        split_error.to_string(),
-        one_shot_error.to_string(),
-        "the split reports exactly the failure the one-shot removal reports"
+        split_errors.len(),
+        one_shot_errors.len(),
+        "the split reports one failure per fiber, like the one-shot removal"
+    );
+    assert_eq!(
+        split_errors
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        one_shot_errors
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        "the failure payloads match, not only the Display of the outer error"
     );
 }

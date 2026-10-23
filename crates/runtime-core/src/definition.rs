@@ -1267,6 +1267,10 @@ mod tests {
         // The identifiers are framed too. A canonicalizer that concatenated an
         // id raw would leave its text in the frame, so renaming the capability
         // (the requirement follows it) must not move a structural boundary.
+        // This is a diagnostic oracle, not independent evidence: the goldens
+        // above pin the same ids first, so a raw id fails there before reaching
+        // here. It covers the capability id only; task ids, dependency ids and
+        // the effect operation id stay pinned by the goldens.
         let renamed = |capability: &str| {
             RunDefinition::new()
                 .with_capability(CapabilityDeclaration::new(id(capability), "plain", "plain"))

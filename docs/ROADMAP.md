@@ -74,9 +74,10 @@ closure is proved (a loader-only compile-only fixture crate with explicit
 types, checked on stable and MSRV). A second independent review of the repair
 found R2-03 only partly closed; the branch fixes that (acceptance now happens
 when the release is called, not at the future's first poll) and the review's
-medium/low items, but those fixes, the parkable registration disposal, and the
-CI repair that followed have not been independently reviewed, and the branch's
-CI only became green on `a108bee` (run 39719852556). Stage 3 stays unopened:
+medium/low items. A third independent review then returned CHANGES REQUIRED
+(R2-04's closure claim and two cleanup-contract defects); the repair round that
+answers it has not itself been reviewed, and the branch's CI passed on
+`a108bee` (run 39719852556). Stage 3 stays unopened:
 its entry gate requires the independent re-review and the integration evidence
 this repair does not yet have.
 
