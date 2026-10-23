@@ -159,10 +159,11 @@ Stage 2 milestones use the status vocabulary defined in the
   stranded when its future was dropped before the first poll — and the
   branch fixes that together with the review's other items. A third
   independent review then returned CHANGES REQUIRED (R2-04's closure claim
-  and two cleanup-contract defects); the repair round that answers it has
-  not itself been reviewed, and the branch's CI passed on `a108bee`
+  and two cleanup-contract defects); the repair round that answers it passed a
+  fourth review with no code blockers, and only its documentation-level
+  findings needed correcting. The branch's CI passed on `a108bee`
   (GitHub Actions run 39719852556, whose `msrv` job now really runs 1.85
-  and includes the 1.85 clippy pass). See
+  and includes the 1.85 clippy pass) and stays green on the repair head. See
   [R2-KERNEL-CONTRACT.md](docs/runtime/R2-KERNEL-CONTRACT.md) and
   [docs/reviews/](docs/reviews/) for the review and repair records.
 - M2-C1: Integrated / Closed at

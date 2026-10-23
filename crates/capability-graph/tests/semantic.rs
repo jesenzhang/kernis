@@ -915,20 +915,10 @@ async fn take_plus_dispose_taken_matches_one_shot_removal() {
         }
         other => panic!("the one-shot removal reports Dispose, got {other:?}"),
     };
+    // `FiberError` derives `PartialEq`, so compare the payload itself rather
+    // than its Display (which, for `Cleanup`, is only the error count).
     assert_eq!(
-        split_errors.len(),
-        one_shot_errors.len(),
-        "the split reports one failure per fiber, like the one-shot removal"
-    );
-    assert_eq!(
-        split_errors
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>(),
-        one_shot_errors
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>(),
-        "the failure payloads match, not only the Display of the outer error"
+        split_errors, one_shot_errors,
+        "the split reports the same failure payload as the one-shot removal"
     );
 }

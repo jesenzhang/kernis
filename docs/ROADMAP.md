@@ -76,7 +76,8 @@ found R2-03 only partly closed; the branch fixes that (acceptance now happens
 when the release is called, not at the future's first poll) and the review's
 medium/low items. A third independent review then returned CHANGES REQUIRED
 (R2-04's closure claim and two cleanup-contract defects); the repair round that
-answers it has not itself been reviewed, and the branch's CI passed on
+answers it passed a fourth review with no code blockers, and only its
+documentation-level findings needed correcting. The branch's CI passed on
 `a108bee` (run 39719852556). Stage 3 stays unopened:
 its entry gate requires the independent re-review and the integration evidence
 this repair does not yet have.

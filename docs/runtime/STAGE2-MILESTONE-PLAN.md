@@ -1208,11 +1208,12 @@ This entry also supersedes two statements in the 2026-10-22 reconciliation
 above. The "defensive rather than currently reachable" classification is
 wrong: a host that instantiates an extra fiber through the public registry
 accessor reproduces the drop window, and the probe passes at `3ad6fba` while
-failing at `0ec8096`. The figure "346 passed / 52 binaries" is a
-test-result-line count (39 test binaries, 8 doc-test targets, 5 nested
-re-executions), not a binary count. Correcting the wording and the evidence
-belongs to the repair round; this record is not an approval, and the branch
-stays unmerged.
+failing at `0ec8096`. The figure "346 passed / 52 binaries" mixes two counts:
+346 is the number of passing cases (including five nested child-process
+re-executions) and 52 is the number of test-result lines (39 test binaries,
+8 doc-test targets, 5 nested re-executions), not a binary count. Correcting the
+wording and the evidence belongs to the repair round; this record is not an
+approval, and the branch stays unmerged.
 
 ### Repair round 3 (2026-10-22)
 
@@ -1279,6 +1280,13 @@ payload comparison in the equivalence test) and fixture formatting; no
 production behaviour changed, and the full gate set was re-run (350 passed,
 clippy/fmt/doc clean on stable and 1.85, fixture check and clippy green). The
 remaining gate is a scoped confirmation of `45d38f3`, then integration.
+
+That scoped confirmation found one new medium contradiction (the status
+paragraphs still described the fourth review as pending) and four low gaps in
+the evidence (the ADR's description of the comment/glob handling, a glob nested
+in a brace block, a residual subsystem-tier sentence in the 2026-09-28 report,
+and the equivalence test still comparing `Display`). All are corrected in the
+commit that follows this record; the gate set was re-run and stays green.
 
 ## Stage 3 entry gate
 

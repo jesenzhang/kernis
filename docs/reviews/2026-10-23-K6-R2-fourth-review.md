@@ -56,3 +56,12 @@
 - 对 `cb00662` 的判定：**CHANGES REQUIRED**（文档/证据层面，无代码阻断）。
 - `45d38f3` 已修正；建议对它做一次**限定范围确认**（只读，核对 diff 与文档一致性），确认后即可 `--no-ff` 合并、观测 `main` CI、写集成证据，并把 K6 转 Reviewed、R2 转 Closed。
 - 合并前不再改动生产代码；若确认发现新问题，按第五次小范围复审处理。
+
+## 8. 限定范围确认（2026-10-23）
+
+对 `45d38f3` 的只读确认发现 1 项 medium 与 4 项 low：
+
+- medium：契约、README、ROADMAP 的状态段落仍把第四次复审判为 pending（落后一次复审）。
+- low：ADR 0007 对"注释/glob"的描述与实现不符；花括号内的 glob 未被拒绝；2026-09-28 报告残留 `EntryId`/`Generation` 的 subsystem 表述；等价性测试仍比较 `Display` 而非 payload。
+
+以上已在紧随本记录的修正提交中处理，门禁复跑保持绿色。至此第四次复审的全部 finding 均已关闭；下一步是 `--no-ff` 合并、观测 `main` CI、写集成证据并完成 K6/R2 closeout。

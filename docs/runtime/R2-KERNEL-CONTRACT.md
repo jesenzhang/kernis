@@ -50,10 +50,13 @@ Current Stage 2 state: K1, K4, K5 are Integrated and Reviewed (K5 after the
 independent reviews were never separately recorded and are absorbed into
 the K6/R2 combined review. K6 is Integrated (merged into `main` as
 `c6c3a60`; CI run 34489698724 passed all gates). Its combined K6/R2 review
-returned CHANGES REQUIRED on 2026-09-28, a repair followed, and a second
-review found one finding only partly closed; the repair branch now waits for
-the fourth review. K6 is therefore not Reviewed and R2 is not Closed until
-that review passes and the branch is integrated.
+returned CHANGES REQUIRED on 2026-09-28; a repair followed, a second review
+found one finding only partly closed, and a third review (2026-10-22) returned
+CHANGES REQUIRED on the repair. The repair round that answers it then passed a
+fourth review (2026-10-23) with no code blockers — its documentation-level
+findings are corrected on the branch — and the branch waits for integration.
+K6 is therefore not Reviewed and R2 is not Closed until the branch is merged
+with green CI.
 
 ## Crate layering
 

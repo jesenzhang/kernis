@@ -44,7 +44,11 @@ fn exported_names(source: &str) -> Vec<String> {
                     }
                     let name = item.rsplit(" as ").next().unwrap_or(item);
                     let name = name.rsplit("::").next().unwrap_or(name).trim();
-                    if !name.is_empty() {
+                    if name.contains('*') {
+                        // A glob nested in a brace block is the same hazard as a
+                        // bare one: it adds names this scanner cannot enumerate.
+                        names.push(format!("<glob re-export: {item}>"));
+                    } else if !name.is_empty() {
                         names.push(name.to_owned());
                     }
                 }

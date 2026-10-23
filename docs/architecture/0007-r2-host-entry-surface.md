@@ -99,7 +99,7 @@ this by kind rather than by widening the surface:
   `FactoryConflictReason`, `ActivationStage`, `ConstructionStage`,
   `StoreInvariant`, `RecoveryReason`) stay exported: they are named for
   convenience, and removing them would be a breaking change for hosts that
-  already store them. The inventory marks them as grandfathered rather than
+  already store them. The inventory keeps them exported rather than
   re-tiering them, so "by kind" describes the *new* decisions, not a rewrite of
   the old surface.
 - **Inspection accessors stay subsystem tier.** `Runtime::workflow()` and
@@ -109,8 +109,10 @@ this by kind rather than by widening the surface:
 - **The proof can fail, within limits.** `crates/runtime-loader/tests/export_coverage.rs`
   extracts every `pub use` name from the umbrella and fails when one is absent
   from the closure evidence. It is a token-presence check, not an
-  exercise check: a name that appears only in a comment or in the vocabulary
-  alias still counts, and a glob re-export is rejected rather than expanded.
+  exercise check: full-line comments are stripped before the search, so a name
+  mentioned only there does not count, but a trailing comment or a dead
+  vocabulary alias still satisfies it; a bare glob is rejected, and a glob
+  nested in a brace block is rejected too.
   That is the boundary of what a text-level gate can promise; the fixture
   remains the compile-level proof.
 
