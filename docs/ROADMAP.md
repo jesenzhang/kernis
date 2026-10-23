@@ -65,22 +65,22 @@ K6 is integrated on `main` (merge `c6c3a60`, base `3ee011b`, CI run
 with four findings: ambiguous `RunDefinition` identity (R2-01), composition
 release not bound to the exiting driver's owner (R2-02), composition cleanup
 lost when its future is cancelled (R2-03), and host-surface re-export closure
-gaps (R2-04). The bounded repair lives on `codex/k6-r2-repair` and is
-**READY FOR REVIEW / NOT INTEGRATED**: it is not merged, not Reviewed, and R2
-is not Closed. It adds ADR 0008 (`kernis-run-definition-v2`, with v1 frozen
+gaps (R2-04). The bounded repair lived on `codex/k6-r2-repair` and was merged
+to `main` as `53bd0cc` on 2026-10-23 (CI run 39888844869 green), so the repair
+range is Integrated. It adds ADR 0008 (`kernis-run-definition-v2`, with v1 frozen
 and a durable v1 identity refused fail-closed) and ADR 0009 (owner-bound
 release through a cancellation-safe cleanup ledger), and it changes how API
-closure is proved (a loader-only compile-only fixture crate with explicit
-types, checked on stable and MSRV). A second independent review of the repair
-found R2-03 only partly closed; the branch fixes that (acceptance now happens
+closure is checked (a loader-only compile-only fixture crate with explicit
+types, plus an export-coverage gate, checked on stable and MSRV). A second
+independent review of the repair
+found R2-03 only partly closed; the branch fixed that (acceptance now happens
 when the release is called, not at the future's first poll) and the review's
 medium/low items. A third independent review then returned CHANGES REQUIRED
-(R2-04's closure claim and two cleanup-contract defects); the repair round that
-answers it passed a fourth review with no code blockers, and only its
-documentation-level findings needed correcting. The branch's CI passed on
-`a108bee` (run 39719852556). Stage 3 stays unopened:
-its entry gate requires the independent re-review and the integration evidence
-this repair does not yet have.
+(R2-04's closure claim and two cleanup-contract defects). The repair round that
+answers it went through a fourth review, which found no code blockers and
+returned documentation-level changes; those were corrected on the branch. K6 is
+not yet Reviewed and R2 is not Closed: the final scoped confirmation of that
+correction is the remaining gate before Stage 3 opens.
 
 The milestone is the delivery unit. Slice boundaries are introduced only when
 current implementation risk, ownership, verification, or context quality makes

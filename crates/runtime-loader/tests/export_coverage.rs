@@ -79,18 +79,45 @@ fn is_identifier_char(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
 }
 
-/// Drops full-line comments before the evidence is searched.
+/// Drops `//` line comments and `/* ... */` block comments before searching.
 ///
 /// A name mentioned only in a comment is not evidence that a host can name it;
-/// without this, adding `// CapabilityFiber` would satisfy the gate. Inline
-/// trailing comments are left alone (they would require a real lexer), which is
-/// documented as the limit of a text-level check in ADR 0007 §2.
-fn without_line_comments(source: &str) -> String {
-    source
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n")
+/// without this, adding `// CapabilityFiber` would satisfy the gate. Trailing
+/// `//` comments after code are removed too, because the whole line is scanned
+/// left to right. A `//` inside a string literal would truncate that line; that
+/// can only hide a name (making the gate stricter), never satisfy it.
+fn without_comments(source: &str) -> String {
+    let characters: Vec<char> = source.chars().collect();
+    let mut output = String::with_capacity(source.len());
+    let mut index = 0;
+    let mut in_block = false;
+    while index < characters.len() {
+        let current = characters[index];
+        let next = characters.get(index + 1).copied();
+        if in_block {
+            if current == '*' && next == Some('/') {
+                in_block = false;
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        if current == '/' && next == Some('*') {
+            in_block = true;
+            index += 2;
+            continue;
+        }
+        if current == '/' && next == Some('/') {
+            while index < characters.len() && characters[index] != '\n' {
+                index += 1;
+            }
+            continue;
+        }
+        output.push(current);
+        index += 1;
+    }
+    output
 }
 
 /// Whole-token search, so `Runtime` does not match `RuntimeHandle`.
@@ -106,15 +133,15 @@ fn names(corpus: &str, name: &str) -> bool {
 #[test]
 fn every_exported_name_is_named_by_the_closure_evidence() {
     let root = manifest_dir();
-    let exports = exported_names(&without_line_comments(&read(&root.join("src/lib.rs"))));
+    let exports = exported_names(&without_comments(&read(&root.join("src/lib.rs"))));
     assert!(
         exports.len() > 50,
         "the export parser found only {} names, which cannot be the umbrella: fix the parser before trusting this test",
         exports.len()
     );
 
-    let mut evidence = without_line_comments(&read(&root.join("tests/review_r2_exports.rs")));
-    evidence.push_str(&without_line_comments(&read(
+    let mut evidence = without_comments(&read(&root.join("tests/review_r2_exports.rs")));
+    evidence.push_str(&without_comments(&read(
         &root.join("../../fixtures/r2-host-fixture/src/lib.rs"),
     )));
 

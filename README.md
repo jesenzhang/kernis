@@ -149,21 +149,21 @@ Stage 2 milestones use the status vocabulary defined in the
   returned **CHANGES REQUIRED** with four findings (R2-01 ambiguous
   `RunDefinition` identity, R2-02 unbound driver-exit release, R2-03
   cleanup lost on cancellation, R2-04 host-surface closure gaps); the
-  reviewed baseline is `d3818f5`. The repair lives on
-  `codex/k6-r2-repair` and is **READY FOR REVIEW, NOT INTEGRATED**: it is
-  neither merged to `main` nor declared Reviewed, and R2 remains not
-  Closed. The repair changes the run-definition format tag to
+  reviewed baseline is `d3818f5`. The repair lived on
+  `codex/k6-r2-repair` and was merged to `main` as `53bd0cc` on 2026-10-23
+  (CI run 39888844869 green), so the repair range is Integrated. The repair
+  changes the run-definition format tag to
   `kernis-run-definition-v2` (ADR 0008) and the composition release
   contract (ADR 0009). A second independent review of the repair found
   R2-03 only partly closed — an accepted orderly release could still be
   stranded when its future was dropped before the first poll — and the
-  branch fixes that together with the review's other items. A third
+  branch fixed that together with the review's other items. A third
   independent review then returned CHANGES REQUIRED (R2-04's closure claim
-  and two cleanup-contract defects); the repair round that answers it passed a
-  fourth review with no code blockers, and only its documentation-level
-  findings needed correcting. The branch's CI passed on `a108bee`
-  (GitHub Actions run 39719852556, whose `msrv` job now really runs 1.85
-  and includes the 1.85 clippy pass) and stays green on the repair head. See
+  and two cleanup-contract defects). The repair round that answers it went
+  through a fourth review, which found no code blockers and returned
+  documentation-level changes; those were corrected on the branch. K6 is not
+  Reviewed and R2 is not Closed until the final scoped confirmation of that
+  correction is recorded. See
   [R2-KERNEL-CONTRACT.md](docs/runtime/R2-KERNEL-CONTRACT.md) and
   [docs/reviews/](docs/reviews/) for the review and repair records.
 - M2-C1: Integrated / Closed at

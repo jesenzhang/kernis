@@ -1218,8 +1218,9 @@ approval, and the branch stays unmerged.
 ### Repair round 3 (2026-10-22)
 
 The repair answers the third review's blockers and the findings that could be
-fixed without a design decision. It is not itself reviewed; the fourth review is
-scoped to `3ad6fba..HEAD` plus the contract paragraphs touched here.
+fixed without a design decision. It was subsequently reviewed by the fourth
+review (below), which found no code blockers and returned documentation-level
+changes.
 
 - **B1** — `CapabilityId`, `Generation` and `EntryId` are promoted to the host
   tier (a host binds them from `CapabilityPin` fields and

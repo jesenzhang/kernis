@@ -42,7 +42,7 @@
 
 ## 5. 已修正
 
-`45d38f3` 修正上述全部：仅文档、注释、测试证据与 fixture 格式，无生产行为变化。复跑门禁：fmt 干净；clippy（stable 与 1.85）干净；`cargo test --workspace --all-features` 350 passed / 0 failed（53 条 result 行：40 个测试二进制、8 个 doc-test、5 条子进程重跑）；`cargo doc` 干净；fixture check/clippy 通过。
+`45d38f3` 修正了上述可在同一轮处理的全部项（§8 记录了对该提交的补充修正）：仅文档、注释、测试证据与 fixture 格式，无生产行为变化。复跑门禁：fmt 干净；clippy（stable 与 1.85）干净；`cargo test --workspace --all-features` 350 passed / 0 failed（53 条 result 行：40 个测试二进制、8 个 doc-test、5 条子进程重跑）；`cargo doc` 干净；fixture check/clippy 通过。
 
 ## 6. 覆盖率与方法说明
 
