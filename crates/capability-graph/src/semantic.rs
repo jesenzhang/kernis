@@ -4,6 +4,7 @@
 //! machinery. Context lookup, plugin identity, dependency epochs, and effect
 //! ownership are represented by ordinary Rust values and owned handles.
 
+use crate::runtime::allocate_monotonic;
 use crate::{
     CapabilityDefinition, CapabilityHandle, CapabilityId, CapabilityValue, Generation,
     ResolvedDependencies, Scope, ScopeError,
@@ -453,11 +454,7 @@ impl PluginRuntime {
             plugin: self.id().clone(),
             reason,
         })?;
-        let raw_id = NEXT_FIBER_ID
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                value.checked_add(1)
-            })
-            .map_err(|_| FiberError::FiberIdExhausted)?;
+        let raw_id = allocate_monotonic(&NEXT_FIBER_ID).ok_or(FiberError::FiberIdExhausted)?;
         let fiber = Arc::new(CapabilityFiber::new(
             FiberId(raw_id),
             Arc::downgrade(self),
@@ -577,21 +574,62 @@ impl CapabilityRegistry {
     }
 
     /// Removes a runtime and disposes all associated fibers.
+    ///
+    /// This is the one-shot convenience form of [`Self::take`] followed by
+    /// [`Self::dispose_taken`]. It awaits inline, so a caller whose future is
+    /// cancelled mid-disposal loses the started disposal with the future; use
+    /// the two halves when the disposal must survive cancellation.
+    ///
+    /// The registration is taken *before* the first await, so a cancelled call
+    /// has already removed the entry: calling `remove` again returns `Ok(None)`
+    /// and cannot retry the disposal. Unless the caller holds another
+    /// `Arc<PluginRuntime>`, the un-disposed fibers are dropped with the local
+    /// runtime and their disposers never run. Only use this form when losing the
+    /// remaining cleanup on cancellation is acceptable.
     pub async fn remove(&self, id: &Id) -> Result<Option<Arc<PluginRuntime>>, RegistryError> {
-        let runtime = self
-            .runtimes
-            .lock()
-            .expect("plugin registry lock poisoned")
-            .remove(id);
-        let Some(runtime) = runtime else {
+        let Some(runtime) = self.take(id) else {
             return Ok(None);
         };
+        match Self::dispose_taken(&runtime).await {
+            Ok(()) => Ok(Some(runtime)),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Removes a runtime from the registry synchronously, without disposing
+    /// its fibers.
+    ///
+    /// This is the non-awaiting half of [`Self::remove`]. It exists so a
+    /// cancellation-safe cleanup caller can take ownership of the runtime here
+    /// and park [`Self::dispose_taken`] as its own resumable step, instead of
+    /// a drop between the map removal and the disposal completing the removal
+    /// while stranding a runtime that is no longer reachable through the
+    /// registry.
+    #[must_use = "the caller now owns the only registry-held reference and must dispose it"]
+    pub fn take(&self, id: &Id) -> Option<Arc<PluginRuntime>> {
+        self.runtimes
+            .lock()
+            .expect("plugin registry lock poisoned")
+            .remove(id)
+    }
+
+    /// Disposes the fibers of one runtime previously removed with
+    /// [`Self::take`], reporting the same [`RegistryError::Dispose`] that
+    /// [`Self::remove`] reports for a failed cleanup.
+    ///
+    /// The future only borrows the runtime: the caller must keep it alive (the
+    /// composition ledger owns the taken runtime for exactly this reason), so
+    /// cancelling the future loses the started disposal but never drops a
+    /// runtime the caller still owns. Disposing a runtime that is still
+    /// registered is possible — this is a subsystem-tier primitive, not an
+    /// authority gate — so only a caller that has just taken it should use it.
+    pub async fn dispose_taken(runtime: &PluginRuntime) -> Result<(), RegistryError> {
         let errors = runtime.dispose_fibers().await;
         if errors.is_empty() {
-            Ok(Some(runtime))
+            Ok(())
         } else {
             Err(RegistryError::Dispose {
-                plugin: id.clone(),
+                plugin: runtime.id().clone(),
                 errors,
             })
         }

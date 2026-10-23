@@ -212,6 +212,7 @@ where
 {
     runtime: Runtime<S>,
     status: ShutdownStatus,
+    owner: DriverOwner,
 }
 
 impl<S> DriverExit<S>
@@ -234,6 +235,49 @@ where
     #[must_use]
     pub const fn runtime(&self) -> &Runtime<S> {
         &self.runtime
+    }
+
+    /// Returns the identity of the exact driver that produced this exit.
+    ///
+    /// A composition may treat this exit as authorization only when the token
+    /// names its own driver; see
+    /// [`ADR 0009`](https://github.com/jesenzhang/kernis/blob/main/docs/architecture/0009-driver-exit-owner-binding.md).
+    #[must_use]
+    pub const fn owner(&self) -> &DriverOwner {
+        &self.owner
+    }
+}
+
+/// Unforgeable identity of one exact asynchronous driver owner.
+///
+/// The token is a private clone of the command mailbox handle that the K3
+/// driver-owner guard already treats as the single driver-owner truth, so two
+/// tokens name the same driver instance exactly when they share that mailbox —
+/// not merely the same [`RunId`], durable-store type, configuration, or
+/// shutdown state.
+///
+/// `DriverOwner` has no constructor, no textual or serialized form, and no
+/// observable payload. It is obtainable only from [`RuntimeHandle::owner`] and
+/// [`DriverExit::owner`], so a caller cannot mint, forge, or launder an owner
+/// claim for a driver it does not already hold.
+#[derive(Clone)]
+pub struct DriverOwner(CommandMailbox);
+
+impl DriverOwner {
+    /// Returns whether both tokens name the same driver instance.
+    #[must_use]
+    pub fn same_driver_as(&self, other: &Self) -> bool {
+        std::ptr::eq(Arc::as_ptr(&self.0.state), Arc::as_ptr(&other.0.state))
+    }
+}
+
+impl fmt::Debug for DriverOwner {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "DriverOwner({:p}: opaque)",
+            Arc::as_ptr(&self.0.state)
+        )
     }
 }
 
@@ -653,6 +697,17 @@ impl RuntimeHandle {
         self.mailbox.owner_state()
     }
 
+    /// Returns the identity of the exact driver owner this handle commands.
+    ///
+    /// The token is the same object identity the driver-owner guard uses as the
+    /// driver-owner truth, so a [`DriverExit`](crate::DriverExit) can be checked
+    /// against the driver a caller actually holds. Observing a token submits no
+    /// command, closes nothing, and acquires no [`Runtime`] authority.
+    #[must_use]
+    pub fn owner(&self) -> DriverOwner {
+        DriverOwner(self.mailbox.clone())
+    }
+
     fn submit<T>(&self, command: DriverCommand, future: DriverFuture<T>) -> DriverFuture<T> {
         if let Err(command) = self.mailbox.submit(command) {
             self.mailbox.complete_after_close(command);
@@ -739,9 +794,11 @@ where
                             progress_events,
                             telemetry_events,
                         );
+                        let owner = DriverOwner(self.mailbox.clone());
                         return DriverExit {
                             runtime: self.runtime,
                             status,
+                            owner,
                         };
                     }
                     Err(error) => reply.complete(Err(error)),

@@ -1,0 +1,24 @@
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\capability_graph-14g6wdct9f12y\s-hnfsa8i4hr-1hemtrm-working`
+
+warning: `capability-graph` (lib) generated 1 warning
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\workflow_recovery-2ljrwte04x93s\s-hm61iskdd3-0ckw1ue-working`
+
+warning: `workflow-recovery` (lib) generated 1 warning
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\runtime_core-2abuf8rdc631q\s-hnfsa9h7m7-1vy8nv3-working`
+
+warning: `runtime-core` (lib) generated 1 warning
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\runtime_composition-2ueverm7w6e53\s-hnfsab9dqj-09korod-working`
+
+warning: `runtime-composition` (lib) generated 1 warning
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremental\tmp_probe_reg2-0rn4721cfdyrs\s-hng7a6ttmx-0u1t810-working`
+
+warning: `runtime-composition` (test "tmp_probe_reg2") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running tests\tmp_probe_reg2.rs (target\debug\deps\tmp_probe_reg2-8d3995bbaa0d8f47.exe)
+
+running 1 test
+test probe_host_instantiated_fiber_reaches_registration_step ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+HEAD_EXIT=0

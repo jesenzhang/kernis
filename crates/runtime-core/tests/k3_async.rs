@@ -3,9 +3,9 @@
 use capability_graph::Scope;
 use kernis_core::Id;
 use runtime_core::{
-    Cancellation, DriveResult, DriverError, DriverExit, EffectDispatchError, EffectDispatchFuture,
-    EffectDispatchRequest, EffectDispatcher, RunId, Runtime, RuntimeDriver, RuntimeError,
-    RuntimeEvent, RuntimeHandle, ShutdownStatus, StepResult, TaskConfig,
+    Cancellation, DriveResult, DriverError, DriverExit, DriverOwner, EffectDispatchError,
+    EffectDispatchFuture, EffectDispatchRequest, EffectDispatcher, RunId, Runtime, RuntimeDriver,
+    RuntimeError, RuntimeEvent, RuntimeHandle, ShutdownStatus, StepResult, TaskConfig,
 };
 use std::collections::VecDeque;
 use std::fs;
@@ -1417,4 +1417,76 @@ async fn physical_restart_does_not_redispatch_a_known_effect() {
             .expect("restored state loads")
             .is_completed(&id("task"))
     );
+}
+
+/// R2-02: the driver-owner token is the only thing that binds an exit to the
+/// composition that may consume it. Two live drivers over the same kind of run
+/// must not recognize each other's exits, even after both shut down in the
+/// same way — the recognition is per driver, not per run shape.
+#[tokio::test]
+async fn driver_owner_token_recognizes_only_its_own_drivers_exit() {
+    let first = effect_runtime("owner-first", EffectSemantics::Idempotent);
+    let second = effect_runtime("owner-second", EffectSemantics::Idempotent);
+    let (first_handle, first_join) = start_driver(first, ScriptedDispatcher::new([]));
+    let (second_handle, second_join) = start_driver(second, ScriptedDispatcher::new([]));
+
+    let first_owner: DriverOwner = first_handle.owner();
+    let second_owner: DriverOwner = second_handle.owner();
+    assert!(
+        first_owner.same_driver_as(&first_handle.owner()),
+        "a handle keeps commanding one driver, so it keeps yielding the same owner"
+    );
+    assert!(
+        !first_owner.same_driver_as(&second_owner),
+        "two drivers of the same run shape are distinct owners"
+    );
+
+    assert_eq!(
+        first_handle
+            .shutdown()
+            .await
+            .expect("first shutdown is orderly"),
+        ShutdownStatus::Clean
+    );
+    assert_eq!(
+        second_handle
+            .shutdown()
+            .await
+            .expect("second shutdown is orderly"),
+        ShutdownStatus::Clean
+    );
+    let first_exit: DriverExit<workflow_recovery::InMemoryDurableStore> =
+        first_join.await.expect("the first driver task joins");
+    let second_exit: DriverExit<workflow_recovery::InMemoryDurableStore> =
+        second_join.await.expect("the second driver task joins");
+
+    assert!(
+        first_owner.same_driver_as(first_exit.owner()),
+        "the exit rides back with the owner that produced it"
+    );
+    assert!(
+        !first_owner.same_driver_as(second_exit.owner()),
+        "a same-shaped exit from the other driver is still foreign"
+    );
+    assert_eq!(first_exit.shutdown_status(), &ShutdownStatus::Clean);
+}
+
+/// The token is deliberately opaque: it is a capability, not an inspection
+/// surface, and its `Debug` rendering must not leak the mailbox behind it.
+#[test]
+fn driver_owner_token_is_opaque_and_send_sync() {
+    assert_send_sync::<DriverOwner>();
+    let runtime = effect_runtime("owner-debug", EffectSemantics::Idempotent);
+    let (_driver, handle) = RuntimeDriver::new(runtime, ScriptedDispatcher::new([]));
+    let rendered = format!("{:?}", handle.owner());
+    assert!(
+        rendered.starts_with("DriverOwner("),
+        "the token renders as itself, got {rendered}"
+    );
+    for leaked in ["CommandMailbox", "DriverOwnerState", "Shutdown", "commands"] {
+        assert!(
+            !rendered.contains(leaked),
+            "the token must not expose driver internals ({leaked}): {rendered}"
+        );
+    }
 }

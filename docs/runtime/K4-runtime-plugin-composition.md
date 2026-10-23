@@ -57,20 +57,52 @@ product:
   K3 `RuntimeDriver`/`RuntimeHandle` pair plus a `CompositionHandle`.
 - `CompositionHandle`: composition-owned activation resources with no
   unconditional `dispose`. Orderly completion consumes the K3 `DriverExit`
-  in `dispose_after_driver`, which re-acquires the Runtime, runs cleanup
-  with full registry authority, and returns `CompositionDriverShutdown`
-  (`rollback`, the preserved `shutdown_status`, and the released `runtime`
-  for final inspection and release). `release_after_owner_loss` is
-  bound-guarded: the handle carries a private observation of the owner
-  state of the exact driver separated by the same `into_driver` call, and
-  only its own `DriverOwnerState::OwnerDropped` starts the best-effort
-  sweep (hooks and fibers exactly once, every outstanding registration
-  reported as a lost-authority failure). While the driver is
-  `Running` — or completed an orderly `Shutdown`, which keeps its
+  in `dispose_after_driver`, which validates the exit and records its
+  acceptance synchronously, then returns a `CompositionReleaseFuture` that
+  answers
+  `CompositionReleaseOutcome::{Released, Rejected}`: on `Released` it
+  re-acquires the Runtime, runs cleanup with full registry authority, and
+  returns `CompositionDriverShutdown` (`rollback`, the preserved
+  `shutdown_status`, and the released `runtime` for final inspection and
+  release). The step is **owner-bound** (ADR 0009): the handle holds the
+  `DriverOwner` of the exact driver separated by the same `into_driver`
+  call, and until the exit reports that same owner it runs no dispose hook,
+  disposes no fiber, and unregisters nothing —
+  `CompositionReleaseRejection::ForeignDriverExit` hands the exit back
+  untouched for the composition it does belong to, and
+  `AlreadyReleased` means this handle's cleanup already completed exactly
+  once. `OrderlySweepInterrupted` is a defensive variant rather than a
+  reachable answer: a release that was accepted took its `DriverExit`, and with
+  it the registry authority, and one driver mints exactly one exit, so a second
+  `dispose_after_driver` cannot be made; only `release_after_owner_loss` can
+  finish what is left.
+  `release_after_owner_loss` is bound-guarded: the handle carries a private
+  observation of the owner state of the exact driver separated by the same
+  `into_driver` call, and only its own `DriverOwnerState::OwnerDropped`
+  starts the best-effort sweep (hooks and fibers exactly once, every
+  outstanding registration reported as a lost-authority failure). While the
+  driver is `Running` — or completed an orderly `Shutdown`, which keeps its
   `DriverExit` — the release is rejected with a typed
   `OwnerLossReleaseError` (`OwnerStillRunning` /
   `OrderlyShutdownCompleted` / `AlreadyReleased`), disposes nothing, and
-  leaves the handle usable.
+  leaves the handle usable. A completed flow is terminal: the ledger check
+  runs first, so a finished release resolves `AlreadyReleased` whatever the
+  driver reports afterwards, and the one lifted case is a handle whose
+  orderly release was accepted and never completed.
+- Cleanup is a **ledger, not a loop inside a future** (ADR 0009 §3).
+  `CleanupLedger` is owned by the `CompositionHandle` and holds the
+  remaining module queue, the current module, the in-flight dispose hook or
+  fiber disposer future, the report collected so far, and whether an orderly
+  release was accepted. Nothing that cleanup depends on is parked inside a
+  cancellable temporary, so dropping `dispose_after_driver` or
+  `release_after_owner_loss` at any point — before the returned future's first
+  poll, or at a pending dispose hook, a
+  pending fiber disposal, a pending unregister — loses no work: re-entry
+  continues with the untouched modules, polls the started step instead of
+  restarting it (a non-idempotent hook therefore never runs twice), keeps
+  earlier failures in the report, and reports only real completion. A
+  cancellation is never presented as `AlreadyReleased` or as an empty
+  success.
 - `CompositionError`: typed variants for every planning, conflict,
   activation, rollback, and construction failure — no generic string
   catch-all, with underlying definition/runtime errors preserved as `source`.
@@ -113,10 +145,13 @@ ledger records only resources activation actually acquired; there is no
 registry wipe, teardown scope, or Runtime recreation rollback.
 
 On partial startup failure the ledger unwinds in reverse activation order: a
-module's `dispose` hook runs only if its `activate` hook completed, started
+module's `dispose` hook runs iff the module's activation completed — plugin
+registration, fiber start, and the `activate` hook when the module has one —
+which is what arms it; started
 fibers dispose in reverse contribution order, successfully registered plugin
 runtimes unregister in reverse registration order through
-`CapabilityRegistry::remove`, un-armed disposers never run, cleanup continues
+`CapabilityRegistry::remove`, disposers of modules whose activation failed never
+run, cleanup continues
 after an individual failure, and every failure is collected into the
 `RollbackReport` with the structured `CleanupResource` class (`DisposeHook`,
 `Fiber`, or `PluginRegistration`). Pre-existing or sibling registrations the
@@ -193,7 +228,7 @@ structured `PluginRegistration` failure without changing `OwnerDropped`
 classification.
 
 The R2 owner-loss guard regressions (scenario D and the guard scenarios
-F–I of the same suite) pin the guard itself: a running driver rejects with
+F–J of the same suite) pin the guard itself: a running driver rejects with
 `OwnerStillRunning` and zero hook/fiber disposal while its handle, plugin,
 and command service remain intact; an orderly shutdown observes `Shutdown`
 — never `OwnerDropped` — rejects with `OrderlyShutdownCompleted`, and the

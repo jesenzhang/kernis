@@ -1,0 +1,106 @@
+cargo : warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving
+
+ the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\
+
+incremental\capability_graph-14g6wdct9f12y\s-hm61iskdde-0i7cue2-working`
+
+At line:1 char:1
+
++ cargo test -p runtime-core --test review_r2_identity -- --nocapture * ...
+
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    + CategoryInfo          : NotSpecified: (warning: hard l...i7cue2-working`:String) [], RemoteException
+
+    + FullyQualifiedErrorId : NativeCommandError
+
+ 
+
+
+
+warning: `capability-graph` (lib) generated 1 warning
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+tal\workflow_recovery-2ljrwte04x93s\s-hm61iskdd3-0ckw1ue-working`
+
+
+
+warning: `workflow-recovery` (lib) generated 1 warning
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+tal\runtime_core-2abuf8rdc631q\s-hmpfmkfaux-13lc8fd-working`
+
+
+
+warning: `runtime-core` (lib) generated 1 warning
+
+   Compiling runtime-core v0.1.0 (F:\Workspace\kernis\crates\runtime-core)
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+tal\review_r2_identity-1ocxelmh6o7ib\s-hmpfrmrfgw-0o4lv7a-working`
+
+
+
+warning: `runtime-core` (test "review_r2_identity") generated 1 warning
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.90s
+
+     Running tests\review_r2_identity.rs (target\debug\deps\review_r2_identity-7cbabfe8ffda19b4.exe)
+
+
+
+running 1 test
+
+A=kernis-run-definition-v1:12:capabilities:10:capability:1:x:4:kind:7:service:10:definition:12:capabilities:12:dependen
+
+cies:5:tasks:4:task:12:capabilities:12:dependencies:12:capabilities:6:effect:6:absent:4:task:1:x:12:dependencies:12:cap
+
+abilities:6:effect:6:absent:4:task:1:z:12:dependencies:12:capabilities:1:x:12:capabilities:6:effect:6:absent
+
+B=kernis-run-definition-v1:12:capabilities:10:capability:1:x:4:kind:7:service:10:definition:12:capabilities:12:dependen
+
+cies:5:tasks:4:task:12:capabilities:12:dependencies:12:capabilities:6:effect:6:absent:4:task:1:x:12:dependencies:12:cap
+
+abilities:6:effect:6:absent:4:task:1:z:12:dependencies:12:capabilities:1:x:12:capabilities:6:effect:6:absent
+
+restore under different semantics accepted=true
+
+
+
+thread 'review_semantically_distinct_definitions_must_not_share_identity' (24196) panicked at crates\runtime-core\tests
+
+\review_r2_identity.rs:32:5:
+
+restore must reject a changed prerequisite/capability contract
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+test review_semantically_distinct_definitions_must_not_share_identity ... FAILED
+
+
+
+failures:
+
+
+
+failures:
+
+    review_semantically_distinct_definitions_must_not_share_identity
+
+
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+error: test failed, to rerun pass `-p runtime-core --test review_r2_identity`
+

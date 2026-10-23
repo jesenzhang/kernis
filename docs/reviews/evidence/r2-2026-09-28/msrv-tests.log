@@ -1,0 +1,2427 @@
+cargo : warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving
+
+
+ the cache directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\
+
+
+incremental\capability_graph-2lp5o09ncx39p\s-hm61mnqv9v-0pjum8s-working`
+
+
+At line:1 char:144
+
+
++ ... dentity.rs; cargo +1.85 test --workspace --all-features *> docs/revie ...
+
+
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+    + CategoryInfo          : NotSpecified: (warning: hard l...pjum8s-working`:String) [], RemoteException
+
+
+    + FullyQualifiedErrorId : NativeCommandError
+
+
+ 
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\capability_graph-0fklo0dkmxzag\s-hm61mnqv8y-0y37ib4-working`
+
+
+
+
+
+warning: `capability-graph` (lib) generated 1 warning
+
+
+warning: `capability-graph` (lib test) generated 1 warning
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\workflow_recovery-17ts8e0uss3ac\s-hm61mnrhah-0gnh5o2-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\workflow_recovery-1xxw1ax9gu8wr\s-hm61mnqv9c-0j28kgz-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\reactive-0gighdy3z5pzl\s-hm61mr2zra-1u7mtut-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\semantic-1qon3yuzsc0li\s-hm61mr2yyk-0dubgvm-working`
+
+
+
+
+
+warning: `workflow-recovery` (lib) generated 1 warning
+
+
+warning: `workflow-recovery` (lib test) generated 1 warning
+
+
+warning: `capability-graph` (test "reactive") generated 1 warning
+
+
+warning: `capability-graph` (test "semantic") generated 1 warning
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\runtime_core-1ads1xaouutm9\s-hmpfpxommf-08skbah-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\physical-1dl0volprmfct\s-hm61mrohc9-02t7q1g-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\runtime_core-2dfofkon54p9h\s-hmpfpxoml5-1dh19sa-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\recovery-294tx5oh74pvp\s-hm61mroxif-013e4d5-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\durable-2lgmg9w4jir1f\s-hm61mrohcl-0wyeq70-working`
+
+
+
+
+
+warning: `runtime-core` (lib) generated 1 warning
+
+
+warning: `workflow-recovery` (test "physical") generated 1 warning
+
+
+warning: `runtime-core` (lib test) generated 1 warning
+
+
+warning: `workflow-recovery` (test "recovery") generated 1 warning
+
+
+warning: `workflow-recovery` (test "durable") generated 1 warning
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\runtime_composition-3fb0x88kab0lk\s-hmpfpydleg-0o6ffno-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\graph_lab-1zu5g0kt3qa8r\s-hmpfpzykgc-0n1h4s6-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\runtime_composition-2ba3rpwqii8k7\s-hmpfq01e7m-112rlzm-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k3_review_owner_drop-0q6khybbkf16z\s-hmpfpzykc3-0kiih95-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k2_declarative-18tv1c6epmu6z\s-hmpfpzzvlm-1gixmq5-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\runtime-2vs5cump1fxbb\s-hmpfq0v7kg-0878eih-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k1_physical-02tjdd21bjj3d\s-hmpfq03bwb-1b3o83k-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\m2a_boundary-2yw39ubruy7i9\s-hmpfpzyk48-0uo2yat-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\e05_boundary-36mra8b0uxadz\s-hmpfpzzv80-0mob3z6-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k3_owner_state-0zqbwemhxluw8\s-hmpfpzyki5-1utjsdx-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\graph_lab-0xs1lwg7h6lnl\s-hmpfq01sjg-135deyl-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\m2c2_integration-2orgzu2g3fhka\s-hmpfq03bs6-0rny0an-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k3_async-3u9nwajf3tueu\s-hmpfpzzvlf-052rjkr-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\m2b_durable-0g3h228gmxxkf\s-hmpfpzykli-13qi0t4-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\m2c1_repair-2b1d1q4kns7q1\s-hmpfpzzv7p-0p8z6uk-working`
+
+
+
+
+
+warning: `runtime-composition` (lib) generated 1 warning
+
+
+warning: `graph-lab` (bin "graph-lab" test) generated 1 warning
+
+
+warning: `runtime-composition` (lib test) generated 1 warning
+
+
+warning: `runtime-core` (test "k3_review_owner_drop") generated 1 warning
+
+
+warning: `runtime-core` (test "k2_declarative") generated 1 warning
+
+
+warning: `runtime-core` (test "runtime") generated 1 warning
+
+
+warning: `runtime-core` (test "k1_physical") generated 1 warning
+
+
+warning: `runtime-core` (test "m2a_boundary") generated 1 warning
+
+
+warning: `graph-lab` (test "e05_boundary") generated 1 warning
+
+
+warning: `runtime-core` (test "k3_owner_state") generated 1 warning
+
+
+warning: `graph-lab` (bin "graph-lab") generated 1 warning
+
+
+warning: `runtime-core` (test "m2c2_integration") generated 1 warning
+
+
+warning: `runtime-core` (test "k3_async") generated 1 warning
+
+
+warning: `runtime-core` (test "m2b_durable") generated 1 warning
+
+
+warning: `runtime-core` (test "m2c1_repair") generated 1 warning
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\runtime_loader-2ch8swm3xltz2\s-hmpfpz7z58-0ehe2hw-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k4_compat-2bn0j6x4rz7kd\s-hmpfqf0jlz-13gxc4u-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k4_cleanup_ownership-1xjki1l4rrjfl\s-hmpfq1hnu4-1lyl39c-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k4_conflicts-2kfrxpikkllnp\s-hmpfq1hj3w-0nr4zsx-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k4_composition-0fk3e6tlrbsjo\s-hmpfqer9sa-0dcigc9-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\runtime_loader-1es3ih6g8876b\s-hmpfqfysxx-03xcyqd-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k4_rollback-0fi6opl4hssvd\s-hmpfq1tuyv-0x6j2u3-working`
+
+
+
+
+
+warning: `runtime-loader` (lib) generated 1 warning
+
+
+warning: `runtime-composition` (test "k4_compat") generated 1 warning
+
+
+warning: `runtime-composition` (test "k4_cleanup_ownership") generated 1 warning
+
+
+warning: `runtime-composition` (test "k4_conflicts") generated 1 warning
+
+
+warning: `runtime-composition` (test "k4_composition") generated 1 warning
+
+
+warning: `runtime-loader` (lib test) generated 1 warning
+
+
+warning: `runtime-composition` (test "k4_rollback") generated 1 warning
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k5_resolution-2a0kfel8mnj85\s-hmpfq4b6yj-1lz4jee-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k5_composition-1vnbouz8p0gqu\s-hmpfqe5g9i-1hrwvpv-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k6_r2_end_to_end-1y7wyy51cjhhl\s-hmpfqdf6ba-0xzntst-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\host_end_to_end-1yyeroar2gdnt\s-hmpfqc7ov7-18346om-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\r2_host-1w9xofx4t5chr\s-hmpfq606tw-06nni13-working`
+
+
+
+
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cac
+
+
+he directory to a file system which supports hard linking in session dir `\\?\F:\Workspace\kernis\target\debug\incremen
+
+
+tal\k5_failures-0m71r0toeks81\s-hmpfqc0go0-1a2tl31-working`
+
+
+
+
+
+warning: `runtime-loader` (test "k5_resolution") generated 1 warning
+
+
+warning: `runtime-loader` (test "k5_composition") generated 1 warning
+
+
+warning: `runtime-loader` (test "k6_r2_end_to_end") generated 1 warning
+
+
+warning: `runtime-loader` (example "host_end_to_end") generated 1 warning
+
+
+warning: `runtime-loader` (example "r2_host") generated 1 warning
+
+
+warning: `runtime-loader` (test "k5_failures") generated 1 warning
+
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.70s
+
+
+     Running unittests src\lib.rs (target\debug\deps\capability_graph-0e981804bdef180b.exe)
+
+
+
+
+
+running 39 tests
+
+
+test runtime::tests::child_inherits_parent_capability ... ok
+
+
+test runtime::tests::closed_descendant_rejects_lookup ... ok
+
+
+test runtime::tests::closed_descendant_rejects_mutation ... ok
+
+
+test runtime::tests::child_override_does_not_mutate_parent ... ok
+
+
+test runtime::tests::cleanup_occurs_exactly_once ... ok
+
+
+test runtime::tests::candidate_replacement_that_introduces_cycle_is_rejected ... ok
+
+
+test runtime::tests::constructor_receives_resolved_dependency_snapshot ... ok
+
+
+test runtime::tests::failed_replacement_keeps_old_capability ... ok
+
+
+test runtime::tests::dependency_snapshot_survives_provider_replacement ... ok
+
+
+test runtime::tests::consumer_cannot_dispose_live_instance ... ok
+
+
+test runtime::tests::entry_id_overflow_is_not_silent ... ok
+
+
+test runtime::tests::failed_conflicting_replacement_does_not_change_current_entry ... ok
+
+
+test runtime::tests::generation_overflow_is_not_silent ... ok
+
+
+test runtime::tests::cycle_is_rejected ... ok
+
+
+test runtime::tests::concurrent_stale_replacement_returns_conflict ... ok
+
+
+test runtime::tests::cycle_error_contains_path ... ok
+
+
+test runtime::tests::in_flight_dependent_pins_dependency_until_release ... ok
+
+
+test runtime::tests::missing_dependency_is_rejected ... ok
+
+
+test runtime::tests::missing_dependency_is_rejected_before_construction ... ok
+
+
+test runtime::tests::nested_scope_teardown_is_child_first ... ok
+
+
+test runtime::tests::in_flight_reader_survives_replacement ... ok
+
+
+test runtime::tests::parent_scope_remains_alive_after_child_teardown ... ok
+
+
+test runtime::tests::parent_teardown_does_not_leave_open_invalid_child ... ok
+
+
+test runtime::tests::parent_teardown_is_idempotent_with_closed_children ... ok
+
+
+test runtime::tests::parent_teardown_preserves_in_flight_child_handles ... ok
+
+
+test runtime::tests::replacement_changes_new_reads_and_advances_generation ... ok
+
+
+test runtime::tests::resolution_is_deterministic ... ok
+
+
+test runtime::tests::published_entry_pins_exact_dependency_generation ... ok
+
+
+test runtime::tests::resolve_multi_level_dependency ... ok
+
+
+test runtime::tests::resolve_simple_dependency ... ok
+
+
+test runtime::tests::self_dependency_is_rejected_at_runtime_admission ... ok
+
+
+test runtime::tests::sibling_scope_isolation ... ok
+
+
+test runtime::tests::stale_reader_cannot_remove_new_entry_identity ... ok
+
+
+test runtime::tests::runtime_cycle_is_rejected ... ok
+
+
+test runtime::tests::teardown_is_idempotent ... ok
+
+
+test runtime::tests::teardown_order_is_reverse_resolution_order ... ok
+
+
+test runtime::tests::teardown_planning_does_not_silently_fallback - should panic ... ok
+
+
+test runtime::tests::teardown_rejects_new_mutations ... ok
+
+
+test runtime::tests::teardown_respects_dependency_order ... ok
+
+
+
+
+
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\reactive.rs (target\debug\deps\reactive-2c1f12eb255fd7fd.exe)
+
+
+
+
+
+running 11 tests
+
+
+test isolated_and_unrelated_mutations_are_neutral ... ok
+
+
+test withdrawal_collects_cleanup_failures_and_continues_siblings ... ok
+
+
+test fiber_provider_withdrawal_skips_only_its_exact_detached_publication ... ok
+
+
+test rapid_replacement_while_loading_converges_to_latest_provider ... ok
+
+
+test pending_and_active_fibers_react_to_publication_and_withdrawal ... ok
+
+
+test replacement_reaches_transitive_fixed_point_independent_of_fiber_id_order ... ok
+
+
+test one_reconcile_reaches_fixpoint_for_reverse_ordered_diamond ... ok
+
+
+test successful_replacement_clears_previous_cleanup_errors ... ok
+
+
+test replacement_reloads_only_effective_dependents_and_neutral_notifications_do_nothing ... ok
+
+
+test withdrawal_drains_deep_dependents_before_provider_cleanup ... ok
+
+
+test successful_reactivation_from_pending_clears_previous_cleanup_errors ... ok
+
+
+
+
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\semantic.rs (target\debug\deps\semantic-817312513028679f.exe)
+
+
+
+
+
+running 15 tests
+
+
+test context_from_scope_preserves_scope_parent_fallback ... ok
+
+
+test active_fiber_dispose_is_idempotent_and_cleans_once ... ok
+
+
+test context_has_parent_fallback_override_isolation_and_intercept_precedence ... ok
+
+
+test fiber_effect_rejected_when_pending_or_disposed ... ok
+
+
+test dependency_disappearance_unloads_to_pending ... ok
+
+
+test partial_initialization_cleans_registered_effects ... ok
+
+
+test registry_has_one_runtime_and_multiple_fibers_with_exact_removal ... ok
+
+
+test dependency_replacement_unloads_and_reloads_same_fiber ... ok
+
+
+test isolated_context_hides_parent_dependency_from_fiber_until_local_override ... ok
+
+
+test effect_stack_is_reverse_order_nested_and_failure_isolated ... ok
+
+
+test dependency_replacement_during_unload_uses_latest_epoch ... ok
+
+
+test stale_async_load_error_retries_latest_epoch ... ok
+
+
+test registry_removal_disposes_fiber_owned_by_runtime_after_caller_drop ... ok
+
+
+test update_restarts_the_same_fiber_and_failed_restart_can_recover ... ok
+
+
+test stale_async_load_cannot_publish_and_dispose_during_load_is_final ... ok
+
+
+
+
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running unittests src\lib.rs (target\debug\deps\execution_stream-4a50cce17e2207e3.exe)
+
+
+
+
+
+running 2 tests
+
+
+test tests::payload_mapping_preserves_order_metadata ... ok
+
+
+test tests::sequencer_exhaustion_is_explicit ... ok
+
+
+
+
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\stream.rs (target\debug\deps\stream-85c7b28d8464ec8d.exe)
+
+
+
+
+
+running 20 tests
+
+
+test coalescing_delivery_gap_is_detectable ... ok
+
+
+test coalescing_different_key_backpressures_when_full ... ok
+
+
+test lossless_backpressure_preserves_rejected_item ... ok
+
+
+test coalescing_preserves_latest_sequence ... ok
+
+
+test coalescing_replaces_same_key_with_latest_item ... ok
+
+
+test coalescing_same_key_moves_latest_item_to_pending_tail ... ok
+
+
+test coalescing_identity_is_isolated_per_stream ... ok
+
+
+test lossless_buffer_backpressures_when_full ... ok
+
+
+test lossless_buffer_preserves_fifo ... ok
+
+
+test lossless_retry_produces_no_sequence_gap ... ok
+
+
+test lossy_buffer_drops_oldest_when_full ... ok
+
+
+test lossy_buffer_retains_latest_items ... ok
+
+
+test lossy_delivery_gap_is_detectable ... ok
+
+
+test multiple_lossy_drops_produce_detectable_gap ... ok
+
+
+test sequence_overflow_is_not_silent ... ok
+
+
+test sequence_tracker_accepts_contiguous_items ... ok
+
+
+test sequence_tracker_detects_gap ... ok
+
+
+test sequence_tracker_detects_missing_prefix ... ok
+
+
+test sequence_tracker_rejects_duplicate_or_reordered_sequence ... ok
+
+
+test sequence_tracking_is_isolated_per_stream ... ok
+
+
+
+
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running unittests src\main.rs (target\debug\deps\graph_lab-ad3d384e7f3d2cd9.exe)
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\e05_boundary.rs (target\debug\deps\e05_boundary-5b75eb9ee9d5d991.exe)
+
+
+
+
+
+running 3 tests
+
+
+test coalesced_stream_does_not_change_topology_revision ... ok
+
+
+test lossy_stream_does_not_change_workflow_completion_facts ... ok
+
+
+test workflow_recovery_does_not_depend_on_execution_stream ... ok
+
+
+
+
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running unittests src\lib.rs (target\debug\deps\kernis_core-a5eb4c308ecbc981.exe)
+
+
+
+
+
+running 3 tests
+
+
+test tests::rejects_blank_ids ... ok
+
+
+test tests::revision_is_monotonic ... ok
+
+
+test tests::revision_overflow_is_not_silent ... ok
+
+
+
+
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running unittests src\lib.rs (target\debug\deps\runtime_composition-292cda7afd4d146a.exe)
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\k4_cleanup_ownership.rs (target\debug\deps\k4_cleanup_ownership-7a792e9783a945c9.exe)
+
+
+
+
+
+running 8 tests
+
+
+test driverless_shutdown_unregisters_plugin_registrations_with_live_authority ... ok
+
+
+test startup_rollback_unregisters_registrations_after_a_fiber_cleanup_failure ... ok
+
+
+test second_owner_loss_release_reports_already_released ... ok
+
+
+test owner_loss_release_disposes_locally_once_and_reports_lost_authority ... ok
+
+
+test no_composition_release_is_possible_while_the_driver_owns_the_runtime ... ok
+
+
+test orderly_shutdown_is_not_owner_loss_for_the_bound_handle ... ok
+
+
+test aborted_driver_task_proves_owner_loss_to_the_bound_handle ... ok
+
+
+test another_drivers_owner_loss_cannot_release_this_composition ... ok
+
+
+
+
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\k4_compat.rs (target\debug\deps\k4_compat-bb4966f9495d7255.exe)
+
+
+
+
+
+running 5 tests
+
+
+test scenario_i_owner_loss_resolves_commands_and_keeps_release_independent ... ok
+
+
+test reactive_plugin_can_consume_a_declarative_slot ... ok
+
+
+test scenario_j_reactive_replacement_pins_exact_entries_per_attempt ... ok
+
+
+test scenario_i_driver_drive_dispatch_shutdown_keeps_the_k3_contract ... ok
+
+
+test scenario_h_cold_reconstruction_survives_a_process_replacement ... ok
+
+
+
+
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+
+
+
+
+
+     Running tests\k4_composition.rs (target\debug\deps\k4_composition-8af2680d5d958396.exe)
+
+
+
+
+
+running 6 tests
+
+
+test scenario_c_duplicate_module_fails_before_activation ... ok
+
+
+test scenario_d_missing_dependency_fails_before_activation ... ok
+
+
+test merged_definition_carries_only_declarative_contributions ... ok
+
+
+test scenario_e_cycle_fails_deterministically ... ok
+
+
+test scenario_a_composes_starts_drives_and_cleans_exactly_once ... ok
+
+
+test scenario_b_registration_order_changes_nothing ... ok
+
+
+
+
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\k4_conflicts.rs (target\debug\deps\k4_conflicts-fbfddd454fd036f6.exe)
+
+
+
+
+
+running 10 tests
+
+
+test configuration_conflict_fails_before_activation ... ok
+
+
+test conflicting_factory_registration_fails_before_activation ... ok
+
+
+test duplicate_capability_ownership_fails_before_activation ... ok
+
+
+test plugin_dependency_on_an_unowned_capability_fails ... ok
+
+
+test every_planning_failure_produces_zero_activation ... ok
+
+
+test duplicate_task_contribution_fails_before_activation ... ok
+
+
+test factory_must_match_its_slot ... ok
+
+
+test requirements_must_resolve_to_one_declarative_slot ... ok
+
+
+test plugin_contributions_must_match_the_slot_table ... ok
+
+
+test missing_required_configuration_fails_activation_without_side_effects ... ok
+
+
+
+
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\k4_rollback.rs (target\debug\deps\k4_rollback-473b169062d49a9b.exe)
+
+
+
+
+
+running 1 test
+
+
+test scenario_g_partial_startup_rolls_back_in_reverse_order ... ok
+
+
+
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running unittests src\lib.rs (target\debug\deps\runtime_core-2a37a70079118934.exe)
+
+
+
+
+
+running 4 tests
+
+
+test definition::tests::capability_factory_registration_rejects_duplicate_key ... ok
+
+
+test definition::tests::duplicate_task_and_requirement_fail_before_materialization ... ok
+
+
+test definition::tests::identity_ignores_display_label_and_authoring_order ... ok
+
+
+test tests::runtime_durable_head_does_not_regress_on_old_replay ... ok
+
+
+
+
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\k1_physical.rs (target\debug\deps\k1_physical-9913aa5272762252.exe)
+
+
+
+
+
+running 9 tests
+
+
+test runtime_restore_rejects_corrupt_physical_state_before_recovery ... ok
+
+
+test runtime_rejects_already_initialized_run_without_bootstrap_reclassification ... ok
+
+
+test runtime_restore_rejects_logically_corrupt_snapshot_with_valid_checksum ... ok
+
+
+test runtime_rejects_non_pristine_missing_identity_without_repair ... ok
+
+
+test runtime_recovers_interrupted_physical_bootstrap_after_reopen ... ok
+
+
+test runtime_rejects_conflicting_definition_after_interrupted_bootstrap_recovery ... ok
+
+
+test runtime_reopens_physical_store_without_redispatch_or_duplicate_completion ... ok
+
+
+test runtime_reopens_physical_no_effect_completion_and_dependency_chain ... ok
+
+
+test runtime_reopens_physical_store_before_and_after_dispatch_boundaries ... ok
+
+
+
+
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.22s
+
+
+
+
+
+     Running tests\k2_declarative.rs (target\debug\deps\k2_declarative-995f42da83ce557d.exe)
+
+
+
+
+
+running 13 tests
+
+
+test duplicate_declarative_declarations_and_factory_identities_fail_typed ... ok
+
+
+test legacy_live_object_restore_keeps_main_identity_contract ... ok
+
+
+test incompatible_definition_fails_closed_before_factory_construction ... ok
+
+
+test legacy_live_object_duplicate_task_configs_keep_main_behavior ... ok
+
+
+test label_only_change_keeps_identity_but_changes_reconstructed_display_data ... ok
+
+
+test explicit_capability_dependencies_are_constructed_in_dependency_order ... ok
+
+
+test declarative_runtime_rejects_legacy_mutations_without_identity_change ... ok
+
+
+test canonical_identity_is_order_independent_and_excludes_display_labels ... ok
+
+
+
+
+
+running 1 test
+
+
+test missing_factory_fails_before_store_creation_or_task_observation ... ok
+
+
+test restore_run_accepts_fixed_main_legacy_identity_fixture ... ok
+
+
+test declarative_identity_transition_is_cas_protected_at_durable_boundary ... ok
+
+
+test legacy_live_identity_transition_is_cas_protected_against_stale_writer ... ok
+
+
+test child_process_state_is_reconstructed_from_definition_and_reopened_store ... ok
+
+
+
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.75s
+
+
+
+
+
+test child_process_state_is_reconstructed_from_definition_and_reopened_store ... ok
+
+
+
+
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+
+
+
+
+     Running tests\k3_async.rs (target\debug\deps\k3_async-d9243dc23cc2dce9.exe)
+
+
+
+
+
+running 23 tests
+
+
+test async_boundary_types_are_executor_neutral_and_send_sync ... ok
+
+
+test cancellation_before_dispatch_prevents_external_call ... ok
+
+
+test idempotent_unknown_outcome_is_explicitly_recoverable_and_not_retried_implicitly ... ok
+
+
+test cancellation_during_dispatch_waits_for_outcome_barrier ... ok
+
+
+test non_idempotent_unknown_outcome_requires_reconciliation ... ok
+
+
+test concurrent_wakeups_serialize_to_one_effect_dispatch ... ok
+
+
+test durable_dispatch_precedes_external_call_and_known_outcome_commit ... ok
+
+
+test cancellation_after_known_outcome_cannot_erase_dispatch ... ok
+
+
+test known_failure_remains_observed_on_shutdown ... ok
+
+
+test async_driver_matches_equivalent_synchronous_durable_facts ... ok
+
+
+test prepared_work_is_classified_without_external_dispatch_on_shutdown ... ok
+
+
+test idempotent_unknown_retry_reuses_operation_with_a_new_attempt ... ok
+
+
+test shutdown_keeps_progress_and_telemetry_drainable ... ok
+
+
+test shutdown_during_dispatch_preserves_unknown_classification ... ok
+
+
+test shutdown_during_dispatch_settles_known_outcome_without_redispatch ... ok
+
+
+test shutdown_keeps_terminal_execution_events_drainable ... ok
+
+
+test lossless_backpressure_pauses_and_resumes_without_duplicate_attempts ... ok
+
+
+test failed_shutdown_keeps_driver_alive_for_lossless_drain_and_retry ... ok
+
+
+test physical_restart_preserves_pre_dispatch_shutdown_classification ... ok
+
+
+test physical_restart_preserves_idempotent_unknown_shutdown_classification ... ok
+
+
+test physical_restart_preserves_non_idempotent_reconciliation_classification ... ok
+
+
+test physical_restart_preserves_known_failure_observation ... ok
+
+
+test physical_restart_does_not_redispatch_a_known_effect ... ok
+
+
+
+
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+
+
+
+
+
+     Running tests\k3_owner_state.rs (target\debug\deps\k3_owner_state-3191871afceec7ba.exe)
+
+
+
+
+
+running 4 tests
+
+
+test fresh_driver_observes_running_until_its_owner_is_dropped ... ok
+
+
+test aborted_owner_observes_owner_dropped ... ok
+
+
+test orderly_shutdown_observes_shutdown_not_owner_loss ... ok
+
+
+test unwound_panic_observes_owner_dropped ... ok
+
+
+
+
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\k3_review_owner_drop.rs (target\debug\deps\k3_review_owner_drop-58e46bedecfef678.exe)
+
+
+
+
+
+running 3 tests
+
+
+test commands_resolve_after_driver_owner_is_dropped ... ok
+
+
+test abort_rejects_active_queued_and_future_commands ... ok
+
+
+test dispatcher_panic_rejects_active_queued_and_future_commands ... ok
+
+
+
+
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\m2a_boundary.rs (target\debug\deps\m2a_boundary-6595b421b3139fc8.exe)
+
+
+
+
+
+running 1 test
+
+
+test capability_fiber_lifecycle_does_not_write_m1_authorities ... ok
+
+
+
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\m2b_durable.rs (target\debug\deps\m2b_durable-00e59866bd707b7e.exe)
+
+
+
+
+
+running 18 tests
+
+
+test backend_failures_remain_classifiable_through_runtime_error ... ok
+
+
+test starting_from_local_completion_facts_fails_closed ... ok
+
+
+test replay_identity_transitions_are_not_replayed_from_an_old_revision ... ok
+
+
+test capability_replay_identity_mismatch_fails_closed_on_restart ... ok
+
+
+test crash_after_admission_reuses_the_admitted_attempt_without_dispatch ... ok
+
+
+test completion_replay_rejects_an_invalid_prerequisite_order ... ok
+
+
+test completion_commit_is_present_before_task_completed_can_be_observed ... ok
+
+
+test supplied_topology_or_configuration_mismatch_fails_closed ... ok
+
+
+test completion_commit_backend_failure_prevents_local_completion_and_observation ... ok
+
+
+test injected_store_receives_mutations_and_supports_fresh_restore ... ok
+
+
+test capability_replay_identity_survives_new_runtime_entry_identity ... ok
+
+
+test cancellation_after_admission_survives_restart_and_blocks_dispatch ... ok
+
+
+test cancellation_after_dispatch_keeps_outcome_recordable ... ok
+
+
+test retry_keeps_operation_identity_and_retains_both_attempts ... ok
+
+
+test outcome_before_restart_completes_without_a_second_dispatch ... ok
+
+
+test late_older_outcome_does_not_change_latest_dispatch_authority ... ok
+
+
+test no_effect_completion_survives_a_cold_restart_and_unblocks_dependents ... ok
+
+
+test completion_is_not_repeated_after_two_cold_restarts ... ok
+
+
+
+
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\m2c1_repair.rs (target\debug\deps\m2c1_repair-b8f4af93b95d1d2d.exe)
+
+
+
+
+
+running 1 test
+
+
+test runtime_owned_reactive_replacement_preserves_m1_attempt_pins ... ok
+
+
+
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\m2c2_integration.rs (target\debug\deps\m2c2_integration-bb0e10ec9bd47693.exe)
+
+
+
+
+
+running 4 tests
+
+
+test runtime_registry_is_the_coordinator_registry ... ok
+
+
+test reactive_replacement_does_not_mutate_durable_attempt_authority ... ok
+
+
+test restore_builds_a_fresh_process_local_reactive_runtime ... ok
+
+
+test withdrawal_preserves_old_attempt_pin_and_new_attempt_reads_v2 ... ok
+
+
+
+
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\runtime.rs (target\debug\deps\runtime-f5f0b25df2d06699.exe)
+
+
+
+
+
+running 9 tests
+
+
+test stream_loss_does_not_change_workflow_or_recovery_truth ... ok
+
+
+test cancellation_before_dispatch_prevents_start ... ok
+
+
+test non_idempotent_unknown_recovery_requires_reconciliation ... ok
+
+
+test cancellation_after_dispatch_preserves_unknown_effect_fact ... ok
+
+
+test dynamic_mutation_is_read_again_by_the_scheduler ... ok
+
+
+test idempotent_unknown_recovery_reuses_operation_with_a_new_attempt ... ok
+
+
+test normal_run_is_deterministic_and_effects_complete_once ... ok
+
+
+test replacement_does_not_change_an_in_flight_capability_pin ... ok
+
+
+test lossless_lifecycle_backpressure_retains_event_for_retry ... ok
+
+
+
+
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+
+
+
+     Running unittests src\lib.rs (target\debug\deps\runtime_loader-252544172b3bfa04.exe)
+
+
+
+
+
+running 10 tests
+
+
+test catalog::tests::different_versions_are_different_entries ... ok
+
+
+test reference::tests::ids_may_contain_the_delimiter ... ok
+
+
+test catalog::tests::registration_rejects_duplicate_exact_references ... ok
+
+
+test reference::tests::serde_round_trips_through_the_display_form ... ok
+
+
+test reference::tests::rejects_the_reserved_delimiter_in_versions ... ok
+
+
+test reference::tests::invalid_external_textual_references_fail_closed ... ok
+
+
+test reference::tests::reference_displays_and_orders_stably ... ok
+
+
+test reference::tests::rejects_blank_versions ... ok
+
+
+test reference::tests::rejects_blank_reference_parts ... ok
+
+
+test reference::tests::textual_reference_round_trips_are_bijective ... ok
+
+
+
+
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\k5_composition.rs (target\debug\deps\k5_composition-e50b949e8579f507.exe)
+
+
+
+
+
+running 4 tests
+
+
+test scenario_n_k4_rollback_semantics_survive_the_loader_boundary ... ok
+
+
+test scenario_l_every_resolution_constructs_fresh_registrations ... ok
+
+
+test scenario_p_driver_contract_is_kept_for_loader_resolved_compositions ... ok
+
+
+test scenario_o_cold_reconstruction_works_through_the_loader ... ok
+
+
+
+
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+
+
+
+
+     Running tests\k5_failures.rs (target\debug\deps\k5_failures-7f8ef43706c0766c.exe)
+
+
+
+
+
+running 4 tests
+
+
+test scenario_m_resolution_failures_have_zero_activation_effect ... ok
+
+
+test scenario_j_incompatible_registration_fails_closed ... ok
+
+
+test scenario_i_reference_cycle_reports_a_deterministic_path ... ok
+
+
+test scenario_k_dependency_metadata_disagreement_is_rejected ... ok
+
+
+
+
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\k5_resolution.rs (target\debug\deps\k5_resolution-b2b45099510bc85c.exe)
+
+
+
+
+
+running 8 tests
+
+
+test scenario_g_duplicate_catalog_entry_is_rejected ... ok
+
+
+test scenario_e_missing_transitive_dependency_names_the_requester ... ok
+
+
+test scenario_d_unknown_root_fails_before_any_activation ... ok
+
+
+test scenario_h_duplicate_root_reference_is_rejected ... ok
+
+
+test scenario_f_version_mismatch_fails_closed ... ok
+
+
+test scenario_c_root_order_changes_nothing ... ok
+
+
+test scenario_a_references_resolve_transitively_and_compose_through_k4 ... ok
+
+
+test scenario_b_catalog_insertion_order_changes_nothing ... ok
+
+
+
+
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\k6_r2_end_to_end.rs (target\debug\deps\k6_r2_end_to_end-ae2d1cbdf542b497.exe)
+
+
+
+
+
+running 8 tests
+
+
+test missing_module_reference_stays_loader_error ... ok
+
+
+test duplicate_capability_ownership_stays_composition_error ... ok
+
+
+
+
+
+running 1 test
+
+
+
+
+
+running 1 test
+
+
+
+
+
+running 1 test
+
+
+test wrong_run_definition_restore_fails_closed ... ok
+
+
+test cold_restart_mid_run_survives_process_boundary ... ok
+
+
+
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.67s
+
+
+
+
+
+test corrupted_durable_state_fails_closed ... ok
+
+
+test owner_lifecycle_guard_is_proven_through_the_host_entry ... ok
+
+
+test unknown_effect_survives_process_boundary_without_reexecution ... ok
+
+
+
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.98s
+
+
+
+
+
+test cold_restart_mid_run_survives_process_boundary ... ok
+
+
+test cross_process_completed_run_is_not_redone ... ok
+
+
+
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 1.15s
+
+
+
+
+
+test unknown_effect_survives_process_boundary_without_reexecution ... ok
+
+
+test cross_process_completed_run_is_not_redone ... ok
+
+
+
+
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.61s
+
+
+
+
+
+     Running unittests src\lib.rs (target\debug\deps\workflow_graph-0c11145aa9940bb0.exe)
+
+
+
+
+
+running 23 tests
+
+
+test tests::completed_fact_does_not_advance_topology_revision ... ok
+
+
+test tests::cannot_complete_task_before_prerequisites ... ok
+
+
+test tests::failed_mutation_does_not_advance_revision ... ok
+
+
+test tests::insertion_order_does_not_change_topology_or_ready_view ... ok
+
+
+test tests::completed_task_identity_cannot_be_rewritten ... ok
+
+
+test tests::invalid_replay_revision_does_not_wrap ... ok
+
+
+test tests::cycle_rejection_is_atomic ... ok
+
+
+test tests::replay_reconstructs_same_scheduler_view ... ok
+
+
+test tests::invalid_operation_rolls_back_entire_batch ... ok
+
+
+test tests::dependency_cycle_is_rejected ... ok
+
+
+test tests::completed_task_prerequisites_cannot_be_rewritten ... ok
+
+
+test tests::ready_tasks_are_deterministic ... ok
+
+
+test tests::completed_tasks_are_not_ready ... ok
+
+
+test tests::replay_rejects_revision_overflow ... ok
+
+
+test tests::mutation_batch_is_atomic ... ok
+
+
+test tests::replay_reconstructs_same_revision ... ok
+
+
+test tests::stale_planner_revision_is_rejected ... ok
+
+
+test tests::revision_exhaustion_does_not_mutate_workflow ... ok
+
+
+test tests::replay_reconstructs_same_topology ... ok
+
+
+test tests::planner_can_append_future_branch ... ok
+
+
+test tests::successful_batch_advances_revision_once ... ok
+
+
+test tests::successful_mutation_advances_revision ... ok
+
+
+test tests::task_is_ready_only_after_all_prerequisites_complete ... ok
+
+
+
+
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running unittests src\lib.rs (target\debug\deps\workflow_recovery-91cc9ab5b609d597.exe)
+
+
+
+
+
+running 6 tests
+
+
+test durable::tests::persisted_validation_rejects_rekeyed_commit_ledger_entry ... ok
+
+
+test durable::tests::persisted_validation_replays_idempotency_batches ... ok
+
+
+test durable::tests::persisted_validation_rejects_reordered_commit_revisions ... ok
+
+
+test physical::tests::encoded_state_checksum_rejects_payload_mutation ... ok
+
+
+test durable::tests::persisted_validation_rejects_commit_ledger_key_or_order_tampering ... ok
+
+
+test physical::tests::io_error_categories_do_not_treat_permission_as_backend_contention ... ok
+
+
+
+
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+     Running tests\durable.rs (target\debug\deps\durable-bc92275e43927618.exe)
+
+
+
+
+
+running 12 tests
+
+
+test identity_newtypes_reject_blank_postcard_deserialization ... ok
+
+
+test store_error_categories_are_distinct_from_domain_conflicts ... ok
+
+
+test identical_commit_replay_does_not_advance_revision ... ok
+
+
+test admission_is_durable_before_dispatch_and_survives_store_clone ... ok
+
+
+test stale_cas_and_conflicting_idempotency_leave_state_unchanged ... ok
+
+
+test completion_requires_attempt_lineage_and_replay_is_idempotent ... ok
+
+
+test conflicting_completion_lineage_is_rejected_without_a_second_fact ... ok
+
+
+test cancellation_retains_admission_and_prevents_dispatch ... ok
+
+
+test replay_after_newer_commit_returns_live_head_for_the_next_cas ... ok
+
+
+test outcome_requires_admitted_dispatched_attempt_and_cannot_conflict ... ok
+
+
+test latest_dispatch_owns_recovery_while_old_outcomes_remain_history ... ok
+
+
+test effect_completion_requires_latest_successful_dispatch ... ok
+
+
+
+
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s
+
+
+
+
+
+     Running tests\physical.rs (target\debug\deps\physical-624912c3bfa8623c.exe)
+
+
+
+
+
+running 8 tests
+
+
+test child_writes_after_outcome ... ok
+
+
+
+
+
+running 1 test
+
+
+test concurrent_first_openers_wait_for_bootstrap_instead_of_reporting_corruption ... ok
+
+
+test physical_backend_errors_keep_categories_distinct ... ok
+
+
+test physical_store_preserves_atomic_batches_cas_and_idempotent_replay ... ok
+
+
+test physical_store_reopens_with_all_supported_fact_classes ... ok
+
+
+test physical_adapter_matches_in_memory_for_the_typed_fact_sequence ... ok
+
+
+test child_writes_after_outcome ... ok
+
+
+
+
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 1.42s
+
+
+
+
+
+test physical_store_survives_process_restart_between_outcome_and_completion ... ok
+
+
+test physical_open_rejects_empty_bootstrap_and_incompatible_schema_as_corruption ... ok
+
+
+
+
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.16s
+
+
+
+
+
+     Running tests\recovery.rs (target\debug\deps\recovery-2e005b6b78bb3ad7.exe)
+
+
+
+
+
+running 24 tests
+
+
+test dispatched_effect_without_outcome_is_unknown ... ok
+
+
+test conflicting_outcome_is_rejected ... ok
+
+
+test dispatch_without_intent_is_rejected ... ok
+
+
+test effect_completion_does_not_advance_topology_revision ... ok
+
+
+test completed_workflow_requires_no_action ... ok
+
+
+test crash_after_outcome_before_completion_does_not_reexecute_effect ... ok
+
+
+test idempotent_retry_does_not_duplicate_external_commit ... ok
+
+
+test idempotent_retry_reuses_operation_identity ... ok
+
+
+test known_success_has_unambiguous_task_completion_owner ... ok
+
+
+test known_failure_is_not_outcome_unknown ... ok
+
+
+test late_older_attempt_outcome_does_not_hide_newer_unknown_attempt ... ok
+
+
+test non_idempotent_external_commit_is_not_duplicated_after_crash ... ok
+
+
+test idempotent_unknown_allows_same_operation_retry ... ok
+
+
+test non_idempotent_unknown_requires_reconciliation ... ok
+
+
+test outcome_for_wrong_attempt_is_rejected ... ok
+
+
+test outcome_without_dispatch_is_rejected ... ok
+
+
+test known_success_completes_without_reexecution ... ok
+
+
+test prepared_effect_is_safe_to_execute ... ok
+
+
+test recovery_completion_preserves_existing_completed_facts ... ok
+
+
+test recovery_decision_is_deterministic_from_durable_facts ... ok
+
+
+test repeated_recovery_without_new_facts_is_stable ... ok
+
+
+test same_operation_can_have_multiple_attempts ... ok
+
+
+test second_operation_for_same_task_is_rejected ... ok
+
+
+test task_operation_conflict_does_not_corrupt_existing_recovery ... ok
+
+
+
+
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+   Doc-tests capability_graph
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+   Doc-tests execution_stream
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+   Doc-tests kernis_core
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+   Doc-tests runtime_composition
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+   Doc-tests runtime_core
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+   Doc-tests runtime_loader
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+   Doc-tests workflow_graph
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+
+   Doc-tests workflow_recovery
+
+
+
+
+
+running 0 tests
+
+
+
+
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+
+
+

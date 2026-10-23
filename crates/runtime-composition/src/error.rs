@@ -571,6 +571,17 @@ impl Error for CompositionShutdownFailure {}
 /// a still-active driver keeps its orderly shutdown path, a completed
 /// orderly shutdown has a `DriverExit` to release through, and an
 /// already-released handle has nothing left to do.
+///
+/// The completion check runs before the driver-state observation, so a
+/// handle whose cleanup flow finished once answers [`Self::AlreadyReleased`]
+/// whatever its driver reports afterwards. The one case where a
+/// [`DriverOwnerState::Shutdown`](runtime_core::DriverOwnerState)
+/// driver still admits the best-effort sweep is a handle whose orderly sweep
+/// was cancelled after its registry authority was released with the
+/// cancelled future: only that recorded interruption lifts
+/// [`Self::OrderlyShutdownCompleted`], and the remaining registrations are
+/// then reported as [`CleanupResource::PluginRegistration`] failures rather
+/// than claimed as orderly cleanup.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OwnerLossReleaseError {
     /// The bound driver is still running and serving commands; nothing was
@@ -580,9 +591,12 @@ pub enum OwnerLossReleaseError {
     /// The bound driver completed an orderly shutdown, so a `DriverExit`
     /// exists and the registry authority was preserved; release through
     /// `CompositionHandle::dispose_after_driver` with that exit instead.
+    /// Not returned when this handle's own orderly sweep was interrupted,
+    /// because no full-authority sweep can run on it again.
     OrderlyShutdownCompleted,
-    /// The owner-loss release already ran once and disposed everything it
-    /// owned; a repeated call performs nothing.
+    /// The whole cleanup flow for this handle completed once, so a repeated
+    /// call performs nothing. This never reports a cancelled sweep as
+    /// finished: an interrupted flow still has its ledger and resumes.
     AlreadyReleased,
 }
 
@@ -598,7 +612,7 @@ impl fmt::Display for OwnerLossReleaseError {
                  release through dispose_after_driver with the returned DriverExit",
             ),
             Self::AlreadyReleased => f.write_str(
-                "the composition's owner-loss release already ran exactly once; \
+                "the composition's cleanup flow already completed exactly once; \
                  nothing remains to release",
             ),
         }

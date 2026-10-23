@@ -1,0 +1,24 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running tests\tmp_probe_reg2.rs (target\debug\deps\tmp_probe_reg2-8d3995bbaa0d8f47.exe)
+
+running 1 test
+test probe_host_instantiated_fiber_reaches_registration_step ... FAILED
+
+failures:
+
+---- probe_host_instantiated_fiber_reaches_registration_step stdout ----
+
+thread 'probe_host_instantiated_fiber_reaches_registration_step' (76700) panicked at crates\runtime-composition\tests\tmp_probe_reg2.rs:623:5:
+assertion `left == right` failed: the parked registration disposal completed on resume; failures: [RollbackFailure { module_id: Id("slow"), resource: PluginRegistration { plugin_id: Id("slow-plugin") }, reason: "the capability registry authority was released with the runtime owner, so the registration could not be unregistered" }]
+  left: []
+ right: [Id("slow")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    probe_host_instantiated_fiber_reaches_registration_step
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p runtime-composition --test tmp_probe_reg2`
+PREFIX_EXIT=101

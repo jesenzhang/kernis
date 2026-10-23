@@ -17,7 +17,24 @@ use workflow_graph::{Task, WorkflowGraph, WorkflowGraphError, WorkflowMutation};
 use workflow_recovery::{EffectSemantics, OperationId, WorkflowReplayIdentity};
 
 /// Canonical format/version prefix for declarative run definitions.
-pub const RUN_DEFINITION_FORMAT: &str = "kernis-run-definition-v1";
+///
+/// The v2 canonical representation is structurally unambiguous: every group and
+/// enum field carries a structural tag, every collection carries an element
+/// count and an explicit end tag, and every scalar value — including the scalars
+/// that follow a group tag by position — is a length-delimited data token that
+/// cannot imitate structure. `docs/architecture/0008-run-definition-identity-v2.md`
+/// specifies the grammar, the field order, and the rules this encoding is tested
+/// against.
+pub const RUN_DEFINITION_FORMAT: &str = "kernis-run-definition-v2";
+
+/// Historical format tag of the K2 `kernis-run-definition-v1` canonicalization.
+///
+/// This tag is retained for diagnosis and for the migration contract in
+/// [`ADR 0008`](https://github.com/jesenzhang/kernis/blob/main/docs/architecture/0008-run-definition-identity-v2.md):
+/// the kernel never writes a v1 identity, and a durable v1 declarative
+/// identity is refused fail-closed because its bytes do not determine the
+/// definition that produced them.
+pub const LEGACY_RUN_DEFINITION_FORMAT_V1: &str = "kernis-run-definition-v1";
 
 /// Stable identity of one capability definition understood by a factory.
 ///
@@ -776,47 +793,157 @@ fn canonical_identity(
 ) -> Result<WorkflowReplayIdentity, DefinitionError> {
     let mut canonical = String::from(RUN_DEFINITION_FORMAT);
 
-    append_identity_part(&mut canonical, "capabilities");
+    push_tag(&mut canonical, "capabilities");
+    push_count(&mut canonical, capabilities.len());
     for capability in capabilities.values() {
-        append_identity_part(&mut canonical, "capability");
-        append_identity_part(&mut canonical, capability.id.as_str());
-        append_identity_part(&mut canonical, "kind");
-        append_identity_part(&mut canonical, &capability.kind);
-        append_identity_part(&mut canonical, "definition");
-        append_identity_part(&mut canonical, capability.definition_identity.as_str());
-        append_identity_part(&mut canonical, "dependencies");
+        push_tag(&mut canonical, "capability");
+        push_value(&mut canonical, capability.id.as_str());
+        push_value(&mut canonical, &capability.kind);
+        push_value(&mut canonical, capability.definition_identity.as_str());
+        push_requirements(&mut canonical, capability.dependencies.iter());
+    }
+    push_tag(&mut canonical, "end");
+
+    push_tag(&mut canonical, "tasks");
+    push_count(&mut canonical, tasks.len());
+    for task in tasks.values() {
+        push_tag(&mut canonical, "task");
+        push_value(&mut canonical, task.id.as_str());
+
+        let mut dependencies = task.dependencies.iter().collect::<Vec<_>>();
+        dependencies.sort();
+        push_tag(&mut canonical, "depends");
+        push_count(&mut canonical, dependencies.len());
+        for dependency in dependencies {
+            push_value(&mut canonical, dependency.as_str());
+        }
+        push_tag(&mut canonical, "end");
+
+        push_requirements(&mut canonical, task.required_capabilities.iter());
+
+        push_tag(&mut canonical, "effect");
+        if let Some(effect) = &task.effect {
+            push_tag(&mut canonical, "present");
+            push_value(&mut canonical, effect.operation_id.as_str());
+            // The v2 tag is `non_idempotent`, unlike the frozen v1 bytes'
+            // `non-idempotent`: v2 renames this tag on purpose, and the v1
+            // spelling stays pinned by `legacy_v1_identity_bytes_stay_frozen`
+            // so a future migration reproduces the historical bytes instead
+            // of "aligning" one grammar to the other.
+            push_tag(
+                &mut canonical,
+                match effect.semantics {
+                    EffectSemantics::Idempotent => "idempotent",
+                    EffectSemantics::NonIdempotent => "non_idempotent",
+                },
+            );
+        } else {
+            push_tag(&mut canonical, "absent");
+        }
+    }
+    push_tag(&mut canonical, "end");
+
+    WorkflowReplayIdentity::new(canonical)
+        .map_err(|error| DefinitionError::InvalidDefinition(error.to_string()))
+}
+
+/// Appends one structural tag. Structural tokens always begin with `#` while
+/// data tokens always begin with `%`, so user data can never imitate structure
+/// or shift a field boundary. `%` is used rather than `@` because `@` is the
+/// host-facing module-reference separator (`module@version`) and a durable
+/// identity must stay lexically distinct from loader reference syntax.
+fn push_tag(canonical: &mut String, tag: &str) {
+    canonical.push('#');
+    canonical.push_str(tag);
+}
+
+/// Appends the element count of one collection, terminated by `]`.
+fn push_count(canonical: &mut String, count: usize) {
+    canonical.push('[');
+    canonical.push_str(&count.to_string());
+    canonical.push(']');
+}
+
+/// Appends one length-delimited data token: `%<byte length>:<bytes>`.
+fn push_value(canonical: &mut String, value: &str) {
+    canonical.push('%');
+    canonical.push_str(&value.len().to_string());
+    canonical.push(':');
+    canonical.push_str(value);
+}
+
+/// Appends one tagged, counted, identity-ordered capability requirement list.
+fn push_requirements<'a, I>(canonical: &mut String, requirements: I)
+where
+    I: Iterator<Item = &'a CapabilityRequirement>,
+{
+    let mut requirements = requirements.collect::<Vec<_>>();
+    requirements.sort_by(|left, right| left.capability_id.cmp(&right.capability_id));
+    push_tag(canonical, "requires");
+    push_count(canonical, requirements.len());
+    for requirement in requirements {
+        push_value(canonical, requirement.capability_id.as_str());
+        push_value(canonical, requirement.definition_identity.as_str());
+    }
+    push_tag(canonical, "end");
+}
+
+/// The frozen `kernis-run-definition-v1` canonicalization, retained as the
+/// historical interpretation recorded by ADR 0008.
+///
+/// Nothing in the kernel writes this format: the v1 grammar is not injective, so
+/// a durable v1 declarative identity is refused fail-closed on restore. The
+/// golden-byte tests below pin the exact v1 output, so a future authorized
+/// migration implementation must reproduce the historical bytes instead of
+/// re-deriving them.
+#[cfg(test)]
+fn legacy_canonical_identity_v1(
+    tasks: &BTreeMap<Id, TaskDefinition>,
+    capabilities: &BTreeMap<Id, CapabilityDeclaration>,
+) -> String {
+    let mut canonical = String::from(LEGACY_RUN_DEFINITION_FORMAT_V1);
+
+    append_legacy_part(&mut canonical, "capabilities");
+    for capability in capabilities.values() {
+        append_legacy_part(&mut canonical, "capability");
+        append_legacy_part(&mut canonical, capability.id.as_str());
+        append_legacy_part(&mut canonical, "kind");
+        append_legacy_part(&mut canonical, &capability.kind);
+        append_legacy_part(&mut canonical, "definition");
+        append_legacy_part(&mut canonical, capability.definition_identity.as_str());
+        append_legacy_part(&mut canonical, "dependencies");
         let mut dependencies = capability.dependencies.iter().collect::<Vec<_>>();
         dependencies.sort_by(|left, right| left.capability_id.cmp(&right.capability_id));
         for dependency in dependencies {
-            append_identity_part(&mut canonical, dependency.capability_id.as_str());
-            append_identity_part(&mut canonical, dependency.definition_identity.as_str());
+            append_legacy_part(&mut canonical, dependency.capability_id.as_str());
+            append_legacy_part(&mut canonical, dependency.definition_identity.as_str());
         }
     }
 
-    append_identity_part(&mut canonical, "tasks");
+    append_legacy_part(&mut canonical, "tasks");
     for task in tasks.values() {
-        append_identity_part(&mut canonical, "task");
-        append_identity_part(&mut canonical, task.id.as_str());
-        append_identity_part(&mut canonical, "dependencies");
+        append_legacy_part(&mut canonical, "task");
+        append_legacy_part(&mut canonical, task.id.as_str());
+        append_legacy_part(&mut canonical, "dependencies");
         let mut dependencies = task.dependencies.iter().collect::<Vec<_>>();
         dependencies.sort();
         for dependency in dependencies {
-            append_identity_part(&mut canonical, dependency.as_str());
+            append_legacy_part(&mut canonical, dependency.as_str());
         }
 
-        append_identity_part(&mut canonical, "capabilities");
+        append_legacy_part(&mut canonical, "capabilities");
         let mut requirements = task.required_capabilities.iter().collect::<Vec<_>>();
         requirements.sort_by(|left, right| left.capability_id.cmp(&right.capability_id));
         for requirement in requirements {
-            append_identity_part(&mut canonical, requirement.capability_id.as_str());
-            append_identity_part(&mut canonical, requirement.definition_identity.as_str());
+            append_legacy_part(&mut canonical, requirement.capability_id.as_str());
+            append_legacy_part(&mut canonical, requirement.definition_identity.as_str());
         }
 
-        append_identity_part(&mut canonical, "effect");
+        append_legacy_part(&mut canonical, "effect");
         if let Some(effect) = &task.effect {
-            append_identity_part(&mut canonical, "present");
-            append_identity_part(&mut canonical, effect.operation_id.as_str());
-            append_identity_part(
+            append_legacy_part(&mut canonical, "present");
+            append_legacy_part(&mut canonical, effect.operation_id.as_str());
+            append_legacy_part(
                 &mut canonical,
                 match effect.semantics {
                     EffectSemantics::Idempotent => "idempotent",
@@ -824,15 +951,15 @@ fn canonical_identity(
                 },
             );
         } else {
-            append_identity_part(&mut canonical, "absent");
+            append_legacy_part(&mut canonical, "absent");
         }
     }
 
-    WorkflowReplayIdentity::new(canonical)
-        .map_err(|error| DefinitionError::InvalidDefinition(error.to_string()))
+    canonical
 }
 
-fn append_identity_part(canonical: &mut String, value: &str) {
+#[cfg(test)]
+fn append_legacy_part(canonical: &mut String, value: &str) {
     canonical.push(':');
     canonical.push_str(&value.len().to_string());
     canonical.push(':');
@@ -921,5 +1048,473 @@ mod tests {
             }),
             Err(FactoryResolutionError::DuplicateDefinitionIdentity { .. })
         ));
+    }
+
+    fn canonical_v2(definition: &RunDefinition) -> String {
+        definition
+            .validated()
+            .expect("test definition validates")
+            .identity
+            .as_str()
+            .to_owned()
+    }
+
+    fn canonical_v1(definition: &RunDefinition) -> String {
+        let validated = definition.validated().expect("test definition validates");
+        legacy_canonical_identity_v1(&validated.tasks, &validated.capabilities)
+    }
+
+    /// Golden bytes for the grammar recorded in
+    /// `docs/architecture/0008-run-definition-identity-v2.md`. The expectations are
+    /// written from that grammar by hand, so the canonicalizer is pinned to the
+    /// specification instead of to whatever it happened to emit.
+    #[test]
+    fn identity_v2_matches_the_documented_grammar_bytes() {
+        let minimal = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(id("store"), "service", "v1"))
+            .with_task(TaskDefinition::new(id("load"), "display label"));
+        assert_eq!(
+            canonical_v2(&minimal),
+            "kernis-run-definition-v2#capabilities[1]#capability%5:store%7:service%2:v1\
+             #requires[0]#end#end#tasks[1]#task%4:load#depends[0]#end#requires[0]#end\
+             #effect#absent#end"
+        );
+
+        let shaped = RunDefinition::new()
+            .with_capability(
+                CapabilityDeclaration::new(id("store"), "provider", "store-v1")
+                    .depends_on(requirement("clock", "clock-v1")),
+            )
+            .with_task(task("read"))
+            .with_task(
+                TaskDefinition::new(id("write"), "w")
+                    .depends_on(id("read"))
+                    .require_capability(requirement("store", "store-v1"))
+                    .with_effect(
+                        OperationId::new("op-1").expect("test operation id is valid"),
+                        EffectSemantics::NonIdempotent,
+                    ),
+            );
+        assert_eq!(
+            canonical_v2(&shaped),
+            "kernis-run-definition-v2#capabilities[2]#capability%5:clock%10:capability\
+             %8:clock-v1#requires[0]#end#capability%5:store%8:provider%8:store-v1\
+             #requires[1]%5:clock%8:clock-v1#end#end#tasks[2]#task%4:read#depends[0]#end\
+             #requires[0]#end#effect#absent#task%5:write#depends[1]%4:read#end#requires[1]\
+             %5:store%8:store-v1#end#effect#present%4:op-1#non_idempotent#end"
+        );
+    }
+
+    /// The historical `kernis-run-definition-v1` bytes stay frozen: any future
+    /// authorized migration must reproduce them (ADR 0008 §2 and §4).
+    #[test]
+    fn legacy_v1_identity_bytes_stay_frozen() {
+        let minimal = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(id("store"), "service", "v1"))
+            .with_task(TaskDefinition::new(id("load"), "display label"));
+        assert_eq!(
+            canonical_v1(&minimal),
+            "kernis-run-definition-v1:12:capabilities:10:capability:5:store:4:kind:7:service\
+             :10:definition:2:v1:12:dependencies:5:tasks:4:task:4:load:12:dependencies\
+             :12:capabilities:6:effect:6:absent"
+        );
+
+        let shaped = RunDefinition::new()
+            .with_capability(
+                CapabilityDeclaration::new(id("store"), "provider", "store-v1")
+                    .depends_on(requirement("clock", "clock-v1")),
+            )
+            .with_task(task("read"))
+            .with_task(
+                TaskDefinition::new(id("write"), "w")
+                    .depends_on(id("read"))
+                    .require_capability(requirement("store", "store-v1"))
+                    .with_effect(
+                        OperationId::new("op-1").expect("test operation id is valid"),
+                        EffectSemantics::NonIdempotent,
+                    ),
+            );
+        assert_eq!(
+            canonical_v1(&shaped),
+            "kernis-run-definition-v1:12:capabilities:10:capability:5:clock:4:kind\
+             :10:capability:10:definition:8:clock-v1:12:dependencies:10:capability:5:store\
+             :4:kind:8:provider:10:definition:8:store-v1:12:dependencies:5:clock:8:clock-v1\
+             :5:tasks:4:task:4:read:12:dependencies:12:capabilities:6:effect:6:absent:4:task\
+             :5:write:12:dependencies:4:read:12:capabilities:5:store:8:store-v1:6:effect\
+             :7:present:4:op-1:14:non-idempotent"
+        );
+    }
+
+    /// The exact structural collisions the v1 format allowed (review R2-01) are
+    /// separated by v2. The v1 equality is asserted on purpose: it is a documented
+    /// historical fact a migration must reason about, not something to hide.
+    #[test]
+    fn identity_v2_separates_every_v1_structural_collision() {
+        let base = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(
+                id("x"),
+                "service",
+                "capabilities",
+            ))
+            .with_task(task("capabilities"))
+            .with_task(task("x"));
+        let target = |variant: u8| {
+            let task = TaskDefinition::new(id("z"), "target");
+            let task = match variant {
+                0 => task.require_capability(requirement("x", "capabilities")),
+                1 => task.depends_on(id("capabilities")).depends_on(id("x")),
+                2 => task
+                    .depends_on(id("capabilities"))
+                    .require_capability(requirement("x", "capabilities")),
+                3 => task
+                    .depends_on(id("x"))
+                    .require_capability(requirement("capabilities", "capabilities")),
+                4 => task
+                    .depends_on(id("capabilities"))
+                    .depends_on(id("x"))
+                    .require_capability(requirement("x", "capabilities")),
+                _ => task.depends_on(id("capabilities")).depends_on(id("x")),
+            };
+            base.clone().with_task(task)
+        };
+
+        let mut v2 = Vec::new();
+        for variant in 0..5 {
+            let definition = target(variant);
+            definition.validate().expect("variant validates");
+            v2.push(canonical_v2(&definition));
+        }
+        for (left_index, left) in v2.iter().enumerate() {
+            for right in v2.iter().skip(left_index + 1) {
+                assert_ne!(left, right, "distinct semantics must not share an identity");
+            }
+        }
+
+        // Documented v1 collision: prerequisites and capability requirements were
+        // indistinguishable, so variant 0 and variant 1 hashed to the same bytes.
+        assert_eq!(canonical_v1(&target(0)), canonical_v1(&target(1)));
+        assert_ne!(v2[0], v2[1]);
+    }
+
+    /// Data is framed by **byte** length and can never imitate structure.
+    ///
+    /// The goldens pin multibyte lengths (a `chars()`-based length would emit
+    /// `%2:任务`), and stripping every length-delimited token out of an
+    /// adversarial value leaves one constant skeleton — the direct statement of
+    /// "user data cannot move a field boundary", which value-by-value
+    /// distinctness alone does not express.
+    #[test]
+    fn identity_v2_frames_data_by_byte_length_and_keeps_the_skeleton_constant() {
+        let multibyte = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(id("store"), "任务", "🔐"))
+            .with_task(TaskDefinition::new(id("load"), "display label"));
+        assert_eq!(
+            canonical_v2(&multibyte),
+            "kernis-run-definition-v2#capabilities[1]#capability%5:store%6:任务%4:🔐\
+             #requires[0]#end#end#tasks[1]#task%4:load#depends[0]#end#requires[0]#end\
+             #effect#absent#end",
+            "a data token declares its UTF-8 byte length, not its character count"
+        );
+
+        let wider = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(id("store"), "任务🔐", "v1"))
+            .with_task(TaskDefinition::new(id("load"), "display label"));
+        assert_eq!(
+            canonical_v2(&wider),
+            "kernis-run-definition-v2#capabilities[1]#capability%5:store%10:任务🔐%2:v1\
+             #requires[0]#end#end#tasks[1]#task%4:load#depends[0]#end#requires[0]#end\
+             #effect#absent#end",
+            "任务 is six bytes and the lock emoji is four, so that kind token is ten long"
+        );
+
+        /// Removes every `%<byte length>:<bytes>` token, leaving the frame.
+        fn skeleton(identity: &str) -> String {
+            let mut rest = identity;
+            let mut frame = String::new();
+            while let Some(offset) = rest.find('%') {
+                frame.push_str(&rest[..offset]);
+                let header = &rest[offset + 1..];
+                let colon = header
+                    .find(':')
+                    .expect("a data token carries a length header");
+                let length: usize = header[..colon]
+                    .parse()
+                    .expect("a data token length is a decimal byte count");
+                let value = &header[colon + 1..];
+                assert!(
+                    value.is_char_boundary(length),
+                    "the declared {length} bytes do not land on a character boundary"
+                );
+                rest = &value[length..];
+            }
+            frame.push_str(rest);
+            frame
+        }
+
+        let shaped = |value: &str| {
+            RunDefinition::new()
+                .with_capability(CapabilityDeclaration::new(id("capabilities"), value, value))
+                .with_task(
+                    TaskDefinition::new(id("tasks"), value)
+                        .depends_on(id("effect"))
+                        .require_capability(requirement("capabilities", value)),
+                )
+                .with_task(task("effect"))
+        };
+        let frame = skeleton(&canonical_v2(&shaped("plain")));
+        assert!(!frame.contains('%'), "the frame itself carries no data");
+
+        // The identifiers are framed too. A canonicalizer that concatenated an
+        // id raw would leave its text in the frame, so renaming the capability
+        // (the requirement follows it) must not move a structural boundary.
+        // This is a diagnostic oracle, not independent evidence: the goldens
+        // above pin the same ids first, so a raw id fails there before reaching
+        // here. It covers the capability id only; task ids, dependency ids and
+        // the effect operation id stay pinned by the goldens.
+        let renamed = |capability: &str| {
+            RunDefinition::new()
+                .with_capability(CapabilityDeclaration::new(id(capability), "plain", "plain"))
+                .with_task(
+                    TaskDefinition::new(id("tasks"), "plain")
+                        .depends_on(id("effect"))
+                        .require_capability(requirement(capability, "plain")),
+                )
+                .with_task(task("effect"))
+        };
+        for capability in ["capabilities", "cap", "capabilities-long"] {
+            assert_eq!(
+                skeleton(&canonical_v2(&renamed(capability))),
+                frame,
+                "the capability id {capability:?} moved a structural boundary"
+            );
+        }
+
+        for value in [
+            "任务",
+            "🔐",
+            "#end",
+            "%5:store",
+            "#tasks[0]#end",
+            "#requires[1]",
+            "[0]",
+            "]",
+            "0:1:2",
+            "#capability%0:#end",
+        ] {
+            let identity = canonical_v2(&shaped(value));
+            assert!(
+                identity.contains(&format!("%{}:{value}", value.len())),
+                "{value:?} is framed by its byte length in {identity}"
+            );
+            assert_eq!(
+                skeleton(&identity),
+                frame,
+                "{value:?} moved a structural boundary: {identity}"
+            );
+        }
+    }
+
+    /// Strings that imitate the v1 framing, the v2 framing, or a v2 count are
+    /// ordinary data: they never move a field boundary.
+    #[test]
+    fn identity_v2_keeps_structural_tokens_and_user_data_disjoint() {
+        let adversarial = [
+            "capabilities",
+            "dependencies",
+            "tasks",
+            "effect",
+            "present",
+            "absent",
+            "12:capabilities",
+            "0:1:2",
+            "@0:",
+            "@5:store",
+            "%0:",
+            "%5:store",
+            "#end",
+            "#requires[1]",
+            "#capability",
+            "requires[0]#end",
+            ":",
+            "#",
+            "@",
+            "%",
+            "任务",
+            "🔐",
+            "0",
+        ];
+
+        let definition_for = |identity: &str| {
+            RunDefinition::new()
+                .with_capability(CapabilityDeclaration::new(
+                    id("capabilities"),
+                    identity,
+                    identity,
+                ))
+                .with_task(
+                    TaskDefinition::new(id("tasks"), identity)
+                        .depends_on(id("effect"))
+                        .require_capability(requirement("capabilities", identity)),
+                )
+                .with_task(task("effect"))
+        };
+
+        let mut seen = Vec::new();
+        for identity in adversarial {
+            let definition = definition_for(identity);
+            definition
+                .validate()
+                .unwrap_or_else(|error| panic!("definition for {identity:?} validates: {error}"));
+            let identity = canonical_v2(&definition);
+            assert!(
+                !seen.contains(&identity),
+                "{identity:?} reused the identity of an earlier adversarial variant"
+            );
+            seen.push(identity);
+        }
+
+        // Display labels stay excluded from the identity.
+        let mut labeled = definition_for("capabilities").tasks.clone();
+        labeled[0].label = "a different display label".to_owned();
+        let labeled = RunDefinition {
+            tasks: labeled,
+            ..definition_for("capabilities")
+        };
+        assert_eq!(
+            canonical_v2(&labeled),
+            canonical_v2(&definition_for("capabilities"))
+        );
+    }
+
+    #[test]
+    fn identity_v2_keeps_the_k2_equivalence_and_sensitivity_rules() {
+        let authored = RunDefinition::new()
+            .with_task(
+                TaskDefinition::new(id("second"), "second")
+                    .depends_on(id("first"))
+                    .require_capability(requirement("clock", "clock-v1")),
+            )
+            .with_task(task("first"))
+            .with_capability(CapabilityDeclaration::new(
+                id("clock"),
+                "service",
+                "clock-v1",
+            ));
+        let reordered = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(
+                id("clock"),
+                "service",
+                "clock-v1",
+            ))
+            .with_task(task("first"))
+            .with_task(
+                TaskDefinition::new(id("second"), "renamed")
+                    .require_capability(requirement("clock", "clock-v1"))
+                    .depends_on(id("first")),
+            );
+        assert_eq!(canonical_v2(&authored), canonical_v2(&reordered));
+
+        let mut variants = vec![authored.clone()];
+        variants.push({
+            let mut definition = authored.clone();
+            definition.tasks[0].dependencies.clear();
+            definition
+        });
+        variants.push({
+            let mut definition = authored.clone();
+            definition.tasks[0].required_capabilities.clear();
+            definition
+        });
+        variants.push({
+            let mut definition = authored.clone();
+            definition.capabilities[0].kind = "provider".to_owned();
+            definition
+        });
+        variants.push({
+            let mut definition = authored.clone();
+            definition.tasks[0].effect = Some(crate::EffectSpec {
+                operation_id: OperationId::new("op").expect("test operation id is valid"),
+                semantics: EffectSemantics::Idempotent,
+            });
+            definition
+        });
+        variants.push({
+            let mut definition = authored.clone();
+            definition.tasks[0].effect = Some(crate::EffectSpec {
+                operation_id: OperationId::new("op").expect("test operation id is valid"),
+                semantics: EffectSemantics::NonIdempotent,
+            });
+            definition
+        });
+
+        let identities: Vec<String> = variants
+            .iter()
+            .map(|definition| {
+                definition.validate().expect("variant validates");
+                canonical_v2(definition)
+            })
+            .collect();
+        for (left_index, left) in identities.iter().enumerate() {
+            for right in identities.iter().skip(left_index + 1) {
+                assert_ne!(left, right, "each semantic variant needs its own identity");
+            }
+        }
+    }
+
+    /// The parts of the grammar the sensitivity list above does not vary: a
+    /// capability's own dependency edge, an empty collection, and an empty
+    /// scalar field.
+    #[test]
+    fn identity_v2_is_sensitive_to_capability_edges_and_empty_fields() {
+        let plain = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(
+                id("clock"),
+                "service",
+                "clock-v1",
+            ))
+            .with_capability(CapabilityDeclaration::new(
+                id("store"),
+                "service",
+                "store-v1",
+            ))
+            .with_task(task("read"));
+        let with_edge = RunDefinition::new()
+            .with_capability(
+                CapabilityDeclaration::new(id("clock"), "service", "clock-v1")
+                    .depends_on(requirement("store", "store-v1")),
+            )
+            .with_capability(CapabilityDeclaration::new(
+                id("store"),
+                "service",
+                "store-v1",
+            ))
+            .with_task(task("read"));
+        assert_ne!(
+            canonical_v2(&plain),
+            canonical_v2(&with_edge),
+            "a capability dependency edge is admission-relevant, so it is identity-bearing"
+        );
+
+        let no_capabilities = RunDefinition::new().with_task(task("read"));
+        let no_capabilities_identity = canonical_v2(&no_capabilities);
+        assert!(
+            no_capabilities_identity.contains("#capabilities[0]"),
+            "an empty collection is framed as a zero count: {no_capabilities_identity}"
+        );
+        assert_ne!(
+            no_capabilities_identity,
+            canonical_v2(&plain),
+            "no capability declarations is not the same run as some"
+        );
+
+        let empty_kind = RunDefinition::new()
+            .with_capability(CapabilityDeclaration::new(id("store"), "", "store-v1"))
+            .with_task(task("read"));
+        let empty_kind_identity = canonical_v2(&empty_kind);
+        assert!(
+            empty_kind_identity.contains("%0:"),
+            "an empty field is a zero-length token, never an omitted one: \
+             {empty_kind_identity}"
+        );
     }
 }

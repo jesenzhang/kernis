@@ -28,6 +28,9 @@
 //!   and never fakes an empty success.
 //! * I — another driver's owner loss proves nothing to this composition:
 //!   the owner-state probe is bound to the exact driver at `into_driver`.
+//! * J — a module that registers only `on_dispose` is still armed by a
+//!   successful activation, runs that hook once, and is reported clean
+//!   (third review, B2).
 
 mod k4_common;
 
@@ -395,7 +398,11 @@ async fn no_composition_release_is_possible_while_the_driver_owns_the_runtime() 
         "the waiting composition could not have unregistered anything"
     );
 
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert!(outcome.rollback.is_success());
     assert!(
         !outcome
@@ -565,7 +572,11 @@ async fn orderly_shutdown_is_not_owner_loss_for_the_bound_handle() {
     assert_eq!(recorder.count("dispose:f"), 0);
     assert_eq!(event_count(&events, "fiber-effect"), 0);
 
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert!(outcome.rollback.is_success());
     assert!(
         !outcome
@@ -747,12 +758,67 @@ async fn another_drivers_owner_loss_cannot_release_this_composition() {
         runtime_composition::ShutdownStatus::Clean
     );
     let exit_a = join_a.await.expect("driver a joins");
-    let outcome_a = composition_a.dispose_after_driver(exit_a).await;
+    let outcome_a = composition_a
+        .dispose_after_driver(exit_a)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert!(outcome_a.rollback.is_success());
     assert_eq!(recorder.count("dispose:a"), 1);
     assert_eq!(
         event_count(&events, "fiber-effect"),
         2,
         "each composition disposed its own fiber exactly once"
+    );
+}
+
+/// J (third review, B2): a module that registers only `on_dispose` still runs
+/// that hook when its resources are released, and only then is it clean.
+///
+/// The hook is armed by a successful activation, not by the presence of an
+/// `activate` hook; arming it on `on_activate` alone skipped the dispose of a
+/// dispose-only module while reporting the module as cleaned.
+#[tokio::test(flavor = "current_thread")]
+async fn dispose_only_module_runs_its_hook_and_is_reported_clean() {
+    let recorder = Recorder::new();
+    let plan = CompositionBuilder::new()
+        .register(
+            ModuleRegistration::new(ModuleDefinition::new(id("dispose-only")))
+                .on_dispose(recorder.hook("dispose:dispose-only", None)),
+        )
+        .expect("the dispose-only module registers")
+        .build()
+        .expect("the composition validates");
+    let assembly = plan
+        .start(run_id("b2-dispose-only"), &HostConfig::new())
+        .await
+        .expect("the composition activates");
+    let (driver, handle, mut composition) = assembly.into_driver(SuccessDispatcher::new());
+    let driver_task = tokio::spawn(async move { driver.run().await });
+    handle
+        .shutdown()
+        .await
+        .expect("the driver shuts down cleanly");
+    let exit = driver_task.await.expect("the driver task joins");
+
+    let shutdown = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("this handle's own exit releases the composition");
+    assert_eq!(
+        recorder.count("dispose:dispose-only"),
+        1,
+        "a module with only on_dispose must still run that hook"
+    );
+    assert!(
+        shutdown.rollback.is_success(),
+        "the release reports no failure: {:?}",
+        shutdown.rollback.failures
+    );
+    assert_eq!(
+        shutdown.rollback.cleaned,
+        vec![id("dispose-only")],
+        "the module is clean because its dispose hook ran"
     );
 }

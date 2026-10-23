@@ -1,0 +1,251 @@
+﻿{
+    "schema_version":  "1",
+    "mode":  "range",
+    "repository":  "F:/Workspace/kernis",
+    "from":  "3ee011b",
+    "to":  "d3818f5",
+    "merge_base":  "3ee011bff7a805881b25b27d3195e47efa33be1d",
+    "total_files":  37,
+    "reviewable_count":  25,
+    "excluded_count":  12,
+    "total_insertions":  2894,
+    "total_deletions":  116,
+    "reviewable_files":  [
+                             {
+                                 "path":  ".github/workflows/ci.yml",
+                                 "status":  "modified",
+                                 "insertions":  10,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/capability-graph/Cargo.toml",
+                                 "status":  "modified",
+                                 "insertions":  3,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/capability-graph/src/reactive.rs",
+                                 "status":  "modified",
+                                 "insertions":  1,
+                                 "deletions":  1
+                             },
+                             {
+                                 "path":  "crates/core/Cargo.toml",
+                                 "status":  "modified",
+                                 "insertions":  3,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/execution-stream/Cargo.toml",
+                                 "status":  "modified",
+                                 "insertions":  3,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/graph-lab/Cargo.toml",
+                                 "status":  "modified",
+                                 "insertions":  3,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/runtime-composition/Cargo.toml",
+                                 "status":  "modified",
+                                 "insertions":  3,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/runtime-composition/src/assembly.rs",
+                                 "status":  "modified",
+                                 "insertions":  88,
+                                 "deletions":  19
+                             },
+                             {
+                                 "path":  "crates/runtime-composition/src/error.rs",
+                                 "status":  "modified",
+                                 "insertions":  48,
+                                 "deletions":  1
+                             },
+                             {
+                                 "path":  "crates/runtime-composition/src/lib.rs",
+                                 "status":  "modified",
+                                 "insertions":  13,
+                                 "deletions":  8
+                             },
+                             {
+                                 "path":  "crates/runtime-composition/tests/k4_cleanup_ownership.rs",
+                                 "status":  "modified",
+                                 "insertions":  312,
+                                 "deletions":  12
+                             },
+                             {
+                                 "path":  "crates/runtime-composition/tests/k4_compat.rs",
+                                 "status":  "modified",
+                                 "insertions":  5,
+                                 "deletions":  2
+                             },
+                             {
+                                 "path":  "crates/runtime-core/Cargo.toml",
+                                 "status":  "modified",
+                                 "insertions":  3,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/runtime-core/src/async_driver.rs",
+                                 "status":  "modified",
+                                 "insertions":  52,
+                                 "deletions":  1
+                             },
+                             {
+                                 "path":  "crates/runtime-core/src/definition.rs",
+                                 "status":  "modified",
+                                 "insertions":  9,
+                                 "deletions":  1
+                             },
+                             {
+                                 "path":  "crates/runtime-core/src/lib.rs",
+                                 "status":  "modified",
+                                 "insertions":  45,
+                                 "deletions":  17
+                             },
+                             {
+                                 "path":  "crates/runtime-core/tests/k3_owner_state.rs",
+                                 "status":  "added",
+                                 "insertions":  128,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/runtime-loader/Cargo.toml",
+                                 "status":  "modified",
+                                 "insertions":  3,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/runtime-loader/examples/r2_host.rs",
+                                 "status":  "added",
+                                 "insertions":  236,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/runtime-loader/src/lib.rs",
+                                 "status":  "modified",
+                                 "insertions":  24,
+                                 "deletions":  9
+                             },
+                             {
+                                 "path":  "crates/runtime-loader/tests/k5_composition.rs",
+                                 "status":  "modified",
+                                 "insertions":  16,
+                                 "deletions":  1
+                             },
+                             {
+                                 "path":  "crates/runtime-loader/tests/k6_r2_end_to_end.rs",
+                                 "status":  "added",
+                                 "insertions":  710,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/workflow-graph/Cargo.toml",
+                                 "status":  "modified",
+                                 "insertions":  3,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/workflow-recovery/Cargo.toml",
+                                 "status":  "modified",
+                                 "insertions":  3,
+                                 "deletions":  0
+                             },
+                             {
+                                 "path":  "crates/workflow-recovery/src/physical.rs",
+                                 "status":  "modified",
+                                 "insertions":  19,
+                                 "deletions":  3
+                             }
+                         ],
+    "excluded_files":  [
+                           {
+                               "path":  "README.md",
+                               "status":  "modified",
+                               "insertions":  31,
+                               "deletions":  6,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/ROADMAP.md",
+                               "status":  "modified",
+                               "insertions":  7,
+                               "deletions":  4,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/architecture/0005-k4-runtime-composition.md",
+                               "status":  "modified",
+                               "insertions":  10,
+                               "deletions":  3,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/architecture/0007-r2-host-entry-surface.md",
+                               "status":  "added",
+                               "insertions":  105,
+                               "deletions":  0,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/runtime/COMPATIBILITY.md",
+                               "status":  "added",
+                               "insertions":  182,
+                               "deletions":  0,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/runtime/K2-declarative-cold-reconstruction.md",
+                               "status":  "modified",
+                               "insertions":  3,
+                               "deletions":  1,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/runtime/K3-explicit-async-boundary.md",
+                               "status":  "modified",
+                               "insertions":  7,
+                               "deletions":  4,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/runtime/K4-runtime-plugin-composition.md",
+                               "status":  "modified",
+                               "insertions":  41,
+                               "deletions":  11,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/runtime/K5-minimal-loader-boundary.md",
+                               "status":  "modified",
+                               "insertions":  10,
+                               "deletions":  8,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/runtime/K6-supported-api-inventory.md",
+                               "status":  "added",
+                               "insertions":  330,
+                               "deletions":  0,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/runtime/R2-KERNEL-CONTRACT.md",
+                               "status":  "added",
+                               "insertions":  257,
+                               "deletions":  0,
+                               "exclude_reason":  "unsupported_ext"
+                           },
+                           {
+                               "path":  "docs/runtime/STAGE2-MILESTONE-PLAN.md",
+                               "status":  "modified",
+                               "insertions":  168,
+                               "deletions":  4,
+                               "exclude_reason":  "unsupported_ext"
+                           }
+                       ]
+}

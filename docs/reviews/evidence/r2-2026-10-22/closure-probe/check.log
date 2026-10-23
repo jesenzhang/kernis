@@ -1,0 +1,80 @@
+    Checking closure-probe v0.0.0 (C:\Users\admin\AppData\Local\Temp\r2-closure-probe)
+error[E0425]: cannot find type `CapabilityGraphError` in this scope
+ --> src\lib.rs:5:33
+  |
+5 | pub fn scope_graph_admission(_: CapabilityGraphError) {}
+  |                                 ^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find type `CapabilityId` in this scope
+  --> src\lib.rs:7:36
+   |
+ 7 | pub fn scope_missing_dependency(_: CapabilityId) {}
+   |                                    ^^^^^^^^^^^^
+   |
+  ::: F:\Workspace\kernis\crates\runtime-core\src\lib.rs:58:1
+   |
+58 | pub struct CapabilityPin {
+   | ------------------------ similarly named struct `CapabilityPin` defined here
+   |
+help: a struct with a similar name exists
+   |
+ 7 - pub fn scope_missing_dependency(_: CapabilityId) {}
+ 7 + pub fn scope_missing_dependency(_: CapabilityPin) {}
+   |
+
+error[E0425]: cannot find type `JournalInvariant` in this scope
+ --> src\lib.rs:9:29
+  |
+9 | pub fn journal_invariant(_: JournalInvariant) {}
+  |                             ^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find type `IdempotencyKey` in this scope
+  --> src\lib.rs:11:29
+   |
+11 | pub fn store_idempotency(_: IdempotencyKey) {}
+   |                             ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find type `Generation` in this scope
+  --> src\lib.rs:13:43
+   |
+13 | pub fn pin_fields(pin: CapabilityPin) -> (Generation, EntryId) {
+   |                                           ^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find type `EntryId` in this scope
+  --> src\lib.rs:13:55
+   |
+13 | pub fn pin_fields(pin: CapabilityPin) -> (Generation, EntryId) {
+   |                                                       ^^^^^^^ not found in this scope
+
+error[E0425]: cannot find type `CapabilityId` in this scope
+  --> src\lib.rs:17:55
+   |
+17 | pub fn handle_accessors(handle: &CapabilityHandle) -> CapabilityId {
+   |                                                       ^^^^^^^^^^^^
+   |
+  ::: F:\Workspace\kernis\crates\runtime-core\src\lib.rs:58:1
+   |
+58 | pub struct CapabilityPin {
+   | ------------------------ similarly named struct `CapabilityPin` defined here
+   |
+help: a struct with a similar name exists
+   |
+17 - pub fn handle_accessors(handle: &CapabilityHandle) -> CapabilityId {
+17 + pub fn handle_accessors(handle: &CapabilityHandle) -> CapabilityPin {
+   |
+
+error[E0425]: cannot find type `WorkflowGraph` in this scope
+  --> src\lib.rs:21:47
+   |
+21 | pub fn runtime_workflow(runtime: &Runtime) -> WorkflowGraph {
+   |                                               ^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find type `DurableJournal` in this scope
+  --> src\lib.rs:25:46
+   |
+25 | pub fn runtime_journal(runtime: &Runtime) -> DurableJournal {
+   |                                              ^^^^^^^^^^^^^^ not found in this scope
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `closure-probe` (lib) due to 9 previous errors
+EXIT=101

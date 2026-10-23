@@ -242,13 +242,27 @@ pub struct Scope {
 
 static NEXT_ENTRY_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Reserves the next value of a monotonically increasing identifier counter.
+///
+/// A relaxed compare-and-swap loop is used instead of
+/// `AtomicU64::fetch_update`: the latter is deprecated on current stable
+/// (`try_update` replaces it), while `try_update` does not exist on the
+/// declared MSRV 1.85. Reserving the value this way keeps both toolchains
+/// warning-free with the same relaxed ordering and the same contract —
+/// `Some(reserved)` for the caller, `None` when the counter would overflow.
+pub(crate) fn allocate_monotonic(counter: &AtomicU64) -> Option<u64> {
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        let next = current.checked_add(1)?;
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return Some(current),
+            Err(actual) => current = actual,
+        }
+    }
+}
+
 fn allocate_entry_id(counter: &AtomicU64) -> EntryId {
-    let current = counter
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-            value.checked_add(1)
-        })
-        .expect("runtime entry id overflow");
-    EntryId::from_raw(current)
+    EntryId::from_raw(allocate_monotonic(counter).expect("runtime entry id overflow"))
 }
 
 fn next_entry_id() -> EntryId {

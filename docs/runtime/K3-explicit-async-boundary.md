@@ -64,6 +64,28 @@ facts retain their existing recovery semantics. Normal shutdown still preserves
 its final observation drain path. Regression coverage is in
 `crates/runtime-core/tests/k3_review_owner_drop.rs`.
 
+R2 repair (ADR 0009): the command mailbox is also an *identity*. The mailbox
+was already the single driver-owner truth, so K3 exposes it as an opaque
+capability instead of letting downstream layers re-derive ownership from
+run id or definition identity:
+
+- `RuntimeHandle::owner()` returns `DriverOwner` — a cloneable, `Send + Sync`
+  token naming exactly the driver this handle commands. It submits no
+  command and grants no inspection or control, and its `Debug` output is
+  deliberately uninformative so it cannot be probed for mailbox state.
+- `DriverExit::owner()` reports the token of the driver that produced the
+  exit, so an exit always carries proof of its own origin across an executor
+  hop.
+- `DriverOwner::same_driver_as` is the only comparison, and it is identity
+  (`Arc::as_ptr` on the shared mailbox state), not value equality. Two
+  drivers over the same run are distinct owners even with identical
+  definitions, host configuration, and shutdown classification.
+
+The token's only consumer today is the composition release rule in K4
+(`CompositionHandle::dispose_after_driver`); `driver_owner_token_*` tests in
+`crates/runtime-core/tests/k3_async.rs` pin per-driver distinctness, exit
+recognition, and opacity.
+
 The K3 focused suite is `cargo test -p runtime-core --test k3_async
 --all-features`. It proves:
 

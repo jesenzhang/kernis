@@ -992,6 +992,302 @@ K6/R2 review has not been performed, so K6 is not Reviewed and R2 is not
 Closed; closure still requires the review verdict recorded in this plan,
 and this integration does not substitute for it.
 
+### Independent review result and repair reconciliation (2026-09-28, K6/R2)
+
+The independent K6/R2 review was performed against `d3818f5` and returned
+**CHANGES REQUIRED / R2 NOT CLOSED** with four findings
+(`docs/reviews/2026-09-28-K6-R2-rereview.md`, evidence under
+`docs/reviews/evidence/r2-2026-09-28/`): **R2-01** `RunDefinition`
+canonical identity was structurally ambiguous, so two definitions with
+different semantics could authorize each other's restore; **R2-02**
+`CompositionHandle::dispose_after_driver` accepted any `DriverExit` of the
+right store type and could dispose another composition's live resources;
+**R2-03** cancelling a cleanup future destroyed the ledger and then reported
+`AlreadyReleased`; **R2-04** five host-facing names were not nameable through
+`runtime-loader`, contradicting ADR 0007 §2. The statements in the K6
+candidate record above (including that K6 created no run-definition v2, and
+the 315-test verification figure at `55bb80b`) are kept as history; the
+repair supersedes the first of them through ADR 0008.
+
+```text
+Result: READY FOR REVIEW / NOT INTEGRATED. R2-01..R2-04 implemented and
+  verified locally; not pushed, not merged, not Reviewed; R2 not Closed;
+  Stage 3 not started.
+Base: d3818f5d2a77030f353e1a2a6c1744d494cae0c4 (reviewed baseline, branch
+  point from main for codex/k6-r2-repair).
+Final integrated HEAD: none — the branch is not integrated. Branch head at the
+  time of writing is 93d01c1 (the pre-poll cancellation regression this record
+  prompted); the commit appending this record is the branch tip and changes
+  documentation only.
+Implementation blocks / explicit Slices actually used: one continuing
+  implementation block, split into reviewable commits — a7965ad (ADRs 0008 /
+  0009 plus the three reproduction probes placed as the review instructed),
+  08c0e22 (R2-01), 5a5ebcb (canonical data marker moved off the loader
+  reference sigil), 06c88e7 (R2-02 + R2-03), 29a2305 (R2-04), c634ce9 and
+  5215c86 (contract/inventory/ADR/README/ROADMAP reconciliation), 93d01c1 (the extra R2-03 cancellation case).
+Material decisions: ADR 0008 — v2 run-definition identity (tagged, counted,
+  length-delimited), v1 frozen under #[cfg(test)] golden pinning and never
+  written, a durable v1-tagged identity refused fail-closed with
+  RuntimeError::LegacyDefinitionIdentityUnsupported, and data tokens marked
+  with % because @ is the host-facing module-reference separator; ADR 0009 —
+  DriverOwner as the opaque identity of the K3 command mailbox, owner-bound
+  dispose_after_driver answering CompositionReleaseOutcome /
+  CompositionReleaseRejection, cleanup moved into a handle-owned ledger whose
+  in-flight step is polled rather than restarted, boxed rejection payloads,
+  and ledger-first precedence in release_after_owner_loss. ADR 0007 §2 gains
+  the structural closure proof.
+Focused verification: review_r2_identity (1, now green; failed at base with
+  two definitions sharing an identity and restore accepting it),
+  review_r2_probes (3, all green; 2 failed at base), review_r2_exports
+  (green; E0432 for five names at base), k6_r2_cleanup_interruption (5),
+  k2_declarative (15), k3_async (25), k3_owner_state (4),
+  k3_review_owner_drop (3), runtime-composition --all-features (38),
+  runtime-loader --all-features (green), fixture cargo check on stable and on
+  +1.85 plus fixture clippy -D warnings on stable — the same three commands
+  the `r2-host-fixture` CI job now runs, so the fixture is enforced rather
+  than customary.
+Broad verification at the branch head: cargo test --workspace --all-features
+  345 passed / 0 failed; cargo +1.85 test --workspace --all-features 345 passed /
+  0 failed; clippy --workspace --all-targets --all-features
+  -D warnings clean; fmt --check clean; check --workspace --all-targets
+  --all-features clean; doc --workspace --all-features --no-deps clean with
+  no broken intra-doc links; cargo run -p graph-lab and
+  cargo run -p runtime-loader --example r2_host both complete successfully;
+  git diff --check clean. Declared test functions moved 310 -> 331 (+21:
+  7 definition unit tests, 5 interruption, 3 probes, 2 k2, 2 k3, 1 identity
+  probe, 1 exports probe); no existing assertion was deleted, ignored, or
+  re-targeted, and the reviewed @-separator guard in k5_composition was kept
+  passing unchanged. Two review-found assertions were rewritten in place
+  because both were vacuous: the fiber-cancellation case now cleans a failing
+  module before the cancellation point, so "the recorded failure survived the
+  drops" can actually fail, and the definition-collision case now observes the
+  durable store on reopen instead of reading a detached `InMemoryDurableStore`
+  clone. The v2 grammar also gained byte-length goldens (multibyte values) and
+  a skeleton-invariance oracle that strips every data token.
+Independent review: the repair has been independently reviewed against the
+  four R2 findings, and that review found R2-03 incomplete: dropping the
+  orderly release future before its first poll consumed the `DriverExit`, and
+  with it the registry authority, while the ledger still claimed a
+  full-authority sweep could run — leaving the remaining cleanup unreachable
+  behind an `OrderlyShutdownCompleted` answer that pointed at an exit no host
+  held. The fix commit that follows `93d01c1` makes the ownership check and the
+  ledger marking happen at call time, returns a named `CompositionReleaseFuture`
+  instead of an anonymous `async fn` future, pins the behaviour with the new
+  pre-first-poll regression case, wires the fixture into CI, and repairs the two
+  vacuous assertions above. That fix commit has itself not been re-reviewed.
+  Nothing here is an APPROVE or a Closed verdict; implementer-green gates are
+  not review evidence.
+Remaining risks and non-goals: a v1 durable run has no migration path (a
+  documented refusal, per ADR 0008); RuntimeAssembly::shutdown(self)
+  stays non-resumable by design — the consumed assembly and its whole sweep
+  live in the returned future, which the method documentation now states — so
+  cancellation safety covers the two
+  handle release paths; the fixture proves nameability, not semantic
+  correctness of the exported surface; cargo +1.85 clippy was not runnable
+  here (the clippy component is not installed for the 1.85 toolchain), only
+  +1.85 check and +1.85 test, for the workspace and for the fixture alike;
+  no remote CI has observed this branch.
+```
+
+The reviewed lifecycle and identity statements in `R2-KERNEL-CONTRACT.md`,
+`COMPATIBILITY.md` §2/§7, and the K2/K3/K4 documents were reconciled to the
+new contract in the same branch, and `K6-supported-api-inventory.md` records
+the fourth closure wave with its exclusions and the reason import lists were
+replaced by the fixture as closure evidence.
+
+### R2 repair branch reconciliation (2026-10-22)
+
+The 2026-09-28/29 record above describes the branch at `0ec8096`. Commits it
+does not cover landed after it, and the branch has since been re-verified end
+to end. This entry records the current branch state; it is not a review
+verdict, and no independent review has been performed on this head.
+
+```text
+Result: READY FOR REVIEW / NOT INTEGRATED. K6 stays Integrated, R2 stays not
+  Closed, Stage 3 not started.
+Base: d3818f5d2a77030f353e1a2a6c1744d494cae0c4 (unchanged).
+Final integrated HEAD: none. Branch head at the time of writing is the tip
+  that appends this entry; the commit is documentation-only.
+Commits after the 2026-09-28 record: fdc8e5e (parkable registration disposal
+  through a take/dispose_taken split), eeb44b5 (one action pin per toolchain,
+  MSRV forced onto 1.85 through RUSTUP_TOOLCHAIN, 1.85 clippy added), a108bee
+  (identifier reservation by relaxed compare-and-swap instead of the
+  deprecated fetch_update), c2870a8 (the take/dispose_taken equivalence
+  regression), and the documentation commit that appends this entry.
+CI history on the branch - the branch had never been green before:
+  * 36699645785 (63b443d): all three jobs failed within five seconds. The
+    pinned dtolnay/rust-toolchain commit was the action release for Rust
+    1.120.0: that action.yml declares no `toolchain` input and hard-codes
+    `toolchain: 1.120.0`, so every `with: toolchain` was silently ignored and
+    rustup answered 404 for a version that does not exist.
+  * 39719615044 (eeb44b5): the new pins worked, and the stable clippy gate
+    then failed on a genuine upstream deprecation, AtomicU64::fetch_update
+    (deprecated on CI's stable 1.99.1, not yet on the local 1.98.1).
+    try_update does not exist on MSRV 1.85, so both identifier counters moved
+    to a relaxed compare-and-swap loop that is warning-free on both.
+  * 39719852556 (a108bee): passed rust, msrv, and r2-host-fixture.
+  * 39720735642 (9b559c6, an intermediate documentation head): the only
+    failure was the format gate on the hand-inserted regression block; the
+    code was formatted and the two documentation commits rebuilt, so that
+    commit is not part of this branch's history.
+  * 39720900106 (9a92cea), 39721053131 (f8283aa), 39721218218 (3e03811) and
+    39721414298 (9ea1869) - the documentation heads that carry this entry and
+    its corrections: all passed rust, msrv, and r2-host-fixture. A later
+    documentation-only amendment is expected to pass the same three jobs; its
+    run is deliberately not appended here, because this record is dated
+    evidence rather than a live status board.
+MSRV: the `msrv` job previously ran plain `cargo check`, while the
+  repository's rust-toolchain.toml selects `stable` for the working directory
+  and outranks an installed default - so the job was testing stable and the
+  "MSRV gate" never observed 1.85. It now sets RUSTUP_TOOLCHAIN=1.85.1, the
+  run log for 39719852556 shows `cargo 1.85.1`, and the 1.85 clippy pass that
+  the 2026-09-28 record listed as unrunnable now runs in CI and locally.
+Classification of fdc8e5e: load-bearing, and corrected here after the third
+  review reproduced the window. The composition's own activation records every
+  plugin fiber in the module's fiber list (`plan.rs`), so that path never
+  blocks at the registration; but the public registry accessor lets a
+  subsystem host instantiate an additional fiber for an already-registered
+  plugin, and that fiber belongs to no module's list, so the registration
+  disposal really awaits its disposer. With an extra gated fiber installed
+  through `RuntimeAssembly::runtime().capability_registry().instantiate(..)`,
+  the same sequence passes at the repaired head and fails at `0ec8096` with
+  "the registration could not be unregistered". ADR 0009 §3 states this
+  boundary, and `take_plus_dispose_taken_matches_one_shot_removal` pins the
+  split as behaviourally identical to the one-shot removal on the absent,
+  successful, and failing cases.
+Documentation: the earlier record's statements that the branch was not pushed
+  and that no remote CI had observed it are superseded here - the branch was
+  pushed and its CI history is recorded above. The review and repair records
+  under docs/reviews/ are now tracked, because README and this plan cite them.
+Broad verification at a108bee plus this entry: fmt --check clean; clippy
+  --workspace --all-targets --all-features -D warnings clean; test --workspace
+  --all-features 346 passed / 0 failed (52 test-result lines: 39 test binaries,
+  8 doc-test targets, and 5 nested child-process re-executions; 341 distinct
+  parent test cases); cargo +1.85 test --workspace --all-features the same;
+  cargo +1.85 clippy -D warnings clean; doc --workspace --no-deps clean;
+  graph-lab and the r2_host example complete; the host fixture checks and its
+  MSRV check exit 0.
+Independent review: the second review's finding (R2-03 only partly closed) was
+  answered by implementer fixes, and the three commits after it have not been
+  reviewed. A third independent review over d3818f5..HEAD is required before
+  integration; this entry is not that review and claims no verdict.
+Remaining risks and non-goals: unchanged from the 2026-09-28 record, except
+  that the 1.85 clippy gap is closed and the check has moved into CI. The v1
+  durable migration gap and the non-resumable RuntimeAssembly::shutdown stay
+  out of scope for this repair; no new subsystem, no second authority, no
+  unsafe.
+```
+
+### Third independent review verdict (2026-10-22)
+
+The third independent review covered `d3818f5..3ad6fba` (21 commits, 58
+changed files; 30 reviewable files at 100% coverage, 28 documentation files
+read separately) and returned **CHANGES REQUIRED / R2 NOT CLOSED**: three
+blockers, ten medium findings, twelve low findings, and one finding rejected
+after verification. The record is
+`docs/reviews/2026-10-22-K6-R2-third-review.md`, with its probes under
+`docs/reviews/evidence/r2-2026-10-22/`.
+
+The blockers:
+
+1. R2-04's closure claim does not hold. `CapabilityGraphError`,
+   `CapabilityId`, `JournalInvariant`, `IdempotencyKey`, `Generation`,
+   `EntryId`, `WorkflowGraph` and `DurableJournal` cannot be named through
+   `runtime-loader`, and the fixture is a whitelist: three of its own
+   `pub use` names are never exercised, so deleting them would stay green.
+2. A module that registers only `on_dispose` never runs that hook, yet the
+   ledger records it as `cleaned`. The root cause is in the unchanged
+   `plan.rs` arming condition, but the completion contract being violated is
+   this branch's.
+3. Panic semantics are undefined: a panicking `hook()` loses the step and a
+   later re-entry reports the module cleaned, and a parked future that
+   panicked poisons `in_flight` so re-entry panics again instead of
+   resuming.
+
+This entry also supersedes two statements in the 2026-10-22 reconciliation
+above. The "defensive rather than currently reachable" classification is
+wrong: a host that instantiates an extra fiber through the public registry
+accessor reproduces the drop window, and the probe passes at `3ad6fba` while
+failing at `0ec8096`. The figure "346 passed / 52 binaries" mixes two counts:
+346 is the number of passing cases (including five nested child-process
+re-executions) and 52 is the number of test-result lines (39 test binaries,
+8 doc-test targets, 5 nested re-executions), not a binary count. Correcting the
+wording and the evidence belongs to the repair round; this record is not an
+approval, and the branch stays unmerged.
+
+### Repair round 3 (2026-10-22)
+
+The repair answers the third review's blockers and the findings that could be
+fixed without a design decision. It is not itself reviewed; the fourth review is
+scoped to `3ad6fba..HEAD` plus the contract paragraphs touched here.
+
+- **B1** — `CapabilityId`, `Generation` and `EntryId` are promoted to the host
+  tier (a host binds them from `CapabilityPin` fields and
+  `CapabilityHandle::id()`), the five match-only or inspection-return types stay
+  subsystem tier with their reasons in the inventory, ADR 0007 §2 states the
+  naming-versus-matching rule, and
+  `crates/runtime-loader/tests/export_coverage.rs` now fails when any umbrella
+  `pub use` name is absent from the closure evidence. The test was verified by
+  removing a name and watching it fail.
+- **B2** — the dispose hook is armed by a successful activation instead of by
+  the presence of an `activate` hook.
+  `dispose_only_module_runs_its_hook_and_is_reported_clean` fails on the
+  pre-repair shape (hook starts 0) and passes now.
+- **B3** — the hook future is built before the ledger gives up its hook, so a
+  panicking constructor keeps the step;
+  `a_panicking_hook_constructor_is_retried_never_reported_clean` fails on the
+  pre-repair shape (the retry completes) and passes now. A panic inside an
+  already-parked step stays unrecoverable, and `CompositionHandle` now documents
+  that instead of implying resumability.
+- **M4** — `dispose_taken` takes the runtime alone and derives the failing
+  plugin id from it, so a caller cannot misattribute the failure; its docs state
+  the borrow and the subsystem-tier caveat.
+- **M7/M8/M9/M10** and **L3/L4/L11/L12** are corrected in the same round: the
+  verification figure is stated as test-result lines, the registration parking is
+  recorded as load-bearing with its reproduction, the factory-preflight ordering
+  is documented, the v2 format comment and ADR 0008 §1 now describe the tagged
+  groups and length-delimited scalars accurately, the defensive
+  `OrderlySweepInterrupted` wording is fixed, `AlreadyReleased`'s Display is
+  neutral, the fixture preserves the original rejection, and the README/K2/CI
+  wording is corrected.
+- **Deferred with reasons**: M3 (a synchronous rejection would break the release
+  signature; the pre-poll-drop hazard is documented instead), M5/M6 (test-harness
+  robustness — the Gate protocol and the hang-instead-of-fail signal), L1/L2
+  (token Debug opacity and the same-RunId unit test), and the `catch_unwind`
+  half of B3 (it would add a dependency, and the documented panic contract is
+  the honest minimum).
+
+Broad verification for this round: fmt --check clean; clippy --workspace
+--all-targets --all-features -D warnings clean; test --workspace --all-features
+350 passed / 0 failed (53 test-result lines: 40 test binaries, 8 doc-test
+targets, 5 nested child-process re-executions); cargo +1.85 test the same 350;
+cargo +1.85 clippy clean; doc --no-deps clean; graph-lab and the r2_host example
+complete; the host fixture checks pass.
+
+### Fourth independent review (2026-10-23)
+
+The fourth review covered `fe8e5ff..cb00662` and returned **CHANGES REQUIRED
+with no code blockers**: six medium and about twenty low findings, all
+documentation or evidence quality. The three blockers of the third review were
+verified closed — B1 by loader-only probes (the three promoted names compile,
+the five tiered ones still fail to resolve), B2 and B3 by re-running the
+mutations (removing the arming line and restoring take-before-construct both
+turn the new regressions red).
+
+The findings were corrected in `45d38f3`: documentation, code comments, test
+evidence (comment stripping and glob rejection in the export-coverage test,
+payload comparison in the equivalence test) and fixture formatting; no
+production behaviour changed, and the full gate set was re-run (350 passed,
+clippy/fmt/doc clean on stable and 1.85, fixture check and clippy green). The
+remaining gate is a scoped confirmation of `45d38f3`, then integration.
+
+That scoped confirmation found one new medium contradiction (the status
+paragraphs still described the fourth review as pending) and four low gaps in
+the evidence (the ADR's description of the comment/glob handling, a glob nested
+in a brace block, a residual subsystem-tier sentence in the 2026-09-28 report,
+and the equivalence test still comparing `Display`). All are corrected in the
+commit that follows this record; the gate set was re-run and stays green.
+
 ## Stage 3 entry gate
 
 Stage 3 planning starts only after K6 closes Stage 2. Declarative meta-framework

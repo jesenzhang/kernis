@@ -131,7 +131,7 @@ async fn main() {
     );
 
     // K3 driving: one effect dispatch, one completed step.
-    let (driver, handle, composition) = assembly.into_driver(ExampleDispatcher);
+    let (driver, handle, mut composition) = assembly.into_driver(ExampleDispatcher);
     let join = tokio::spawn(driver.run());
     let dispatched = handle.drive().await.expect("the effect dispatches");
     println!("first drive result: {dispatched:?}");
@@ -142,7 +142,11 @@ async fn main() {
     let exit = join.await.expect("the driver task joins");
 
     // Composition cleanup is available only through the driver exit.
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     println!(
         "shutdown status: {:?}; cleaned modules: {}",
         outcome.shutdown_status,

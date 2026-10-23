@@ -48,14 +48,76 @@ surface.
 
 ### 2. Re-export closure rule
 
-Supported host code must be able to **name** every type it receives on a
-supported path: enum payloads it matches on and values it binds. Types
-reachable only through method-call inference (inspection accessors) are
-subsystem tier. The K6 audit found 19 host-reachable types that violated
+Supported host code must be able to **name** every type it must bind to a
+named value: a value it stores in its own struct or field, names in a helper
+signature, or returns from its own function. A type that a host only *matches*
+inside an exported enum payload — `match error { ScopeError::GraphAdmission(..) => .. }`
+— is bound by inference and does not have to be nameable; those payload types
+stay at the subsystem tier, and a host that wants to store one depends on the
+subsystem crate directly. Types reachable only through method-call inference
+(inspection accessors) are subsystem tier as well. The K6 audit found 19
+host-reachable types that violated
 this at base `3ee011b` (e.g. `RuntimeEvent`, `StreamItem`,
 `Cancellation`, `RecoveryDecision`, `DurableRunState`, `StoreError`,
 `AttemptId`); K6 closes the gaps with additive `pub use` only — nothing
 was hidden or removed at this stage.
+
+The rule is about *naming*, so the proof has to name things. The 2026-09-28
+R2 review found five more violations of this rule that every existing
+consumer had missed, precisely because examples and test import lists let
+type inference do the naming (`FactoryRegistry`, `RUN_DEFINITION_FORMAT`,
+`RuntimeAssembly`, `RecoveryReason`, `StoreInvariant`). Closure is therefore
+checked structurally, not by import lists: `fixtures/r2-host-fixture` is a
+compile-only crate whose only dependency is `runtime-loader`, which is not a
+workspace member (so no subsystem crate is reachable through workspace
+unification), and which annotates every supported-path value with an
+explicit type. It is compiled on stable and on the MSRV as part of the
+closeout gate, and `crates/runtime-loader/tests/review_r2_exports.rs` keeps
+the same vocabulary as an in-workspace regression. The repair's own audit
+found three further gaps of the same kind, closed additively as well
+(`StoreRevision`, `CapabilityConflictReason`, `InvalidId`; plus
+`LEGACY_RUN_DEFINITION_FORMAT_V1` once ADR 0008 made the refused legacy tag
+a fact a host must recognize). Inventory waves are listed in
+`docs/runtime/K6-supported-api-inventory.md`.
+
+That proof is a whitelist and was treated as stronger than it is. The third
+review (2026-10-22, B1) showed two things: eight host-path names were still
+unnameable, and three umbrella re-exports were never named by the fixture at
+all, so deleting them would have kept both "proofs" green. The repair resolves
+this by kind rather than by widening the surface:
+
+- **Bound values are promoted.** `CapabilityId`, `Generation` and `EntryId`
+  are the coordinate types a host binds from `CapabilityPin::generation`,
+  `CapabilityPin::entry_id` and `CapabilityHandle::id()`; they are now
+  re-exported along capability-graph → runtime-composition → runtime-loader and
+  named by the fixture.
+- **Match-only payloads stay subsystem tier.** `CapabilityGraphError`,
+  `JournalInvariant` and `IdempotencyKey` are payloads a host matches without
+  naming; the inventory lists each one with that tier.
+- **The boundary is not retroactive.** Payload types the umbrella already
+  exported before this split (`CapabilityConflictReason`, `PluginConflictReason`,
+  `FactoryConflictReason`, `ActivationStage`, `ConstructionStage`,
+  `StoreInvariant`, `RecoveryReason`) stay exported: they are named for
+  convenience, and removing them would be a breaking change for hosts that
+  already store them. The inventory keeps them exported rather than
+  re-tiering them, so "by kind" describes the *new* decisions, not a rewrite of
+  the old surface.
+- **Inspection accessors stay subsystem tier.** `Runtime::workflow()` and
+  `Runtime::journal()` return `WorkflowGraph` and `DurableJournal`, which the
+  inventory now names alongside `Scope`, `CapabilityRegistry` and
+  `CapabilityContext`.
+- **The proof can fail, within limits.** `crates/runtime-loader/tests/export_coverage.rs`
+  extracts every `pub use` name from the umbrella and fails when one is absent
+  from the closure evidence. It is a token-presence check, not an
+  exercise check: full-line comments are stripped before the search, so a name
+  mentioned only there does not count, but a trailing comment or a dead
+  vocabulary alias still satisfies it; a bare glob is rejected, and a glob
+  nested in a brace block is rejected too.
+  That is the boundary of what a text-level gate can promise; the fixture
+  remains the compile-level proof.
+
+Promoting any of the remaining names to host tier is a separate, recorded
+decision, not a drive-by export.
 
 ### 3. Four public API tiers
 

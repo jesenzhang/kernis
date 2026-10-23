@@ -40,7 +40,10 @@ mod error;
 mod plan;
 mod registration;
 
-pub use assembly::{CompositionDriverShutdown, CompositionHandle, RuntimeAssembly};
+pub use assembly::{
+    CompositionDriverShutdown, CompositionHandle, CompositionReleaseFuture,
+    CompositionReleaseOutcome, CompositionReleaseRejection, RuntimeAssembly,
+};
 pub use config::HostConfig;
 pub use definition::{
     CapabilityContribution, CapabilityOwnership, ConfigRequirement, ModuleDefinition,
@@ -59,24 +62,25 @@ pub use registration::{
 // Upstream types the host passes through or receives from the composition
 // API, re-exported so a host depends on this crate alone for composition.
 pub use capability_graph::{
-    CapabilityDefinition, CapabilityFiber, CapabilityValue, FiberState, PluginConfig,
-    PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime, ResolvedDependencies,
-    ScopedEffect,
+    CapabilityDefinition, CapabilityFiber, CapabilityId, CapabilityValue, EntryId, FiberState,
+    Generation, PluginConfig, PluginDefinition, PluginFactory, PluginLoadContext, PluginRuntime,
+    ResolvedDependencies, ScopedEffect,
 };
 pub use kernis_core::Id;
 pub use runtime_core::{
     AttemptId, Cancellation, CapabilityDeclaration, CapabilityHandle, CapabilityPin,
     CapabilityReplayIdentity, CapabilityRequirement, CompletionRecord, DefinitionError,
     DefinitionIdentity, DispatchRecord, DriveResult, DriverError, DriverExit, DriverFuture,
-    DriverOwnerState, DurableRunState, EffectDispatchError, EffectDispatchFuture,
-    EffectDispatchRequest, EffectDispatcher, FactoryResolutionError, JournalError, KeyedStreamItem,
-    LegacyMutationOperation, OutcomeRecord, ReconstructionError, RecoveredEffectState,
-    RecoveryAction, RecoveryDecision, RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError,
+    DriverOwner, DriverOwnerState, DurableRunState, EffectDispatchError, EffectDispatchFuture,
+    EffectDispatchRequest, EffectDispatcher, FactoryRegistry, FactoryResolutionError, JournalError,
+    KeyedStreamItem, LEGACY_RUN_DEFINITION_FORMAT_V1, LegacyMutationOperation, OutcomeRecord,
+    RUN_DEFINITION_FORMAT, ReconstructionError, RecoveredEffectState, RecoveryAction,
+    RecoveryDecision, RecoveryReason, RunDefinition, RunId, Runtime, RuntimeDriver, RuntimeError,
     RuntimeEvent, RuntimeHandle, ScopeError, SequenceError, ShutdownStatus, StepResult, StoreError,
-    StoreErrorKind, StreamItem, TaskAttempt, TaskDefinition, WorkflowGraphError,
+    StoreErrorKind, StoreInvariant, StreamItem, TaskAttempt, TaskDefinition, WorkflowGraphError,
     WorkflowReplayIdentity,
 };
 pub use workflow_recovery::{
     DurableStore, EffectSemantics, FileDurableStore, InMemoryDurableStore, KnownEffectOutcome,
-    OperationId,
+    OperationId, StoreRevision,
 };

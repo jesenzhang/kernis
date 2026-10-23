@@ -109,7 +109,7 @@ async fn scenario_a_composes_starts_drives_and_cleans_exactly_once() {
     );
 
     let dispatcher = SuccessDispatcher::new();
-    let (driver, handle, composition) = assembly.into_driver(dispatcher.clone());
+    let (driver, handle, mut composition) = assembly.into_driver(dispatcher.clone());
     let join = tokio::spawn(driver.run());
     let first = handle.drive().await.expect("effect dispatch succeeds");
     assert!(matches!(
@@ -131,7 +131,11 @@ async fn scenario_a_composes_starts_drives_and_cleans_exactly_once() {
     );
     let exit = join.await.expect("driver task joins");
 
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     let report = outcome.rollback;
     assert_eq!(
         report.cleaned,

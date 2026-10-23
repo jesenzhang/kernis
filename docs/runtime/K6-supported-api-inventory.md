@@ -23,14 +23,19 @@ recorded in ADR 0007.
 
 ## Closure rule for the host entry crate
 
-Every type that supported host code must **name** — enum payloads it
-matches on, and values it binds from a supported-path signature — is
-re-exported through `runtime-loader` (mirrored in
-`runtime-composition`'s host vocabulary block). Types that are only ever
-consumed through method-call inference (inspection accessors such as
+A type belongs to the host tier when supported host code must **name** it: a
+value it binds into its own field or helper signature, or returns from its own
+function. A type that a host only *matches* inside an exported enum payload is
+bound by inference and may stay at the subsystem tier; so may a type reached
+only through method-call inference (inspection accessors such as
 `Runtime::scope`, `Runtime::capability_registry`,
-`Runtime::capability_context`) are reachable without naming; deep
-inspection of them is subsystem tier.
+`Runtime::capability_context`). ADR 0007 §2 states the rule and the reason the
+tier was split this way in the sixth wave; this inventory records the result per
+type. Names that were exported before the split as match payloads
+(`CapabilityConflictReason`, `PluginConflictReason`, `FactoryConflictReason`,
+`ActivationStage`, `ConstructionStage`, `StoreInvariant`, `RecoveryReason`)
+stay exported for convenience and are named here rather than retroactively
+re-tiered.
 
 ### K6 gap fix (this milestone)
 
@@ -70,6 +75,84 @@ removals, no renames):
   as additive re-exports along the same chain (core → composition →
   loader). Scenario N of `k6_r2_end_to_end.rs` keeps the standing import
   block covering them.
+- The R2 repair review is the fourth wave, and it changed how closure is
+  *checked*. Importing a name list in a test is weak evidence: examples and
+  tests compile partly through type inference, so a name a host cannot
+  spell can still go unnoticed. The proof is now two-layered: a
+  separate compile-only crate, `fixtures/r2-host-fixture`, declares
+  `runtime-loader` as its only dependency, is not a workspace member (so
+  nothing can reach a subsystem crate through workspace unification), and
+  annotates every intermediate value with an explicit type; and
+  `crates/runtime-loader/tests/export_coverage.rs` (sixth wave) requires every
+  umbrella `pub use` name to appear in the closure evidence, so deleting a
+  re-export cannot stay green. The fixture is checked
+  with `cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml
+  --all-targets` on stable and on the MSRV, plus clippy `-D warnings` on
+  the same manifest, and `.github/workflows/ci.yml` runs exactly those three
+  commands in its `r2-host-fixture` job — the fixture is a gate, not only a
+  command in a document. `crates/runtime-loader/tests/review_r2_exports.rs`
+  stays as the in-workspace vocabulary regression.
+- This wave adds, additively along the same chain: `DriverOwner`,
+  `CompositionReleaseOutcome`, `CompositionReleaseRejection` and
+  `CompositionReleaseFuture` (the owner-bound release of ADR 0009),
+  `FactoryRegistry`,
+  `RUN_DEFINITION_FORMAT`, `LEGACY_RUN_DEFINITION_FORMAT_V1` (ADR 0008
+  makes the legacy tag a host-visible fact, because a durable identity
+  carrying it is refused), `RecoveryReason`, `StoreInvariant`,
+  `StoreRevision` (bound from `DurableRunState::revision`),
+  `CapabilityConflictReason` (the payload a host matches in
+  `CompositionError::CapabilityDefinitionConflict`), and `InvalidId`
+  (returned by `Id::new`, the host's entry point for every identifier).
+  `RuntimeAssembly` was already re-exported by `runtime-composition`; the
+  review proved the loader mirror omitted it, and it is now present.
+- The repair-branch reconciliation is a fifth wave, and it adds no
+  host-facing name. Its only API change is in the subsystem tier:
+  `CapabilityRegistry::take` and the associated `dispose_taken` let the
+  composition sweep remove a registration synchronously and park its fiber
+  disposal (ADR 0009 §3), with the one-shot `remove` kept as their
+  composition so every existing caller keeps its behaviour and failure
+  shape. `CapabilityRegistry` is a subsystem-supported type, so the change
+  is additive under `COMPATIBILITY.md` §1 and needs no loader re-export;
+  the closure fixture is unchanged.
+- The third-review correction is a sixth wave, and it changes the host tier by
+  kind rather than by widening it. **Promoted to host tier** (a host binds
+  them): `CapabilityId` (a transparent alias of `Id`, exported for readability
+  and bound from `CapabilityHandle::id()`), `Generation` and `EntryId` (public
+  fields of `CapabilityPin`). They are re-exported
+  capability-graph → runtime-composition → runtime-loader and named by the
+  fixture.
+  **Kept at subsystem tier**: `CapabilityGraphError` (payload of
+  `ScopeError::GraphAdmission`, `DefinitionError::CapabilityGraph`,
+  `ReconstructionError::CapabilityGraph`), `JournalInvariant` (payload of
+  `JournalError::InvariantViolation`) and `IdempotencyKey` (payload of
+  `StoreError::IdempotencyConflict`) are match-only payloads — a host matches
+  them by inference and reaches for the subsystem crate only to store one;
+  `WorkflowGraph` and `DurableJournal` are inspection-accessor returns
+  (`Runtime::workflow()`, `Runtime::journal()`) and join `Scope`,
+  `CapabilityRegistry` and `CapabilityContext` in that tier. ADR 0007 §2 states
+  the rule that separates the two cases.
+  This wave also adds `crates/runtime-loader/tests/export_coverage.rs`, which
+  extracts every umbrella `pub use` name and fails when one is missing from the
+  closure evidence. The fixture is a whitelist; this is what makes a whitelist
+  safe, and it is the direct answer to the review's observation that three
+  exports were never named by either proof.
+- Deliberate exclusions, restated with the evidence that produced them. The
+  store seam is exercised in the fixture through a generic
+  `S: DurableStore` parameter, and the pass-through vocabulary is bound by
+  name only — that is the boundary. Types reachable only by method-call
+  inference from an inspection accessor (`Scope`, `CapabilityRegistry`,
+  `CapabilityContext`, and the deep-API types behind them: `RegistryError`,
+  `FiberError`, `EffectError`, `DependencyPin`,
+  `PluginFuture`), the legacy configuration vocabulary (`TaskConfig`,
+  `EffectSpec`, §runtime-core below), and the store-authoring/conformance
+  vocabulary (`DurableMutation`, `CommitRequest`, `CommitResult`,
+  `CommitLedgerEntry`, `IdempotencyKey`, `DurableJournal`,
+  `JournalInvariant`, `classify_recovery`, `AttemptAdmission`,
+  `EffectIntent`, `CancellationRecord`) stay at the subsystem tier exactly
+  as the closure rule above states. A host implementing its own
+  `DurableStore` is a store author — documented subsystem work; the
+  supported R2 host selects one of the two exported store implementations
+  or stays generic over the exported trait.
 
 ## runtime-loader — canonical host entry (K5)
 
@@ -100,12 +183,16 @@ Host-facing supported (all also re-exported by the loader):
 | Stable declarations | `ModuleDefinition` (builder: `new`, `depends_on`, `with_task`, `with_declarative_capability`, `with_reactive_capability`, `with_capability`, `requiring_config`, `with_optional_config`), `CapabilityContribution`, `CapabilityOwnership`, `ReactiveCapabilityDeclaration`, `ConfigRequirement` |
 | Process-local registration | `ModuleRegistration` (`factory`, `plugin`, `plugin_with_config`, `on_activate`, `on_dispose`), `LifecycleHook`, `HookFuture`, `CapabilityFactoryFn`, `lifecycle_hook` |
 | Planning | `CompositionBuilder` (`register`, `build`), `CompositionPlan` (`definition`, `module_order`, `slots`, async `start`, `start_with_store`, `restore`), `CapabilitySlot`, `HostConfig` |
-| Activation / shutdown | `RuntimeAssembly` (`runtime`, `runtime_mut`, `module_order`, `host_config`, async `shutdown`, `into_driver`), `CompositionHandle` (`module_order`, `dispose_after_driver`, async `release_after_owner_loss` — bound-guarded, `&mut self`, proves the bound driver's `DriverOwnerState::OwnerDropped` before any cleanup), `CompositionDriverShutdown` |
+| Activation / shutdown | `RuntimeAssembly` (`runtime`, `runtime_mut`, `module_order`, `host_config`, async `shutdown`, `into_driver`), `CompositionHandle` (`module_order`, `dispose_after_driver` — `&mut self`, owner-bound, and deliberately **not** `async`: it validates the `DriverExit` against the `DriverOwner` this handle was separated with and records its acceptance before returning the `CompositionReleaseFuture` that is then awaited, so a future dropped before its first poll cannot hide the release; async `release_after_owner_loss` — bound-guarded, proves the bound driver's `DriverOwnerState::OwnerDropped` before any cleanup), `CompositionReleaseFuture`, `CompositionReleaseOutcome` (`is_released`, `into_released`), `CompositionReleaseRejection` (`ForeignDriverExit`, `AlreadyReleased`, `OrderlySweepInterrupted`, `into_exit`), `CompositionDriverShutdown` |
 | Errors | `CompositionError` + `ActivationStage`, `ConstructionStage`, `CapabilityConflictReason`, `FactoryConflictReason`, `PluginConflictReason`, `CleanupResource`, `RollbackFailure`, `RollbackReport`; `StartupFailure`; `CompositionShutdownFailure`; `OwnerLossReleaseError` |
 
-Internal: `ActivatedModule` and the rollback execution internals are
-crate-private. Composition coordinates existing authorities; it creates
-no second registry/runtime/store.
+Internal: `ActivatedModule`, `CleanupAuthority`, and `CleanupLedger` are
+crate-private. The ledger is the cleanup authority's queue: it holds the
+remaining modules, the current module, the in-flight dispose hook or fiber
+disposer, and the report built so far, so cancelling a cleanup future
+mid-await cannot forget work that had already started (ADR 0009 §3).
+Composition coordinates existing authorities; it creates no second
+registry/runtime/store.
 
 ## runtime-core — deterministic coordination + driver (K2/K3)
 
@@ -117,15 +204,19 @@ Host-facing supported:
 - Declarative construction: `RunDefinition`, `TaskDefinition`,
   `CapabilityDeclaration`, `CapabilityRequirement`,
   `DefinitionIdentity`, `DefinitionError`, `RUN_DEFINITION_FORMAT`,
+  `LEGACY_RUN_DEFINITION_FORMAT_V1` (the frozen historical tag, ADR 0008),
   `FactoryRegistry`, `FactoryResolutionError`, `RUN` entry points
   `Runtime::start_from_definition`, `start_from_definition_with_store`,
   `restore_from_definition`.
 - K3 driver: `RuntimeDriver::new` → `(driver, handle)` +
   `RuntimeHandle` (`drive`, `wake`, `dispatch_effect`, `recover`,
-  `cancel_task`, drain methods, `shutdown`, and the synchronous read-only
-  `owner_state`), `DriverFuture`, `DriveResult`, `ShutdownStatus`,
-  `DriverOwnerState`, `DriverExit`, `DriverError`, `EffectDispatcher`,
-  `EffectDispatchRequest`, `EffectDispatchFuture`, `EffectDispatchError`.
+  `cancel_task`, drain methods, `shutdown`, the synchronous read-only
+  `owner_state`, and `owner()` → `DriverOwner`), `DriverFuture`,
+  `DriveResult`, `ShutdownStatus`, `DriverOwnerState`, `DriverOwner`
+  (opaque, cloneable, `Send + Sync`; `same_driver_as` is the only way to
+  compare it with `DriverExit::owner()`, ADR 0009), `DriverExit`,
+  `DriverError`, `EffectDispatcher`, `EffectDispatchRequest`,
+  `EffectDispatchFuture`, `EffectDispatchError`.
 - Coordination results: `StepResult`, `RuntimeEvent`, `Cancellation`,
   `TaskAttempt`, `CapabilityPin`, `RecoveryDecision`, `DurableRunState`.
 - Errors: `RuntimeError`, `ReconstructionError`,
@@ -184,6 +275,8 @@ store is the only constructor.
 
 Host-facing supported (plugin authoring; umbrella-re-exported):
 `CapabilityValue`, `CapabilityDefinition`, `CapabilityHandle` ★,
+`CapabilityId` ★ (a transparent alias of `Id`, exported for readability),
+`Generation` ★, `EntryId` ★,
 `ResolvedDependencies`, `PluginDefinition`, `PluginRuntime`,
 `PluginFactory`, `PluginConfig`, `PluginLoadContext`,
 `CapabilityFiber`, `FiberState`, `ScopedEffect`, `ScopeError` ★.
@@ -192,8 +285,8 @@ Subsystem supported: `Scope` (hierarchical owning scope),
 `ReactiveCapabilityRuntime` (+ `ReconcileReport`,
 `FiberReconcileError`, `FiberCleanupFailure`, `ReactiveRuntimeError`),
 `CapabilityRegistry`, `CapabilityGraph`, `ResolvedCapabilityGraph`,
-`ValidatedCapabilityDefinition`, `CapabilityGraphError` (surfaces as a
-`ReconstructionError` payload ★), `Generation`, `EntryId`, `FiberId`,
+`ValidatedCapabilityDefinition`, `CapabilityGraphError` (match-only payload of
+`ScopeError`/`DefinitionError`/`ReconstructionError`; not umbrella-exported), `FiberId`,
 `DependencyBinding`, `DependencyPin`, `DependencyEpoch`, `EffectStack`,
 `EffectScope`, `EffectError`, `FiberError`, `RegistryError`,
 `PluginFuture`, `ConfigValidator`, `CapabilityContext`.

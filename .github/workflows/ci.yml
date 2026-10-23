@@ -4,14 +4,37 @@ on:
   push:
   pull_request:
 
+# Every job here only reads the repository; no step mints or pushes tokens,
+# so the workflow token stays at the least privilege that checkout needs.
+permissions:
+  contents: read
+
+# Supersede queued runs of the same branch or PR; a running push run is never
+# cancelled, while a queued push run can still be superseded by a newer push in
+# the same group.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Third-party actions are pinned to a full commit SHA because tags are mutable.
+# dtolnay/rust-toolchain publishes one commit per toolchain and that commit
+# hard-codes the version it installs (the `stable` commit reads a `toolchain`
+# input, the versioned commits do not), so a pin selects the toolchain. The
+# repository's rust-toolchain.toml selects `stable` for the working directory
+# and outranks an installed default, so jobs that must run on 1.85 set
+# RUSTUP_TOOLCHAIN explicitly instead of relying on `rustup default`.
 jobs:
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
         with:
+          toolchain: stable
           components: rustfmt, clippy
+      - name: Toolchain
+        run: cargo --version && rustc --version
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -21,12 +44,47 @@ jobs:
       - name: Graph lab
         run: cargo run -p graph-lab
 
-  # The declared MSRV (workspace rust-version) is a real contract.
-  # Check-only and cheap: compilation, not the full test suite.
+  # The declared MSRV (workspace rust-version) is a real contract. This pins
+  # the 1.85 toolchain commit and forces it through RUSTUP_TOOLCHAIN, so the
+  # check and the clippy pass really run on 1.85 rather than on `stable`.
   msrv:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RUSTUP_TOOLCHAIN: 1.85.1
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@ccc8c1f930153b792217f06c65a38f23a882993a
+        with:
+          components: clippy
+      - name: Toolchain
+        run: cargo --version && rustc --version
       - name: MSRV check
         run: cargo check --workspace --all-features
+      - name: MSRV clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  # The R2 host fixture is the structural closure proof for the supported
+  # surface (ADR 0007 §2, K6 inventory). It is deliberately not a workspace
+  # member, so no other job builds it: these are the commands that make it a
+  # gate rather than a local convention.
+  r2-host-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: stable
+          components: clippy
+      - name: Fixture check (stable)
+        run: cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml --all-targets
+      - name: Fixture clippy (stable)
+        run: cargo clippy --manifest-path fixtures/r2-host-fixture/Cargo.toml --all-targets -- -D warnings
+      - uses: dtolnay/rust-toolchain@ccc8c1f930153b792217f06c65a38f23a882993a
+      - name: Fixture check (MSRV)
+        env:
+          RUSTUP_TOOLCHAIN: 1.85.1
+        run: |
+          cargo --version
+          cargo check --manifest-path fixtures/r2-host-fixture/Cargo.toml --all-targets

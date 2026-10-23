@@ -377,7 +377,7 @@ async fn scenario_p_driver_contract_is_kept_for_loader_resolved_compositions() {
         .expect("the composition activates");
 
     let dispatcher = SuccessDispatcher::new();
-    let (driver, handle, composition) = assembly.into_driver(dispatcher.clone());
+    let (driver, handle, mut composition) = assembly.into_driver(dispatcher.clone());
     let join = tokio::spawn(driver.run());
     assert!(matches!(
         handle.drive().await.expect("driver dispatch succeeds"),
@@ -411,7 +411,11 @@ async fn scenario_p_driver_contract_is_kept_for_loader_resolved_compositions() {
         "the composition handle disposed nothing early"
     );
 
-    let outcome = composition.dispose_after_driver(exit).await;
+    let outcome = composition
+        .dispose_after_driver(exit)
+        .await
+        .into_released()
+        .expect("the exit from the composition's own driver releases it");
     assert_eq!(outcome.shutdown_status, ShutdownStatus::Clean);
     assert!(outcome.rollback.is_success());
     assert_eq!(

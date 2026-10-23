@@ -323,8 +323,15 @@ impl CompositionPlan {
                         stage: ActivationStage::ActivateHook { reason },
                     });
                 }
-                activated[index].hook_armed = true;
             }
+
+            // The dispose hook is armed by a *successful activation*, not by the
+            // presence of an `activate` hook: a module that registers only
+            // `on_dispose` still owns the resources activation acquired, and the
+            // sweep must release them. Arming on `on_activate` alone silently
+            // skipped that hook while still reporting the module as cleaned
+            // (third review, B2).
+            activated[index].hook_armed = true;
         }
 
         let report = runtime.capability_runtime().reconcile().await;

@@ -141,6 +141,18 @@ handle fully usable. This mirrors K3's unchanged `DriverError::OwnerDropped`
 semantics and keeps owner loss a distinct path instead of one ambiguous
 `dispose()`.
 
+The 2026-09-28 R2 repair tightened this paragraph rather than replacing it;
+[ADR 0009](0009-driver-exit-owner-binding.md) is the authority on the
+current shape. `dispose_after_driver` is now owner-bound as well as ordered:
+the handle holds the `DriverOwner` token of the driver it was separated with
+and refuses an exit that reports any other owner, answering
+`CompositionReleaseOutcome::{Released, Rejected}` instead of a bare
+`CompositionDriverShutdown`. Both release paths now run off a cleanup ledger
+owned by the handle rather than a queue held inside the caller's future, so
+cancelling a release mid-await loses neither the remaining modules nor the
+facts already collected, a started hook is polled rather than restarted, and
+`AlreadyReleased` means completed rather than "the bookkeeping was moved".
+
 ### Lifecycle hooks stay executor-neutral
 
 Modules may declare only `activate` and `dispose` hooks, returning boxed
